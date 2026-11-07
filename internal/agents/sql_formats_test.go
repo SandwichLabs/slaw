@@ -148,8 +148,15 @@ func TestPolicy_MySQLPlanOperators(t *testing.T) {
 	assert.Contains(t, checkPlanNode(&fn, &readers), "not on the allow-list")
 	fn = planNode{Name: "DUCKLAKE_EXPIRE_SNAPSHOTS", ExtraInfo: map[string]any{"Function": "DUCKLAKE_EXPIRE_SNAPSHOTS"}}
 	assert.Contains(t, checkPlanNode(&fn, &readers), "not on the allow-list")
-	// The iceberg and delta readers are no agent readers: the plan refuses them too.
-	for _, n := range []string{"ICEBERG_SCAN", "ICEBERG_METADATA", "ICEBERG_SNAPSHOTS", "DELTA_SCAN"} {
+	// An attached Iceberg catalog's scan and DML are known (iceberg_catalog
+	// connection); the other iceberg readers and delta_scan are still not.
+	iscan := planNode{Name: "ICEBERG_SCAN ", ExtraInfo: map[string]any{"Function": "ICEBERG_SCAN"}}
+	assert.Empty(t, checkPlanNode(&iscan, &readers))
+	assert.Equal(t, 0, readers, "a catalog scan is not a reader the statement wrote out")
+	for _, n := range []string{"ICEBERG_INSERT", "ICEBERG_UPDATE", "ICEBERG_DELETE"} {
+		assert.True(t, isRemoteWriteOp(n), n)
+	}
+	for _, n := range []string{"ICEBERG_METADATA", "ICEBERG_SNAPSHOTS", "DELTA_SCAN"} {
 		r := planNode{Name: n + " ", ExtraInfo: map[string]any{"Function": n}}
 		assert.Contains(t, checkPlanNode(&r, &readers), "not on the allow-list", n)
 	}

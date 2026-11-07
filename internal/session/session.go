@@ -70,10 +70,6 @@ type Session interface {
 	// mentions pg.public.orders dials pg on first use. Opening a workspace
 	// dials nothing. It returns the first connect failure (already redacted).
 	ConnectReferenced(ctx context.Context, catalog, sqlText string) error
-	// ConnectReferencedExcept is ConnectReferenced for a statement the agent
-	// wrote: connections of the given types are never dialled by it (an
-	// untrusted catalog attaches only where the person asked for it).
-	ConnectReferencedExcept(ctx context.Context, catalog, sqlText string, skipTypes ...string) error
 	// Preflight resolves a registered connection's credential and extension
 	// state without dialling, so its status reads needs-credentials or
 	// extension-missing before anyone connects.
@@ -484,11 +480,29 @@ func (c *Conn) Use(ctx context.Context, catalog string) error {
 		return err
 	}
 	if _, err := c.c.ExecContext(ctx, "USE "+QuoteIdent(catalog)); err != nil {
-		return fmt.Errorf("failed to switch to connection %q: %w", catalog, err)
+		// A catalog with no default schema (an Iceberg catalog has namespaces, no
+		// "main") cannot be USEd by its name alone: pin its first namespace, so an
+		// unqualified name resolves there and qualified names are unaffected.
+		ns, nerr := c.firstNamespace(ctx, catalog)
+		if nerr != nil || ns == "" {
+			return fmt.Errorf("failed to switch to connection %q: %w", catalog, err)
+		}
+		if _, err2 := c.c.ExecContext(ctx, "USE "+QuoteQualified(catalog, ns)); err2 != nil {
+			return fmt.Errorf("failed to switch to connection %q: %w", catalog, err)
+		}
 	}
 	c.catalog = catalog
 	c.cfg = c.h.callCfg([]QueryOption{WithCatalog(catalog)})
 	return nil
+}
+
+// firstNamespace is the alphabetically first schema of catalog that is not a
+// system one ("" when it has none).
+func (c *Conn) firstNamespace(ctx context.Context, catalog string) (string, error) {
+	var ns sql.NullString
+	err := c.c.QueryRowContext(ctx, `SELECT min(schema_name) FROM duckdb_schemas()
+		WHERE database_name = $1 AND NOT internal AND schema_name NOT IN ('information_schema', 'pg_catalog')`, catalog).Scan(&ns)
+	return ns.String, err
 }
 
 // Conn is one pinned connection. Not safe for concurrent use.

@@ -50,7 +50,7 @@ func TestIcebergCatalogValidAccepted(t *testing.T) {
 		"rest loopback":  with(restDef("none"), setOpt("uri", "http://127.0.0.1:8181")),
 		"rest localhost": with(restDef("none"), setOpt("uri", "http://localhost:8181/x")),
 		"rest ipv6 lo":   with(restDef("none"), setOpt("uri", "http://[::1]:8181")),
-		"trusted":        with(s3tDef(), setOpt("trust_writers", "true")),
+		"writable":       func() Def { d := s3tDef(); d.ReadOnly = false; return d }(),
 		"cn arn":         with(s3tDef(), setOpt("warehouse", "arn:aws-cn:s3tables:cn-north-1:111122223333:bucket/sales")),
 		"gov arn":        with(s3tDef(), setOpt("warehouse", "arn:aws-us-gov:s3tables:us-gov-west-1:111122223333:bucket/sales")),
 	} {
@@ -64,7 +64,6 @@ func TestIcebergCatalogValidateRefusals(t *testing.T) {
 		want string
 	}
 	bad := map[string]refusal{
-		"writable":               {with(s3tDef(), func(d *Def) { d.ReadOnly = false }), "read-only"},
 		"no endpoint type":       {with(s3tDef(), func(d *Def) { delete(d.Options, "endpoint_type") }), "endpoint_type"},
 		"glue":                   {with(s3tDef(), setOpt("endpoint_type", "glue")), "not supported yet"},
 		"unknown endpoint type":  {with(s3tDef(), setOpt("endpoint_type", "hive")), "not one of"},
@@ -72,7 +71,6 @@ func TestIcebergCatalogValidateRefusals(t *testing.T) {
 		"stray host":             {with(s3tDef(), func(d *Def) { d.Host = "h" }), "not a setting"},
 		"stray scope":            {with(s3tDef(), func(d *Def) { d.Scope = "s3://b/" }), "not a setting"},
 		"stray path":             {with(s3tDef(), func(d *Def) { d.Path = "/x" }), "not a setting"},
-		"trust not bool":         {with(s3tDef(), setOpt("trust_writers", "yes")), "trust_writers"},
 		"s3t no warehouse":       {with(s3tDef(), func(d *Def) { delete(d.Options, "warehouse") }), "warehouse"},
 		"s3t not an arn":         {with(s3tDef(), setOpt("warehouse", "sales")), "ARN"},
 		"s3t wrong service":      {with(s3tDef(), setOpt("warehouse", "arn:aws:s3:us-east-1:111122223333:bucket/sales")), "ARN"},
@@ -139,47 +137,27 @@ func TestIcebergCatalogAttachSQL(t *testing.T) {
 		require.Len(t, stmts, 1)
 		return stmts[0]
 	}
-	// The main hub's default: an untrusted catalog asks for no vended credentials.
+	// Read-only by default, and never asks the catalog for vended credentials.
 	assert.Equal(t, `ATTACH 'arn:aws:s3tables:us-east-1:111122223333:bucket/sales' AS "s3t" (TYPE iceberg, ENDPOINT_TYPE 's3_tables', SECRET 'slaw_aws_lake', ACCESS_DELEGATION_MODE 'none', READ_ONLY)`, attach(s3tDef()))
 	secretAttach := `ATTACH 'analytics' AS "polaris" (TYPE iceberg, ENDPOINT 'https://catalog.example.com/api/catalog', SECRET 'slaw_polaris', ACCESS_DELEGATION_MODE 'none', READ_ONLY)`
 	assert.Equal(t, secretAttach, attach(restDef("")))
 	assert.Equal(t, secretAttach, attach(restDef("bearer")))
 	assert.Equal(t, `ATTACH 'analytics' AS "polaris" (TYPE iceberg, ENDPOINT 'https://catalog.example.com/api/catalog', AUTHORIZATION_TYPE 'none', ACCESS_DELEGATION_MODE 'none', READ_ONLY)`, attach(restDef("none")))
 
-	// A trusted catalog vends on the main hub; an explicit false does not.
-	trusted := with(s3tDef(), setOpt("trust_writers", "true"))
-	assert.Contains(t, attach(trusted), `ACCESS_DELEGATION_MODE 'vended_credentials', READ_ONLY)`)
-	assert.Contains(t, attach(with(s3tDef(), setOpt("trust_writers", "false"))), `ACCESS_DELEGATION_MODE 'none'`)
-
-	// The attach target decides, not the definition: the lake reader asks for
-	// vended credentials on an untrusted catalog, and WithDelegation leaves the
-	// spec it was given alone.
-	spec := restDef("none").Spec()
-	stmts, err := typ.AttachSQL(WithDelegation(spec, DelegationVended))
-	require.NoError(t, err)
-	assert.Contains(t, stmts[0], `ACCESS_DELEGATION_MODE 'vended_credentials'`)
-	assert.NotContains(t, spec.Params, delegationParam)
-	stmts, err = typ.AttachSQL(WithDelegation(trusted.Spec(), DelegationNone))
-	require.NoError(t, err)
-	assert.Contains(t, stmts[0], `ACCESS_DELEGATION_MODE 'none'`)
-
-	// An unknown mode is refused, never written.
-	bad := restDef("none").Spec()
-	bad.Params = map[string]string{delegationParam: "x', READ_ONLY", "opt.endpoint_type": "rest"}
-	_, err = typ.AttachSQL(bad)
-	require.Error(t, err)
-
-	// A definition cannot set the mode: Def.Params writes only known keys and
-	// opt.*, and an option of that name is an unknown option.
-	forged := with(restDef("none"), setOpt(delegationParam, "vended_credentials"))
-	assert.Error(t, Validate(forged))
-	assert.NotContains(t, forged.Params(), delegationParam)
-
-	// AttachSQL validates: a writable spec attaches nothing.
+	// read_only: false attaches writable, still with delegation 'none'.
 	w := restDef("none")
 	w.ReadOnly = false
-	_, err = typ.AttachSQL(w.Spec())
-	require.Error(t, err)
+	assert.Equal(t, `ATTACH 'analytics' AS "polaris" (TYPE iceberg, ENDPOINT 'https://catalog.example.com/api/catalog', AUTHORIZATION_TYPE 'none', ACCESS_DELEGATION_MODE 'none')`, attach(w))
+	ws := s3tDef()
+	ws.ReadOnly = false
+	assert.Equal(t, `ATTACH 'arn:aws:s3tables:us-east-1:111122223333:bucket/sales' AS "s3t" (TYPE iceberg, ENDPOINT_TYPE 's3_tables', SECRET 'slaw_aws_lake', ACCESS_DELEGATION_MODE 'none')`, attach(ws))
+
+	// No option can turn vended credentials on: every unknown option is refused,
+	// and there is no mode to choose.
+	for _, k := range []string{"trust_writers", "access_delegation_mode", "attach.delegation", "delegation"} {
+		assert.Error(t, Validate(with(restDef("none"), setOpt(k, "vended_credentials"))), k)
+	}
+	assert.NotContains(t, attach(with(restDef("none"), func(d *Def) {})), "vended")
 }
 
 func TestIcebergCatalogSecretSteps(t *testing.T) {
@@ -230,20 +208,14 @@ func TestIcebergCatalogNoCredentialInAttachSQL(t *testing.T) {
 	const needle = "iceberg_golden_needle"
 	cred := secrets.Credential{Token: needle + "_token", KeyID: needle + "_id", Secret: needle + "_secret", Password: needle + "_pw", User: needle + "_user"}
 	typ := registry["iceberg_catalog"]
-	defs := []Def{s3tDef(), restDef(""), restDef("oauth2"), restDef("bearer"), restDef("none"),
-		with(s3tDef(), setOpt("trust_writers", "true"))}
+	defs := []Def{s3tDef(), restDef(""), restDef("oauth2"), restDef("bearer"), restDef("none")}
 	for _, d := range defs {
-		for _, mode := range []Delegation{"", DelegationNone, DelegationVended} {
-			spec := d.Spec()
-			if mode != "" {
-				spec = WithDelegation(spec, mode)
-			}
-			spec.Credential = func(context.Context) (secrets.Credential, error) { return cred, nil }
-			stmts, err := typ.AttachSQL(spec)
-			require.NoError(t, err)
-			for _, s := range stmts {
-				assert.NotContains(t, s, needle, "%s/%s", d.Name, mode)
-			}
+		spec := d.Spec()
+		spec.Credential = func(context.Context) (secrets.Credential, error) { return cred, nil }
+		stmts, err := typ.AttachSQL(spec)
+		require.NoError(t, err)
+		for _, s := range stmts {
+			assert.NotContains(t, s, needle, d.Name)
 		}
 		// The credential is in the secret DDL only, and flagged Secret where it is one.
 		steps, err := asCred(typ).SecretSteps(d.Spec(), cred)
@@ -262,18 +234,17 @@ func TestIcebergCatalogInfo(t *testing.T) {
 	ti, err := TypeInfoFor("iceberg_catalog")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"httpfs", "avro", "iceberg"}, ti.Extensions)
-	assert.Equal(t, Capabilities{Catalog: true, Writable: false, ReadOnlyAttach: true, Remote: true, Test: true}, ti.Capabilities)
-	assert.Contains(t, ti.FingerprintFields, "option:trust_writers")
+	assert.Equal(t, Capabilities{Catalog: true, Writable: true, ReadOnlyAttach: true, Remote: true, Test: true}, ti.Capabilities)
+	assert.NotContains(t, ti.FingerprintFields, "option:trust_writers")
+	assert.True(t, ti.Capabilities.Writable)
 	assert.True(t, IsRemote("iceberg_catalog"))
 	byName := map[string]Field{}
 	for _, f := range ti.Fields {
 		byName[f.Name] = f
 		assert.True(t, f.Option, f.Name)
 	}
-	tw := byName["trust_writers"]
-	assert.Equal(t, "false", tw.Default)
-	assert.Contains(t, tw.Help, "operator and writers can change where your own S3 reads go and the answers they get")
-	assert.Contains(t, tw.Help, "local files and loopback http")
+	assert.NotContains(t, byName, "trust_writers")
+	assert.Contains(t, byName["endpoint_type"].Help, IcebergWarning)
 	for _, f := range ti.Credentials {
 		assert.True(t, f.PerPerson, f.Name)
 	}
@@ -291,19 +262,12 @@ func TestIcebergCatalogURIPortRange(t *testing.T) {
 	}
 }
 
-func TestIcebergCatalogTrustWritersErrorNamesTheConnection(t *testing.T) {
-	err := Validate(with(s3tDef(), setOpt("trust_writers", "yes")))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `"s3t"`)
-	assert.Contains(t, err.Error(), "trust_writers")
-}
-
 // Option names are lowercased by Def.Params, so two spellings of one name are
 // refused rather than left to map order, and every reader sees the same value.
 func TestIcebergCatalogOptionNamesThatDifferOnlyInCase(t *testing.T) {
 	d := with(s3tDef(), func(d *Def) {
-		d.Options["trust_writers"] = "false"
-		d.Options["Trust_Writers"] = "true"
+		d.Options["auth"] = "none"
+		d.Options["Auth"] = "bearer"
 	})
 	err := Validate(d)
 	require.Error(t, err)

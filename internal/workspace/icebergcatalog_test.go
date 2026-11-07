@@ -26,10 +26,12 @@ func icebergS3Tables(name string) ConnectionDef {
 		"endpoint_type": "s3_tables", "warehouse": "arn:aws:s3tables:us-east-1:111122223333:bucket/sales", "storage": "aws_lake"}}
 }
 
-// An iceberg_catalog is saved only from the person's own scopes, and its
-// options named "auth" and "oauth2_server_uri" are settings, not credentials.
-func TestIcebergCatalogIsSavedFromOwnScopesOnly(t *testing.T) {
+// An iceberg_catalog may be defined in any scope, a committed slaw.yaml
+// included, and its options named "auth" and "oauth2_server_uri" are settings,
+// not credentials.
+func TestIcebergCatalogIsSavedInEveryScope(t *testing.T) {
 	ws, _, _ := memWorkspace(t, nil)
+	assert.False(t, OwnScopeOnlyType("iceberg_catalog"))
 	for _, d := range []ConnectionDef{
 		icebergRest("c_none", "none", nil),
 		icebergRest("c_bearer", "bearer", nil),
@@ -37,26 +39,31 @@ func TestIcebergCatalogIsSavedFromOwnScopesOnly(t *testing.T) {
 		icebergRest("c_default", "", nil),
 		icebergS3Tables("c_s3t"),
 	} {
-		err := ws.AddConnection(ScopeShared, d)
-		require.Error(t, err, d.Name)
-		assert.Contains(t, err.Error(), "only you can add them", d.Name)
-		require.NoError(t, ws.AddConnection(ScopeLocal, d), "local: %s", d.Name)
+		require.NoError(t, ws.AddConnection(ScopeShared, d), "shared: %s", d.Name)
+		l := d
+		l.Name += "_l"
+		require.NoError(t, ws.AddConnection(ScopeLocal, l), "local: %s", d.Name)
 		u := d
 		u.Name += "_u"
 		require.NoError(t, ws.AddConnection(ScopeUser, u), "user: %s", d.Name)
-		require.Error(t, ws.MoveConnection(context.Background(), d.Name, ScopeLocal, ScopeShared), d.Name)
+		c, ok := ws.Connection(d.Name)
+		require.True(t, ok)
+		_, err := ResolveConnection(ws, c, nil)
+		require.NoError(t, err, d.Name)
 	}
-	// A committed slaw.yaml entry is refused when resolved.
-	_, err := ResolveConnection(ws, Connection{ConnectionDef: icebergRest("planted", "none", nil), Scope: ScopeShared}, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only you can add them")
+	// read_only defaults to true and false is allowed.
+	rw := icebergRest("c_rw", "none", nil)
+	rw.ReadOnly = Bool(false)
+	require.NoError(t, ws.AddConnection(ScopeLocal, rw))
+	def := icebergRest("c_ro", "none", nil)
+	def.ReadOnly = nil
+	assert.True(t, def.IsReadOnly())
 
-	// The credential-name rule still guards every other option of the type.
-	bad := icebergRest("c_bad", "none", map[string]string{"client_secret": "x"})
-	require.Error(t, ws.AddConnection(ScopeLocal, bad))
-	bad = icebergRest("c_bad", "none", map[string]string{"api_token": "x"})
-	require.Error(t, ws.AddConnection(ScopeLocal, bad))
-	// And the allow-list is per type: another type's "auth" option is still refused.
+	// Credentials still never go in a definition: the credential-name rule
+	// guards every other option of the type, and another type's "auth" option.
+	for _, extra := range []map[string]string{{"client_secret": "x"}, {"api_token": "x"}} {
+		require.Error(t, ws.AddConnection(ScopeLocal, icebergRest("c_bad", "none", extra)))
+	}
 	other := ConnectionDef{Name: "pg_auth", Type: "postgres", Host: "h", Database: "d", Options: map[string]string{"auth": "x"}}
 	require.Error(t, ws.AddConnection(ScopeLocal, other))
 }
@@ -65,14 +72,14 @@ func TestIcebergCatalogIsSavedFromOwnScopesOnly(t *testing.T) {
 // option written twice and are refused (the value that won used to depend on map order).
 func TestOptionNamesThatDifferOnlyInCaseAreRefused(t *testing.T) {
 	ws, _, _ := memWorkspace(t, nil)
-	d := icebergRest("c_case", "none", map[string]string{"trust_writers": "false", "Trust_Writers": "true"})
+	d := icebergRest("c_case", "none", map[string]string{"warehouse": "w2", "Warehouse": "w3"})
 	err := ws.AddConnection(ScopeLocal, d)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "written twice")
 	pg := ConnectionDef{Name: "pg_case", Type: "postgres", Host: "h", Database: "d", Options: map[string]string{"sslmode": "require", "SSLMode": "disable"}}
 	require.Error(t, ws.AddConnection(ScopeLocal, pg))
 	// One spelling in any case is fine.
-	require.NoError(t, ws.AddConnection(ScopeLocal, icebergRest("c_upper", "none", map[string]string{"Trust_Writers": "false"})))
+	require.NoError(t, ws.AddConnection(ScopeLocal, icebergRest("c_upper", "none", map[string]string{"Oauth2_Server_Uri": ""})))
 }
 
 // Only a catalog that signs in has credentials: s3_tables signs with its

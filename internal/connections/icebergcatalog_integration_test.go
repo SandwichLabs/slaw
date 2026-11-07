@@ -130,10 +130,10 @@ func vendedSecrets(t *testing.T, sess session.Session) []string {
 	return out
 }
 
-// On a hardened hub session an untrusted catalog attaches with delegation
-// 'none': even behind a proxy that vends credentials, no vended secret is
-// created, so the catalog cannot choose a scope or endpoint for the hub's
-// reads. A trusted catalog attaches with 'vended_credentials' and does get one.
+// On a hardened hub session a catalog always attaches with delegation 'none':
+// even behind a proxy that vends credentials in every LoadTable response, no
+// vended secret is created, so the catalog cannot choose a scope or endpoint
+// for the hub's reads; data is read through the storage connections.
 func TestIcebergCatalogDelegationOnTheHub(t *testing.T) {
 	f := icebergtest.Start(t)
 	f.Seed(t)
@@ -165,13 +165,13 @@ func TestIcebergCatalogDelegationOnTheHub(t *testing.T) {
 		return n
 	}
 
-	t.Run("untrusted: no vended secret, read through the person's storage connection", func(t *testing.T) {
+	t.Run("no vended secret, read through the person's storage connection", func(t *testing.T) {
 		sess := open(t, restCatalog(proxy.URL, "none"), true)
 		assert.Equal(t, 299, count(t, sess))
 		assert.Empty(t, vendedSecrets(t, sess))
 	})
 
-	t.Run("untrusted without a storage connection fails closed", func(t *testing.T) {
+	t.Run("without a storage connection it fails closed", func(t *testing.T) {
 		sess := open(t, restCatalog(proxy.URL, "none"), false)
 		var n int
 		err := sess.DB().QueryRowContext(ctx, "SELECT max(id) FROM cat.ns.orders").Scan(&n)
@@ -179,26 +179,14 @@ func TestIcebergCatalogDelegationOnTheHub(t *testing.T) {
 		assert.Empty(t, vendedSecrets(t, sess))
 	})
 
-	t.Run("trusted: vended credentials read the table", func(t *testing.T) {
+	// A writable catalog (read_only: false) is attached without READ_ONLY and
+	// still asks for no credentials.
+	t.Run("writable: still no vended secret", func(t *testing.T) {
 		def := restCatalog(proxy.URL, "none")
-		def.Options["trust_writers"] = "true"
-		sess := open(t, def, false)
+		def.ReadOnly = false
+		sess := open(t, def, true)
 		assert.Equal(t, 299, count(t, sess))
-		assert.NotEmpty(t, vendedSecrets(t, sess))
-	})
-
-	t.Run("the lake reader's explicit mode vends for an untrusted catalog", func(t *testing.T) {
-		def := restCatalog(proxy.URL, "none")
-		sess, err := session.New(session.WithConnectionTypes(connections.Types()...), session.WithExtensionDirectory(extDir(t)))
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = sess.Close() })
-		for _, e := range []string{"httpfs", "avro", "iceberg"} {
-			require.NoError(t, sess.InstallExtension(ctx, e))
-		}
-		require.NoError(t, sess.Register(connections.WithDelegation(def.Spec(), connections.DelegationVended)))
-		require.NoError(t, sess.Connect(ctx, def.Name))
-		assert.Equal(t, 299, count(t, sess))
-		assert.NotEmpty(t, vendedSecrets(t, sess))
+		assert.Empty(t, vendedSecrets(t, sess))
 	})
 }
 

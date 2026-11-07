@@ -230,7 +230,9 @@ SELECT * FROM iceberg_snapshots('/abs/path/to/workspace/data/orders');
 
 ### `iceberg_catalog`
 
-An Iceberg **catalog** (tables listed and read through the catalog, not a table folder): Amazon S3 Tables or an Iceberg REST catalog. **Partly wired (lakehouse plan L2).** The type validates, emits its attach and secret SQL and passes Test. It is **own scopes only**, like `ducklake` above: the team's `slaw.yaml` and a bundle import refuse it (a committed one is skipped with an issue when the workspace opens). What is enforced for the agent today: **every agent statement that names an `iceberg_catalog`, and `describe_table` and `introspect_schema` on one, is refused** with "this catalog's tables are not readable by the agent yet", and an agent statement never attaches one. Your own SQL in the query editor is not restricted. Storage-dependency resolution, the Studio form, `slaw conn add` flags and the agent's confined reader arrive in L3 to L5, so this section describes the definition the type accepts.
+An Iceberg **catalog** (tables listed and read through the catalog, not a table folder): Amazon S3 Tables or an Iceberg REST catalog. It is an ordinary catalog connection: you and the agent read its tables with the same SQL as any attached database (`SELECT ... FROM cat.ns.orders`, joins with other catalogs included), `describe_table` and `introspect_schema` work on it, and a definition may live in any scope, the team's `slaw.yaml` included (credentials never do). Storage-dependency resolution, the Studio form and `slaw conn add` flags arrive in L3, so this section describes the definition the type accepts.
+
+> **Warning.** Table metadata decides which files DuckDB reads. Anyone who can write this catalog's tables can make a query, yours or the agent's, read local files, local network URLs or other S3 buckets your storage connections cover. Only attach catalogs whose writers you would trust with your machine.
 
 | Field | Notes |
 |---|---|
@@ -240,14 +242,12 @@ An Iceberg **catalog** (tables listed and read through the catalog, not a table 
 | `uri` | `rest` only: the catalog's base URL. `https://`, or `http://` for a loopback host only; no user name, query or fragment |
 | `auth` | `rest` only: `oauth2` (the default; client id and secret), `bearer` (a token) or `none` |
 | `oauth2_server_uri` | `rest` with `oauth2` only: the token URL; same URL rules as `uri`. **Without it DuckDB derives `<uri>/v1/oauth/tokens` and sends your OAuth2 client id and secret there**, so check that the catalog's own token endpoint is that URL, or set this field |
-| `trust_writers` | `true` or `false` (default). Whether the agent may read this catalog on the main hub with your own access (`true`) or only in a confined reader (`false`) |
 
-- **Read-only.** `read_only` must be `true`; a writable definition is refused. The attach is `READ_ONLY` and DuckDB refuses writes to it. Option names are not case-sensitive, and two that differ only in case are refused.
+- **Read-only by default.** `read_only` defaults to `true` and attaches with `READ_ONLY`; DuckDB then refuses writes. `read_only: false` attaches it writable, and writes follow the usual rules: a sandbox tier that allows them, a writable connection and your approval, which is always asked for a remote connection (the plan operators `ICEBERG_INSERT`, `ICEBERG_UPDATE`, `ICEBERG_DELETE` are the catalog's own DML, as `PG_INSERT` is Postgres's). Option names are not case-sensitive, and two that differ only in case are refused.
 - **Credentials** (per person, never in the definition): `token` for `bearer`; `key_id` (the client id) and `secret` for `oauth2`. `s3_tables` and `none` have none of their own.
-- **Delegation mode.** The `ACCESS_DELEGATION_MODE` is always written out. Where the catalog attaches decides it, not the definition: the main hub attaches an untrusted catalog with `none` (its vended credentials never enter the main hub) and a catalog with `trust_writers: true` with `vended_credentials`; the agent's confined reader (L4) asks for `vended_credentials`.
-- **What `trust_writers` risks, in plain words.** A trusted catalog's operator and writers can change where your own S3 reads go and the answers they get, and can make agent queries read local files and loopback http. Turn it on only for catalogs whose operator and writers you would trust with your machine.
+- **No vended credentials.** The attach always writes `ACCESS_DELEGATION_MODE 'none'`: the catalog is never asked to hand out storage credentials, so a catalog cannot choose a scope or endpoint for your reads. Data is read through your storage connections (an `s3` connection whose scope covers the table's location; for `s3_tables` the one named by `storage` signs the catalog), and an S3 bucket no connection covers fails closed. A REST catalog that only vends credentials (some Polaris setups) therefore needs a storage connection for its bucket.
 - **Extensions:** `httpfs`, `avro` and `iceberg` (no `aws`).
-- **Test** attaches the catalog in a throwaway session, lists up to 50 namespaces and the table names (no table is loaded for that), and describes one table. An `s3_tables` catalog is tested with its storage connection tried first; without it the Test says which connection to set up.
+- **Test** attaches the catalog in a throwaway session, lists up to 50 namespaces and the table names (no table is loaded for that), and describes one table, and says the warning above. An `s3_tables` catalog is tested with its storage connection tried first; without it the Test says which connection to set up.
 
 ## DuckDB version and extensions
 

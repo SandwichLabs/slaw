@@ -404,14 +404,13 @@ func marshalYAML(v any, header string) ([]byte, error) {
 }
 
 // OwnScopeOnlyType reports a connection type that trusts the metadata of what it
-// points at: a DuckLake catalog, an Iceberg or Delta table, or an Iceberg
-// catalog (whose tables' writers decide which files are read) decides which files
+// points at: a DuckLake catalog, an Iceberg or Delta table decides which files
 // are read (a crafted one can name any file on this computer). Only the person
 // adds one, in their own scopes ("This computer" or all their workspaces); the
 // shared slaw.yaml, which a pull can change, and a bundle import refuse them.
 func OwnScopeOnlyType(typ string) bool {
 	switch typ {
-	case "ducklake", "iceberg", "delta", "iceberg_catalog":
+	case "ducklake", "iceberg", "delta":
 		return true
 	}
 	return false

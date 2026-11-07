@@ -350,7 +350,7 @@ func TestEveryDeclaredFingerprintFieldChangesTheFingerprint(t *testing.T) {
 		"ducklake":        {Name: "x", Type: "ducklake", Path: "data/x.ducklake", Options: map[string]string{"data_path": "data/files"}},
 		"iceberg":         {Name: "x", Type: "iceberg", Path: "data/ice"},
 		"delta":           {Name: "x", Type: "delta", Path: "data/delta"},
-		"iceberg_catalog": {Name: "x", Type: "iceberg_catalog", Options: map[string]string{"endpoint_type": "rest", "uri": "https://c.example.com/api", "warehouse": "w", "trust_writers": "false"}},
+		"iceberg_catalog": {Name: "x", Type: "iceberg_catalog", Options: map[string]string{"endpoint_type": "rest", "uri": "https://c.example.com/api", "warehouse": "w"}},
 	}
 	for _, info := range connections.ListConnectionTypes() {
 		d := base[info.Name]

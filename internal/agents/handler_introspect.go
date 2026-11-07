@@ -24,9 +24,6 @@ func (h *Handler) handleIntrospectSchema(ctx context.Context, req *Request) *Res
 	if catalog == "" {
 		catalog = sess.DefaultCatalog()
 	}
-	if isIcebergCatalogConn(sess, catalog) {
-		return NewErrorResponse(req.ID, ErrPermission, icebergCatalogMsg)
-	}
 	// A registered connection that is not connected yet connects on first use,
 	// as it does for run_query (#111).
 	connectErr := h.connectReferenced(ctx, connection, "")
@@ -45,17 +42,6 @@ func (h *Handler) handleIntrospectSchema(ctx context.Context, req *Request) *Res
 	return NewResponse(req.ID, map[string]any{"tables": tables})
 }
 
-// isIcebergCatalogConn reports whether name is a registered iceberg_catalog
-// connection: its tables are not readable by the agent yet (icebergCatalogMsg).
-func isIcebergCatalogConn(sess session.Session, name string) bool {
-	for _, c := range sess.ConnectionInfos() {
-		if strings.EqualFold(c.Name, name) {
-			return c.Type == "iceberg_catalog"
-		}
-	}
-	return false
-}
-
 // listCatalogTables lists the tables of catalog's default schema.
 func (h *Handler) listCatalogTables(ctx context.Context, sess session.Session, catalog string) ([]session.TableInfo, error) {
 	return sess.ListTables(ctx, catalog, "")
@@ -68,20 +54,6 @@ func (h *Handler) handleDescribeTable(ctx context.Context, req *Request) *Respon
 		return errResp
 	}
 
-	if ref, err := session.ParseTableRef(table); err == nil {
-		cat := ref.Catalog
-		if cat == "" && isIcebergCatalogConn(sess, ref.Schema) {
-			cat = ref.Schema // catalog.table
-		}
-		if cat == "" && ref.Schema == "" {
-			if r, rerr := sess.Resolve(ctx, ref); rerr == nil {
-				cat = r.Catalog // unqualified: the default catalog
-			}
-		}
-		if isIcebergCatalogConn(sess, cat) {
-			return NewErrorResponse(req.ID, ErrPermission, icebergCatalogMsg)
-		}
-	}
 	// table may be qualified (catalog.schema.table); an unqualified name
 	// resolves against the default catalog. A connection it names connects on
 	// first use (#111).
