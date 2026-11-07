@@ -108,6 +108,18 @@ func TestVendedCredentialsProxy(t *testing.T) {
 	require.Positive(t, scalar[int64](t, db, "SELECT count(*) FROM duckdb_secrets() WHERE type = 's3' AND provider = 'iceberg'"))
 }
 
+func TestCraftManifestListOnlyReadsHonestRows(t *testing.T) {
+	f := icebergtest.Start(t)
+	f.Seed(t)
+	db := f.Open(t)
+	tbl := f.Craft(t, "hostm1", icebergtest.Hostile{ManifestListDir: t.TempDir()})
+	seeded, _ := f.IcebergFilePaths(t, "orders")
+	require.Equal(t, seeded, tbl.DataPaths, "an empty DataDir keeps the seeded data files")
+	icebergtest.Exec(t, db, icebergtest.AttachSQL("cat", f.RESTURI, ", READ_ONLY"))
+	require.EqualValues(t, 299, scalar[int64](t, db, "SELECT max(id) FROM cat.ns.hostm1"))
+	require.EqualValues(t, 300, scalar[int64](t, db, "SELECT count(id) FROM cat.ns.hostm1"))
+}
+
 func TestCraftKinds(t *testing.T) {
 	f := icebergtest.Start(t)
 	f.Seed(t)
@@ -119,10 +131,12 @@ func TestCraftKinds(t *testing.T) {
 		{Location: "s3://other/", NameMapping: true},
 	} {
 		name := "kind" + string(rune(97+i)) + "1"
-		tbl := f.Craft(t, name, h)
-		require.Contains(t, tbl.MetadataLocation, "/ns/"+name+"/metadata/")
+		tbl := f.Craft(t, name, h) // Craft itself checks iceberg_metadata against DataPaths
+		data, manifests := f.IcebergFilePaths(t, name)
+		require.Equal(t, tbl.DataPaths, data)
+		require.NotEmpty(t, manifests)
 		if h.DataDir != "" {
-			require.True(t, strings.HasPrefix(tbl.DataPaths[0], h.DataDir), tbl.DataPaths[0])
+			require.True(t, strings.HasPrefix(data[0], h.DataDir), data[0])
 		}
 	}
 }

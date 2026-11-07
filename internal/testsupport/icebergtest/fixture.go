@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,6 +48,9 @@ type Fixture struct {
 	S3Endpoint string
 	// KeyID and Secret are MinIO's credentials.
 	KeyID, Secret string
+
+	mu sync.Mutex
+	db *sql.DB
 }
 
 func containerBin() string {
@@ -105,17 +109,36 @@ func minioArgs() []string {
 
 // Start runs MinIO and the REST catalog in one network namespace (a pod under
 // podman, MinIO's own namespace under docker, which has no pods) and waits
-// until both answer. It skips the test when no container runtime can run them.
+// until both answer. It skips the test only when the container runtime itself
+// is unusable (`<bin> info` fails); any later failure fails the test, after
+// dumping the containers' logs.
 func Start(t testing.TB) *Fixture {
 	t.Helper()
 	bin := containerBin()
+	if out, err := exec.Command(bin, "info").CombinedOutput(); err != nil {
+		t.Skipf("no usable container runtime (%s info): %v: %s", bin, err, out)
+	}
+	var ids []string
+	dumpLogs := func() {
+		for _, id := range ids {
+			out, _ := exec.Command(bin, "logs", id).CombinedOutput()
+			t.Logf("%s logs %s:\n%s", bin, id, out)
+		}
+	}
+	fail := func(format string, args ...any) {
+		t.Helper()
+		dumpLogs()
+		t.Fatalf(format, args...)
+	}
 	run := func(args ...string) string {
 		t.Helper()
 		out, err := exec.Command(bin, append([]string{"run", "-d", "--rm"}, args...)...).CombinedOutput()
 		if err != nil {
-			t.Skipf("container runtime cannot run the iceberg fixture: %v: %s", err, out)
+			fail("%s run failed: %v: %s", bin, err, out)
 		}
-		return lastLine(out)
+		id := lastLine(out)
+		ids = append(ids, id)
+		return id
 	}
 	var restHP, s3HP string
 	if out, err := exec.Command(bin, "pod", "create", "-p", "127.0.0.1::8181", "-p", "127.0.0.1::9000").CombinedOutput(); err == nil {
@@ -135,25 +158,41 @@ func Start(t testing.TB) *Fixture {
 		restHP, s3HP = hostPort(t, bin, mid, "8181"), hostPort(t, bin, mid, "9000")
 	}
 	f := &Fixture{RESTURI: "http://" + restHP, S3Endpoint: s3HP, KeyID: KeyID, Secret: Secret}
-	waitHTTP(t, "http://"+s3HP+"/minio/health/ready", "minio")
-	waitHTTP(t, f.RESTURI+"/v1/config", "iceberg rest catalog")
+	if err := waitHTTP("http://"+s3HP+"/minio/health/ready", "minio"); err != nil {
+		fail("%v", err)
+	}
+	if err := waitHTTP(f.RESTURI+"/v1/config", "iceberg rest catalog"); err != nil {
+		fail("%v", err)
+	}
 	return f
 }
 
-func waitHTTP(t testing.TB, url, what string) {
-	t.Helper()
+func waitHTTP(url, what string) error {
+	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(url) //nolint:gosec,noctx // loopback readiness probe
+		resp, err := client.Get(url) //nolint:noctx // loopback readiness probe
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				return
+				return nil
 			}
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatalf("%s never became ready", what)
+	return fmt.Errorf("%s never became ready", what)
+}
+
+// shared is one unhardened DuckDB per fixture for the object helpers
+// (ReadObject, PutObject, List, ObjectSize), so extensions load once.
+func (f *Fixture) shared(t testing.TB) *sql.DB {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.db == nil {
+		f.db = f.Open(t)
+	}
+	return f.db
 }
 
 // Open returns a throwaway, deliberately unhardened DuckDB (one connection, so

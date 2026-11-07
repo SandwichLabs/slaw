@@ -3,15 +3,9 @@
 package icebergtest
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
-	"encoding/json"
-	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -74,11 +68,6 @@ type Table struct {
 	ManifestList string
 }
 
-func (f *Fixture) duck(t testing.TB) *sql.DB {
-	t.Helper()
-	return f.Open(t)
-}
-
 func s3url(bucket, key string) string { return "s3://" + bucket + "/" + key }
 
 // ReadObject returns the object at an s3:// URL.
@@ -93,7 +82,7 @@ func (f *Fixture) ReadObject(t testing.TB, db *sql.DB, url string) []byte {
 // PutObject writes data to an s3:// URL through DuckDB (no extra image needed).
 func (f *Fixture) PutObject(t testing.TB, url string, data []byte) {
 	t.Helper()
-	db := f.duck(t)
+	db := f.shared(t)
 	local := filepath.Join(t.TempDir(), "obj")
 	require.NoError(t, os.WriteFile(local, data, 0o600))
 	Exec(t, db, "COPY (SELECT content FROM read_blob("+session.QuoteLiteral(local)+")) TO "+
@@ -181,125 +170,4 @@ func openPlain(t testing.TB) *sql.DB {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	return db
-}
-
-// paddedPath returns dir + name + ".parquet" with exactly n characters.
-func paddedPath(t testing.TB, dir string, idx, n int) string {
-	t.Helper()
-	const ext = ".parquet"
-	room := n - len(dir) - len(ext)
-	require.GreaterOrEqual(t, room, 1,
-		"data dir %q is too long: the manifest path is %d characters, so the dir may be at most %d (use a shorter temp dir)",
-		dir, n, n-len(ext)-1)
-	name := strings.Repeat("p", room)
-	if idx > 0 {
-		tag := string(rune('a' + idx%26))
-		name = tag + name[1:]
-	}
-	return dir + name + ext
-}
-
-// Craft registers ns.<name> as a copy of the seeded ns.orders whose manifest,
-// manifest list or location is hostile as h says. The seeded table is not
-// touched. name must be 6 characters (the length of "orders").
-func (f *Fixture) Craft(t testing.TB, name string, h Hostile) *Table {
-	t.Helper()
-	require.Len(t, name, len(craftSource), "crafted table names are 6 characters, like %q", craftSource)
-	db := f.duck(t)
-
-	var load struct {
-		MetadataLocation string `json:"metadata-location"`
-	}
-	require.NoError(t, json.Unmarshal(f.restDo(t, http.MethodGet, "/v1/namespaces/"+Namespace+"/tables/"+craftSource, nil), &load))
-	oldDir := "/" + Namespace + "/" + craftSource + "/"
-	newDir := "/" + Namespace + "/" + name + "/"
-	metaBytes := f.ReadObject(t, db, load.MetadataLocation)
-
-	// Data files first (their paths contain oldDir), then the directory.
-	dataFiles := f.List(t, db, s3url(Warehouse, Namespace+"/"+craftSource+"/data/*.parquet"))
-	require.NotEmpty(t, dataFiles, "seeded ns.orders has no data files; call Seed first")
-	tbl := &Table{Name: name}
-	rewrite := func(b []byte) []byte {
-		for i, orig := range dataFiles {
-			np := orig
-			if h.DataDir != "" {
-				np = paddedPath(t, h.DataDir, i, len(orig))
-			}
-			b = bytes.ReplaceAll(b, []byte(orig), []byte(np))
-		}
-		return bytes.ReplaceAll(b, []byte(oldDir), []byte(newDir))
-	}
-	for i, orig := range dataFiles {
-		np := orig
-		if h.DataDir != "" {
-			np = paddedPath(t, h.DataDir, i, len(orig))
-		}
-		tbl.DataPaths = append(tbl.DataPaths, np)
-		tbl.DataSizes = append(tbl.DataSizes, f.ObjectSize(t, db, orig))
-	}
-
-	var meta map[string]any
-	dec := json.NewDecoder(bytes.NewReader(bytes.ReplaceAll(metaBytes, []byte(oldDir), []byte(newDir))))
-	dec.UseNumber()
-	require.NoError(t, dec.Decode(&meta))
-
-	// Manifest lists and manifests, copied under the new table's metadata dir.
-	upload := func(oldURL string, edit func([]byte) []byte) string {
-		b := f.ReadObject(t, db, oldURL)
-		newURL := strings.Replace(oldURL, oldDir, newDir, 1)
-		f.PutObject(t, newURL, edit(b))
-		return newURL
-	}
-	snaps, _ := meta["snapshots"].([]any)
-	for _, s := range snaps {
-		snap, ok := s.(map[string]any)
-		require.True(t, ok)
-		mlNew, ok := snap["manifest-list"].(string)
-		require.True(t, ok)
-		ml := strings.Replace(mlNew, newDir, oldDir, 1)
-		mlBytes := f.ReadObject(t, db, ml)
-		// A manifest list names its manifests: copy each, then the list itself.
-		for _, m := range f.List(t, db, s3url(Warehouse, Namespace+"/"+craftSource+"/metadata/*.avro")) {
-			if bytes.Contains(mlBytes, []byte(m)) {
-				upload(m, rewrite)
-			}
-		}
-		newList := bytes.ReplaceAll(mlBytes, []byte(oldDir), []byte(newDir))
-		listURL := strings.Replace(ml, oldDir, newDir, 1)
-		if h.ManifestListDir != "" {
-			local := filepath.Join(h.ManifestListDir, path.Base(ml))
-			require.NoError(t, os.MkdirAll(h.ManifestListDir, 0o755))
-			require.NoError(t, os.WriteFile(local, newList, 0o600))
-			listURL = local
-		} else {
-			f.PutObject(t, listURL, newList)
-		}
-		snap["manifest-list"] = listURL
-		tbl.ManifestList = listURL
-	}
-
-	if h.Location != "" {
-		meta["location"] = h.Location
-	}
-	var uuid [16]byte
-	_, _ = rand.Read(uuid[:])
-	u := hex.EncodeToString(uuid[:])
-	meta["table-uuid"] = u[:8] + "-" + u[8:12] + "-" + u[12:16] + "-" + u[16:20] + "-" + u[20:]
-	if h.NameMapping {
-		props, _ := meta["properties"].(map[string]any)
-		if props == nil {
-			props = map[string]any{}
-		}
-		props["schema.name-mapping.default"] = NameMapping
-		meta["properties"] = props
-	}
-	out, err := json.Marshal(meta)
-	require.NoError(t, err)
-	tbl.MetadataLocation = strings.Replace(load.MetadataLocation, oldDir, newDir, 1)
-	f.PutObject(t, tbl.MetadataLocation, out)
-
-	f.restDo(t, http.MethodPost, "/v1/namespaces/"+Namespace+"/register", map[string]string{
-		"name": name, "metadata-location": tbl.MetadataLocation,
-	})
-	return tbl
 }
