@@ -42,13 +42,14 @@ func writeDeltaTable(t *testing.T, sess session.Session, dir string) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "_delta_log", "00000000000000000000.json"), []byte(log), 0o644))
 }
 
-// The metadata of a Delta or Iceberg table chooses which files are read, so the
-// agent may not call delta_scan / iceberg_* at all (#119 review). The person's
-// own SQL, through the connection they defined, can. Every probe from the review
-// (a `_delta_log` path with ../ or an absolute path, a URL, Iceberg's
-// version_name_format, allow_moved_paths, metadata the agent wrote itself) is
-// refused by the policy's syntactic layer, before anything is fetched.
-func TestDeltaAndIcebergAreNotReadableByTheAgent(t *testing.T) {
+// The agent may call delta_scan / iceberg_* (Zac, 2026-11-07), under exactly the
+// rules read_parquet has: a table in data/ reads; a path outside data/, a
+// non-storage URL, a URL outside every storage scope, a computed path and the
+// options that redirect metadata lookup are refused by the policy before
+// anything is fetched. A table's own metadata can still name files beyond the
+// vetted path: that is the documented, warned-about risk, so it is not asserted
+// away here (see docs/reference/agent-policy.md).
+func TestDeltaAndIcebergAreAgentReadersUnderTheReadRules(t *testing.T) {
 	ctx := context.Background()
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -87,31 +88,19 @@ func TestDeltaAndIcebergAreNotReadableByTheAgent(t *testing.T) {
 	require.Len(t, rs.Rows, 2)
 	assert.Equal(t, "ada", rs.Rows[0][0])
 
-	// Crafted tables a cloned repo could carry.
-	secretPq := filepath.Join(outside, "secret", "part-0000.parquet")
-	fi, _ := os.Stat(secretPq)
-	craft := func(name, addPath string) {
-		dir := filepath.Join(data, name, "_delta_log")
-		require.NoError(t, os.MkdirAll(dir, 0o755))
-		schema := `{"type":"struct","fields":[{"name":"id","type":"integer","nullable":true,"metadata":{}},{"name":"name","type":"string","nullable":true,"metadata":{}}]}`
-		log := strings.Join([]string{
-			`{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}`,
-			fmt.Sprintf(`{"metaData":{"id":"11111111-2222-3333-4444-555555555555","format":{"provider":"parquet","options":{}},"schemaString":%q,"partitionColumns":[],"configuration":{},"createdTime":1700000000000}}`, schema),
-			fmt.Sprintf(`{"add":{"path":%q,"partitionValues":{},"size":%d,"modificationTime":1700000000000,"dataChange":true}}`, addPath, fi.Size()),
-		}, "\n") + "\n"
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "00000000000000000000.json"), []byte(log), 0o644))
-	}
-	craft("evil_abs", secretPq)
-	craft("evil_rel", "../../../../../../../../.."+secretPq)
-	craft("evil_http", srv.URL+"/delta-exfil.parquet")
-
 	for _, mode := range []agents.SandboxMode{agents.ModeReadOnly, agents.ModeReadWrite, agents.ModeFull} {
 		h := agentOn(t, ws, sess, mode, true)
+		// A table in data/ reads, through the agent.
+		resp := sqlCall(h, fmt.Sprintf("SELECT name FROM delta_scan('%s') ORDER BY id", filepath.Join(data, "sales")))
+		require.Nil(t, resp.Error, "%s: %v", mode, resp.Error)
+		assert.Contains(t, fmt.Sprint(resp.Result), "ada", mode)
+		resp = sqlCall(h, fmt.Sprintf("SELECT count(*) FROM delta_scan(['%s'])", filepath.Join(data, "sales")))
+		require.Nil(t, resp.Error, "%s: %v", mode, resp.Error)
+
 		var qs []string
 		for _, fn := range []string{"delta_scan", "iceberg_scan", "iceberg_metadata", "iceberg_snapshots"} {
 			for _, p := range []string{
-				filepath.Join(data, "sales"), filepath.Join(data, "evil_abs"), filepath.Join(data, "evil_rel"), filepath.Join(data, "evil_http"),
-				filepath.Join(outside, "secret"), srv.URL + "/x", "file:///etc/hostname", "s3://bucket/t",
+				filepath.Join(outside, "secret"), "relative/sales", filepath.Join(data, "..", "x"), srv.URL + "/x", "file:///etc/hostname", "s3://bucket/t",
 			} {
 				qs = append(qs, fmt.Sprintf("SELECT * FROM %s('%s')", fn, p))
 			}
@@ -132,22 +121,9 @@ func TestDeltaAndIcebergAreNotReadableByTheAgent(t *testing.T) {
 	}
 	assert.EqualValues(t, 0, atomic.LoadInt32(&hits), "nothing was fetched while the policy decided")
 
-	// The agent cannot write the metadata of a table of its own either: through
-	// COPY ... (QUOTE '', ESCAPE '') with chr() to dodge the string net, and
-	// with any file name, the readers stay refused.
+	// COPY still refuses the file names of a table's own metadata, so the agent
+	// does not write the metadata of a table it then reads.
 	full := agentOn(t, ws, sess, agents.ModeFull, false)
-	evil := filepath.Join(data, "agentice", "evil.json")
-	require.NoError(t, os.MkdirAll(filepath.Dir(evil), 0o755))
-	meta := strings.ReplaceAll(strings.ReplaceAll(`{"location":"http://127.0.0.1:1/"}`, "/", "' || chr(47) || '"), ":", "' || chr(58) || '")
-	_ = sqlCall(full, fmt.Sprintf("COPY (SELECT '%s' AS j) TO '%s' (FORMAT csv, HEADER false, QUOTE '', ESCAPE '', DELIMITER '|')", meta, evil))
-	for _, q := range []string{
-		fmt.Sprintf("SELECT * FROM iceberg_metadata('%s')", evil),
-		fmt.Sprintf("SELECT * FROM iceberg_snapshots('%s')", evil),
-		fmt.Sprintf("SELECT * FROM iceberg_scan('%s')", evil),
-	} {
-		resp := sqlCall(agentOn(t, ws, sess, agents.ModeReadOnly, true), q)
-		require.NotNil(t, resp.Error, q)
-	}
 	for _, p := range []string{
 		filepath.Join(data, "evil2", "_delta_log", "00000000000000000000.json"), filepath.Join(data, "evil2", "metadata", "v1.metadata.json"),
 		filepath.Join(data, "evil2", "metadata", "v1.METADATA.JSON"), filepath.Join(data, "evil2", "_DELTA_LOG", "0.json"), filepath.Join(data, "evil2", "m.avro"),

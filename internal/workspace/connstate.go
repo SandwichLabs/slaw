@@ -28,6 +28,9 @@ type ConnectionState struct {
 	// the plain-language classification when there is one, else the redacted
 	// message.
 	Detail string
+	// Warning is set on a shared definition of a metadata-driven type
+	// (MetadataWarning); it is not an error and never changes Status.
+	Warning string
 	// LockedByPID is the process holding a locked-by connection's file (0 when
 	// unknown).
 	LockedByPID int
@@ -72,6 +75,7 @@ func ConnectionStates(ws Workspace, sess session.Session, issues []SessionIssue)
 			ReadOnly: c.IsReadOnly(), EffectiveReadOnly: c.IsReadOnly(),
 			Status: session.StatusNotConnected, Remote: connections.IsRemote(c.Type),
 		}
+		st.Warning = sharedWarning(c)
 		if i, ok := infos[c.Name]; ok {
 			st.Remote, st.Catalogless = i.Remote, i.Catalogless
 		}
@@ -105,6 +109,12 @@ func ConnectionStates(ws Workspace, sess session.Session, issues []SessionIssue)
 		out = append(out, st)
 	}
 	return out
+}
+
+// sharedWarning is the warning a shared definition of a metadata-driven type
+// carries ("" for everything else).
+func sharedWarning(c Connection) string {
+	return SharedMetadataWarning(c.ConnectionDef, c.Scope)
 }
 
 // Locked reports whether the connection is held by another process.

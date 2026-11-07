@@ -27,9 +27,6 @@ func validateDefFor(scope Scope, d ConnectionDef) error {
 	if err := d.ValidateIn(scope); err != nil {
 		return err
 	}
-	if scope == ScopeShared && OwnScopeOnlyType(d.Type) {
-		return fmt.Errorf("connection %q: %s", d.Name, OwnScopeOnlyMessage(d.Type))
-	}
 	for _, v := range d.stringValues() {
 		if strings.Contains(v, "${") {
 			return nil

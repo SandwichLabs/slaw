@@ -383,12 +383,11 @@ func marshalYAML(v any, header string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// OwnScopeOnlyType reports a connection type that trusts the metadata of what it
-// points at: a DuckLake catalog, an Iceberg or Delta table decides which files
-// are read (a crafted one can name any file on this computer). Only the person
-// adds one, in their own scopes ("This computer" or all their workspaces); the
-// shared slaw.yaml, which a pull can change, and a bundle import refuse them.
-func OwnScopeOnlyType(typ string) bool {
+// MetadataDrivenType reports a connection type whose table or catalog metadata
+// decides which files DuckDB reads: a DuckLake catalog, an Iceberg or Delta
+// table. Any scope may define one; the type only earns a warning where a shared
+// or imported definition is shown (MetadataWarning).
+func MetadataDrivenType(typ string) bool {
 	switch typ {
 	case "ducklake", "iceberg", "delta":
 		return true
@@ -396,10 +395,23 @@ func OwnScopeOnlyType(typ string) bool {
 	return false
 }
 
-// OwnScopeOnlyMessage is the refusal shown for such a type. It is checked when a
-// definition is added or moved (validateDefFor) and again when the workspace is
-// opened (ResolveConnection), where a definition that arrived in slaw.yaml by a
-// pull is skipped with an issue instead of making the whole file unreadable.
-func OwnScopeOnlyMessage(typ string) string {
-	return typ + " connections trust the metadata of what they point at (it decides which files are read), so only you can add them: choose \"This computer\" or \"All my workspaces\", not the team's slaw.yaml"
+// MetadataWarning is the plain-words warning shown where a definition of a
+// metadata-driven type is shared, imported or inspected. It is not a refusal.
+const MetadataWarning = "Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover."
+
+// WritableSharedWarning is added to MetadataWarning for a shared definition that
+// is not read-only.
+const WritableSharedWarning = "This shared definition is writable."
+
+// SharedMetadataWarning is the warning for d defined in scope: "" unless the
+// scope is shared and the type is metadata-driven, MetadataWarning otherwise,
+// plus WritableSharedWarning when the definition is writable.
+func SharedMetadataWarning(d ConnectionDef, scope Scope) string {
+	if scope != ScopeShared || !MetadataDrivenType(d.Type) {
+		return ""
+	}
+	if !d.IsReadOnly() {
+		return MetadataWarning + " " + WritableSharedWarning
+	}
+	return MetadataWarning
 }

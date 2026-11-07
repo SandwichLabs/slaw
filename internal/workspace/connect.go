@@ -102,6 +102,13 @@ func toConnDef(d ConnectionDef, readOnly bool, path string) connections.Def {
 	}
 }
 
+// ValidateType runs the connection type's own validation (required fields,
+// closed option set, no field the type does not use) on d as written. It reads
+// no environment, so a definition with ${ENV} references is the caller's to skip.
+func (d ConnectionDef) ValidateType() error {
+	return connections.Validate(toConnDef(d, d.IsReadOnly(), d.Path))
+}
+
 // signInGuard withholds an env: or aws-sso: credential unless this person's
 // sign-in was chosen for exactly this definition. A keychain or prompt
 // credential carries its own fingerprint (checked by the resolver); these two
@@ -145,11 +152,6 @@ func (r ResolvedConnection) Binding() secrets.Binding { return BindingFor(r.Reso
 
 // ResolveConnection expands and path-resolves one connection of ws.
 func ResolveConnection(ws Workspace, c Connection, lookup LookupFunc) (ResolvedConnection, error) {
-	if c.Scope == ScopeShared && OwnScopeOnlyType(c.Type) {
-		// Skipped, not fatal: the rest of the workspace opens and this one is
-		// reported as an issue.
-		return ResolvedConnection{}, fmt.Errorf("connection %q: %s. This one is in the team's slaw.yaml: ask the person who committed it to move it to their own connections", c.Name, OwnScopeOnlyMessage(c.Type))
-	}
 	resolved, err := c.ConnectionDef.Resolve(lookup, c.Scope)
 	if err != nil {
 		return ResolvedConnection{}, err

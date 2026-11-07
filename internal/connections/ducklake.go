@@ -261,10 +261,8 @@ func (t ducklakeType) AttachSQL(s session.Spec) ([]string, error) {
 //   - any data file, delete file, scheduled-for-deletion file, table or schema
 //     path is absolute, has a ".." segment, a scheme or a backslash.
 //
-// This is why DuckLake connections are only accepted from your own scopes (see
-// workspace.ConnectionDef.ValidateIn, which accepts DuckLake only from your own
-// scopes): even so, a catalog you were handed is
-// checked before it is read.
+// A catalog you were handed (a shared slaw.yaml, a bundle) is therefore checked
+// before it is read, and a shared definition carries workspace.MetadataWarning.
 func (t ducklakeType) PostAttach(ctx context.Context, q session.Querier, s session.Spec) error {
 	meta := session.QuoteIdent("__ducklake_metadata_"+s.Name) + ".main."
 	var stored sql.NullString

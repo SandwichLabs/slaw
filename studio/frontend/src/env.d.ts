@@ -269,6 +269,8 @@ interface ConnectionInfo {
   status: string
   detail?: string
   lockedByPid?: number
+  // A shared lake or table definition: table metadata decides which files DuckDB reads.
+  warning?: string
   remote: boolean
   catalogless?: boolean
   signIn?: string

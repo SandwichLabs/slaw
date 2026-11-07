@@ -261,9 +261,9 @@ func TestNotebookPackageSharesTheImportPath(t *testing.T) {
 	require.Error(t, err)
 }
 
-// Sources that trust their own metadata (DuckLake, Iceberg, Delta) are never
-// imported from a bundle: only the person adds them, in their own scopes.
-func TestBundleDropsMetadataTrustingConnections(t *testing.T) {
+// Sources that trust their own metadata (DuckLake, Iceberg, Delta) are imported
+// from a bundle like any other connection, with the plain warning.
+func TestBundleWarnsOnMetadataDrivenConnections(t *testing.T) {
 	ws, _ := newWS(t)
 	pkg := connBundle(t, `version: 1
 connections:
@@ -288,20 +288,27 @@ connections:
     database: prod
 `)
 	w := strings.Join(pkg.Warnings, "|")
-	for _, n := range []string{"tbl", "ice", "lake", "smuggle"} {
-		assert.Contains(t, w, fmt.Sprintf("connection %q was not imported", n))
+	for _, n := range []string{"tbl", "ice", "lake"} {
+		assert.Contains(t, w, fmt.Sprintf("connection %q: %s", n, workspace.MetadataWarning))
+		assert.NotContains(t, w, fmt.Sprintf("connection %q was not imported", n))
 	}
-	assert.Contains(t, w, "only you can add them")
+	assert.NotContains(t, w, fmt.Sprintf("connection %q: %s", "pg", workspace.MetadataWarning))
 	pv := pkg.Preview(context.Background(), ws)
-	require.Len(t, pv.Connections, 1)
-	assert.Equal(t, "pg", pv.Connections[0].Name)
-	_, err := pkg.Import(context.Background(), ws, ImportOptions{IncludeConnections: []string{"tbl"}})
-	require.Error(t, err, "a dropped connection cannot be asked for by name")
-	_, err = pkg.Import(context.Background(), ws, ImportOptions{IncludeConnections: []string{"pg"}})
-	require.NoError(t, err)
-	for _, c := range ws.Connections() {
-		assert.NotContains(t, []string{"tbl", "ice", "lake", "smuggle"}, c.Name)
+	names := []string{}
+	for _, c := range pv.Connections {
+		names = append(names, c.Name)
 	}
+	assert.ElementsMatch(t, []string{"tbl", "ice", "lake", "pg"}, names, "a smuggled scope is not importable")
+	assert.Contains(t, w, `connection "smuggle" was not imported`)
+	assert.Contains(t, w, "not a setting of this type")
+	_, err := pkg.Import(context.Background(), ws, ImportOptions{IncludeConnections: []string{"tbl", "lake", "pg"}})
+	require.NoError(t, err)
+	got := map[string]bool{}
+	for _, c := range ws.Connections() {
+		got[c.Name] = true
+	}
+	assert.True(t, got["tbl"] && got["lake"] && got["pg"])
+	assert.False(t, got["ice"], "only what was asked for is imported")
 }
 
 func TestDeclaredWorkFactorReadsArmoredAndIgnoresMalformedHeaders(t *testing.T) {
