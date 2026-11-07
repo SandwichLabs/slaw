@@ -244,6 +244,12 @@ func (a *analyzer) tableFunc(fn map[string]any, st *walkState) {
 					st.fail("%s", r)
 					return
 				}
+				if lakeReaders[lname] {
+					if r := lakeReaderPathRefusal(s); r != "" {
+						st.fail("%s", r)
+						return
+					}
+				}
 				a.vetted[s] = true
 			}
 		}

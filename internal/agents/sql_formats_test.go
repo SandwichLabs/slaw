@@ -83,6 +83,54 @@ func TestPolicy_TableFormatReadersFollowTheReaderRules(t *testing.T) {
 	assert.EqualValues(t, 0, atomic.LoadInt32(&hits), "the policy refused them before anything was fetched")
 }
 
+// The rule: the agent never reads table metadata it could have written. The
+// lake readers refuse a local path to a file (DuckDB reads any .json as Iceberg
+// metadata and follows the URLs in it while binding); only a table folder or a
+// storage URL is accepted.
+func TestPolicy_LakeReadersRefuseMetadataFiles(t *testing.T) {
+	for _, mode := range []SandboxMode{ModeReadOnly, ModeReadWrite, ModeFull} {
+		fx := newPolicyFixture(t, mode, withExtraConns(
+			session.ConnectionInfo{Name: "lake", Type: "s3", Kind: session.StatusOK, Remote: true, Catalogless: true, Scope: "s3://lake/raw/"},
+		))
+		for _, fn := range []string{"iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "delta_scan"} {
+			for _, f := range []string{"e.json", "e.JSON", "v1.metadata.json", "e.avro", "x.json.gz", "metadata", "version-hint.text", "sub/e.json", "e.json.zst"} {
+				v := fx.classify(fx.expand("SELECT * FROM " + fn + "('%DATA%/" + f + "')"))
+				assert.Equal(t, sqlClassOther, v.Class, "%s %s %s", mode, fn, f)
+				assert.Contains(t, v.Reason, "table", "%s %s %s: %s", mode, fn, f, v.Reason)
+			}
+			// A storage URL is not a local file the agent could have written.
+			v := fx.classify(fx.expand("SELECT * FROM " + fn + "('s3://lake/raw/t/metadata/v1.metadata.json')"))
+			if v.Class != sqlClassRead {
+				assert.Contains(t, v.Reason, "could not validate query", "%s %s: %s", mode, fn, v.Reason)
+			}
+		}
+	}
+}
+
+// The exact attack: write a JSON file that names a URL, then point the reader at
+// it. The write passes the COPY rules (it is not a metadata name), so the
+// reader half must refuse it, before EXPLAIN binds anything.
+func TestPolicy_WriteThenReadMetadataAttackIsRefused(t *testing.T) {
+	fx := newPolicyFixture(t, ModeFull)
+	attack := "COPY (SELECT 'http:' || chr(47) || chr(47) || '127.0.0.1:1' || chr(47) || 'leak' AS \"manifest-list\") TO '%DATA%/e.json' (FORMAT json)"
+	_ = fx.classify(fx.expand(attack)) // may pass or not; the read below must not
+	for _, fn := range []string{"iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "delta_scan"} {
+		v := fx.classify(fx.expand("SELECT * FROM " + fn + "('%DATA%/e.json')"))
+		assert.Equal(t, sqlClassOther, v.Class, fn)
+		assert.Contains(t, v.Reason, "never from a metadata file", fn)
+	}
+	// And the half that writes: no folder or name that reads as table metadata.
+	for _, q := range []string{
+		"COPY (SELECT 1) TO '%DATA%/e.metadata.json' (FORMAT json)",
+		"COPY (SELECT 1) TO '%DATA%/t/metadata/e.json' (FORMAT json)",
+		"COPY (SELECT 1) TO '%DATA%/t/_delta_log/0.json' (FORMAT json)",
+		"EXPORT DATABASE '%DATA%/exp'",
+	} {
+		v := fx.classify(fx.expand(q))
+		assert.Equal(t, sqlClassOther, v.Class, q)
+	}
+}
+
 // The reader-count rule of the plan check counts them like read_parquet: a plan
 // may hold no more readers than the statement wrote out and vetted.
 func TestPolicy_TableFormatReadersCountAsReaders(t *testing.T) {
@@ -253,7 +301,15 @@ func TestPolicy_NeverWritesTableMetadata(t *testing.T) {
 		{"iceberg manifest", "COPY (SELECT 1) TO '%DATA%/tbl/metadata/snap-1.avro'", sqlClassOther, "metadata"},
 		{"iceberg version hint", "COPY (SELECT 1) TO '%DATA%/tbl/metadata/version-hint.text'", sqlClassOther, "metadata"},
 		{"delta log upper case", "COPY (SELECT 1) TO '%DATA%/tbl/_DELTA_LOG/0.json'", sqlClassOther, "metadata"},
+		{"a metadata folder anywhere", "COPY (SELECT 1) TO '%DATA%/t/metadata/x.json'", sqlClassOther, "metadata"},
+		{"a metadata folder in a deep path", "COPY (SELECT 1) TO '%DATA%/a/b/Metadata/c/x.json'", sqlClassOther, "metadata"},
+		{"a delta log folder deep", "COPY (SELECT 1) TO '%DATA%/a/b/_delta_log/x.json'", sqlClassOther, "metadata"},
+		{"any metadata.json suffix", "COPY (SELECT 1) TO '%DATA%/v2.metadata.json'", sqlClassOther, "metadata"},
+		{"a file name pattern could name a manifest", "COPY (SELECT 1) TO '%DATA%/out' (FORMAT JSON, PARTITION_BY (a), FILENAME_PATTERN 'v1.metadata')", sqlClassOther, "filename_pattern"},
+		{"a file extension could name a version hint", "COPY (SELECT 1 AS a) TO '%DATA%/out' (FORMAT CSV, PARTITION_BY (a), FILENAME_PATTERN 'version-hint', FILE_EXTENSION 'text')", sqlClassOther, "filename_pattern"},
+		{"a file extension alone", "COPY (SELECT 1 AS a) TO '%DATA%/out2' (FORMAT CSV, FILE_EXTENSION 'json')", sqlClassOther, "file_extension"},
 		{"an ordinary export still works", "COPY (SELECT 1) TO '%DATA%/out.csv'", sqlClassDDL, ""},
+		{"a partitioned export still works", "COPY (SELECT 1 AS a, 2 AS b) TO '%DATA%/part' (FORMAT PARQUET, PARTITION_BY (a))", sqlClassDDL, ""},
 		{"a folder called metadata still works", "COPY (SELECT 1) TO '%DATA%/sub/out.parquet' (FORMAT PARQUET)", sqlClassDDL, ""},
 	})
 }

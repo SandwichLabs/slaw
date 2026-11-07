@@ -16,16 +16,14 @@ const allOptions: { value: ConnScope; title: string; desc: string; file: string 
   { value: 'user', title: 'All my workspaces', desc: 'Only you, in every workspace on this computer.', file: '~/.config/slaw/' },
 ]
 
-const options = computed(() => allOptions)
-
 function onKey(e: KeyboardEvent) {
-  const i = options.value.findIndex((o) => o.value === props.modelValue)
+  const i = allOptions.findIndex((o) => o.value === props.modelValue)
   let n = i
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') n = (i + 1) % options.value.length
-  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') n = (i + options.value.length - 1) % options.value.length
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') n = (i + 1) % allOptions.length
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') n = (i + allOptions.length - 1) % allOptions.length
   else return
   e.preventDefault()
-  emit('update:modelValue', options.value[n].value)
+  emit('update:modelValue', allOptions[n].value)
   ;(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role=radio]')[n]?.focus()
 }
 </script>
@@ -34,7 +32,7 @@ function onKey(e: KeyboardEvent) {
   <div>
     <div class="opt-row" role="radiogroup" aria-label="Who can use this connection" @keydown="onKey">
       <button
-        v-for="o in options"
+        v-for="o in allOptions"
         :key="o.value"
         type="button"
         role="radio"

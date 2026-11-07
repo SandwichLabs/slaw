@@ -397,4 +397,21 @@ func MetadataDrivenType(typ string) bool {
 
 // MetadataWarning is the plain-words warning shown where a definition of a
 // metadata-driven type is shared, imported or inspected. It is not a refusal.
-const MetadataWarning = "Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files or other storage your connections cover."
+const MetadataWarning = "Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover."
+
+// WritableSharedWarning is added to MetadataWarning for a shared definition that
+// is not read-only.
+const WritableSharedWarning = "This shared definition is writable."
+
+// SharedMetadataWarning is the warning for d defined in scope: "" unless the
+// scope is shared and the type is metadata-driven, MetadataWarning otherwise,
+// plus WritableSharedWarning when the definition is writable.
+func SharedMetadataWarning(d ConnectionDef, scope Scope) string {
+	if scope != ScopeShared || !MetadataDrivenType(d.Type) {
+		return ""
+	}
+	if !d.IsReadOnly() {
+		return MetadataWarning + " " + WritableSharedWarning
+	}
+	return MetadataWarning
+}

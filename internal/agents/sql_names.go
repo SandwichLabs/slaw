@@ -32,6 +32,10 @@ func nameSet(names ...string) map[string]bool {
 // (version_name_format, allow_moved_paths, ...) are still not on the safe list.
 var readerFuncs = nameSet(queries.ReaderFunctions...)
 
+// lakeReaders are the table-format readers: they follow the reader rules and a
+// further one (lakeReaderPathRefusal).
+var lakeReaders = nameSet("iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "delta_scan")
+
 // safeReaderParams are the only named options a reader may be given. They
 // change how a file is parsed, never which other file or URL is read or where
 // anything is written. Everything else (version_name_format, allow_moved_paths,

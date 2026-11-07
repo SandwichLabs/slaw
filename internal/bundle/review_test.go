@@ -298,7 +298,9 @@ connections:
 	for _, c := range pv.Connections {
 		names = append(names, c.Name)
 	}
-	assert.ElementsMatch(t, []string{"tbl", "ice", "lake", "pg", "smuggle"}, names)
+	assert.ElementsMatch(t, []string{"tbl", "ice", "lake", "pg"}, names, "a smuggled scope is not importable")
+	assert.Contains(t, w, `connection "smuggle" was not imported`)
+	assert.Contains(t, w, "not a setting of this type")
 	_, err := pkg.Import(context.Background(), ws, ImportOptions{IncludeConnections: []string{"tbl", "lake", "pg"}})
 	require.NoError(t, err)
 	got := map[string]bool{}

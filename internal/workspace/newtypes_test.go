@@ -52,6 +52,16 @@ func TestMetadataDrivenTypesMayBeShared(t *testing.T) {
 	assert.Equal(t, 3, warned)
 }
 
+func TestSharedMetadataWarningNamesWritable(t *testing.T) {
+	ro := ConnectionDef{Name: "ice", Type: "iceberg", Path: "data/ice"}
+	rw := ConnectionDef{Name: "lake", Type: "ducklake", Path: "data/l.ducklake", ReadOnly: Bool(false)}
+	assert.Equal(t, MetadataWarning, SharedMetadataWarning(ro, ScopeShared))
+	assert.Equal(t, MetadataWarning+" "+WritableSharedWarning, SharedMetadataWarning(rw, ScopeShared))
+	assert.Empty(t, SharedMetadataWarning(rw, ScopeLocal))
+	assert.Empty(t, SharedMetadataWarning(ConnectionDef{Name: "pg", Type: "postgres"}, ScopeShared))
+	assert.Contains(t, MetadataWarning, "fetch any web or local-network URL")
+}
+
 func TestDuckLakePathsResolveInsideTheWorkspace(t *testing.T) {
 	ws, _, _ := memWorkspace(t, nil)
 	require.NoError(t, ws.AddConnection(ScopeLocal, ConnectionDef{Name: "lake", Type: "ducklake", Path: "data/lake.ducklake", Options: map[string]string{"data_path": "data/lake_files"}}))

@@ -127,10 +127,10 @@ slaw conn add sales --type delta --path data/sales
 slaw conn add events_ice --type iceberg --path s3://acme-lake/warehouse/events/
 ```
 
-- Any scope. In a committed `slaw.yaml` or a bundle it carries a warning: Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files or other storage your connections cover.
+- Any scope. In a committed `slaw.yaml` or a bundle it carries a warning: Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover.
 - A `path` or `data_path` that is a URL must sit inside the scope of a storage connection (S3, GCS, R2 or Azure), which supplies the credential. In Studio the form shows whether one covers the URL and **Set up storage** opens a prefilled storage form; on the CLI `slaw conn add` prints the `slaw conn add ...` command that is missing. **Test** tries the storage connection first and says which of the two failed.
 - The extension (`ducklake`, `iceberg`, `delta`) downloads once when you press Install or pass `--install`.
-- The agent cannot read Iceberg or Delta tables yet; you can in the SQL editor.
+- The agent can read Iceberg and Delta tables with `iceberg_scan`, `iceberg_metadata`, `iceberg_snapshots` and `delta_scan`, under the same path and URL rules as `read_parquet` (a table folder inside `data/` or a storage URL inside a ready storage connection's scope; never a metadata file). See [agent-policy](reference/agent-policy.md).
 
 ## Sharing connections with a team
 

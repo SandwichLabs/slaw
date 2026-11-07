@@ -284,6 +284,14 @@ func (a *analyzer) copyStmt(toks []lexTok, args []any) *sqlVerdict {
 	if len(rest) > 0 && !(rest[0].IsParen("(") && matchParen(rest, 0) == len(rest)-1) {
 		return deny("COPY ... TO takes only a parenthesised option list after the path")
 	}
+	// The names of the files COPY writes are the agent's choice only through
+	// these; with them it could name a file *.metadata.json or version-hint.text
+	// inside a folder it is allowed to write.
+	for _, t := range rest {
+		if t.IsWord("FILENAME_PATTERN") || t.IsWord("FILE_EXTENSION") {
+			return deny("COPY ... TO: FILENAME_PATTERN and FILE_EXTENSION are not allowed (the agent does not choose the names of the files COPY writes)")
+		}
+	}
 	if toks[1].Kind != lkParen {
 		parts, _, ok := parseName(toks, 1)
 		if !ok {

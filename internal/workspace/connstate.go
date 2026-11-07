@@ -114,10 +114,7 @@ func ConnectionStates(ws Workspace, sess session.Session, issues []SessionIssue)
 // sharedWarning is the warning a shared definition of a metadata-driven type
 // carries ("" for everything else).
 func sharedWarning(c Connection) string {
-	if c.Scope == ScopeShared && MetadataDrivenType(c.Type) {
-		return MetadataWarning
-	}
-	return ""
+	return SharedMetadataWarning(c.ConnectionDef, c.Scope)
 }
 
 // Locked reports whether the connection is held by another process.

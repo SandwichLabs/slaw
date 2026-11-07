@@ -102,6 +102,13 @@ func toConnDef(d ConnectionDef, readOnly bool, path string) connections.Def {
 	}
 }
 
+// ValidateType runs the connection type's own validation (required fields,
+// closed option set, no field the type does not use) on d as written. It reads
+// no environment, so a definition with ${ENV} references is the caller's to skip.
+func (d ConnectionDef) ValidateType() error {
+	return connections.Validate(toConnDef(d, d.IsReadOnly(), d.Path))
+}
+
 // signInGuard withholds an env: or aws-sso: credential unless this person's
 // sign-in was chosen for exactly this definition. A keychain or prompt
 // credential carries its own fingerprint (checked by the resolver); these two

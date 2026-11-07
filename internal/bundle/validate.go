@@ -185,6 +185,9 @@ func SanitizeConnection(d workspace.ConnectionDef) (workspace.ConnectionDef, []s
 			d.Options = nil
 		}
 	}
+	if err := d.ValidateType(); err != nil {
+		return workspace.ConnectionDef{}, notes, err
+	}
 	if workspace.MetadataDrivenType(d.Type) {
 		notes = append(notes, fmt.Sprintf("connection %q: %s", d.Name, workspace.MetadataWarning))
 	}

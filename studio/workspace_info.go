@@ -24,6 +24,9 @@ type ConnectionInfo struct {
 	Status      string   `json:"status"`
 	Detail      string   `json:"detail,omitempty"`
 	LockedByPID int      `json:"lockedByPid,omitempty"`
+	// Warning is set on a shared lake or table definition (workspace.MetadataWarning):
+	// the rail shows it so a lake that arrived with a pull is seen before it is opened.
+	Warning string `json:"warning,omitempty"`
 	// Remote connections dial on first use (Postgres, MotherDuck, storage);
 	// Catalogless ones (s3, gcs, r2) have no tables, only a scoped secret.
 	Remote      bool `json:"remote"`
@@ -198,7 +201,7 @@ func (a *App) connectionInfosLocked() []ConnectionInfo {
 	for _, st := range states {
 		ci := ConnectionInfo{
 			Name: st.Name, Type: st.Type, Scope: string(st.Scope), ReadOnly: st.EffectiveReadOnly,
-			Default: st.Default, Status: string(st.Status), Detail: st.Detail, LockedByPID: st.LockedByPID,
+			Default: st.Default, Status: string(st.Status), Detail: st.Detail, LockedByPID: st.LockedByPID, Warning: st.Warning,
 			SignIn: st.SignIn, SignInNeeded: st.SignInHint, Remote: st.Remote, Catalogless: st.Catalogless, Extension: st.Extension,
 		}
 		for _, sc := range st.Shadows {

@@ -168,8 +168,8 @@ func runConnAdd(cmd *cobra.Command, args []string) error {
 	}
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "Added %s connection %s (scope: %s).\n", typ, def.Name, scope)
-	if scope == workspace.ScopeShared && workspace.MetadataDrivenType(typ) {
-		fmt.Fprintf(out, "Warning: %s\n", workspace.MetadataWarning)
+	if w := workspace.SharedMetadataWarning(def, scope); w != "" {
+		fmt.Fprintf(out, "Warning: %s\n", w)
 	}
 	printStorageHint(out, ws, def, scope)
 	if !connections.NeedsCredential(typ) {
@@ -634,8 +634,8 @@ func runConnMove(cmd *cobra.Command, args []string) error {
 		return errors.New(cliRedactor.Redact(err.Error()))
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Moved %s from %s to %s.\n", args[0], from, to)
-	if to == workspace.ScopeShared && workspace.MetadataDrivenType(c.Type) {
-		fmt.Fprintf(cmd.OutOrStdout(), "Warning: %s\n", workspace.MetadataWarning)
+	if w := workspace.SharedMetadataWarning(c.ConnectionDef, to); w != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Warning: %s\n", w)
 	}
 	return nil
 }

@@ -138,6 +138,18 @@ describe('ConnectionRail', () => {
     expect(w.find('[data-name="bad"] [data-testid="conn-detail"]').text()).toContain('Can’t connect: password was rejected.')
   })
 
+  it('a shared lake shows its warning in the rail, without opening the editor', async () => {
+    setup([
+      LOCAL,
+      conn({ name: 'lake', type: 'ducklake', scope: 'shared', warning: 'Table metadata in this lake decides which files DuckDB reads.' }),
+      conn({ name: 'mine', type: 'delta', scope: 'local' }),
+    ], { 'local//': { kind: 'tables', schema: 'main', flattened: true, nodes: [] } })
+    const w = mountRail()
+    await flushPromises()
+    expect(w.find('[data-name="lake"] [data-testid="conn-warning"]').text()).toContain('decides which files DuckDB reads')
+    expect(w.find('[data-name="mine"] [data-testid="conn-warning"]').exists()).toBe(false)
+  })
+
   it('an AWS SSO connection that needs a sign-in says so and its Sign in runs the sign-in, not the key prompt (#131)', async () => {
     const app = setup([LOCAL, conn({ name: 'store', type: 's3', status: 'needs-credentials', catalogless: true, signIn: 'aws-sso:dev', signInNeeded: { kind: 'aws-sso', subject: 'dev', reason: 'expired' } })],
       { 'local//': { kind: 'tables', schema: 'main', flattened: true, nodes: [] } })
