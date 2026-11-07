@@ -161,7 +161,7 @@ func TestURLParametersAreOffWhenHTTPFSLoadsAfterTheLock(t *testing.T) {
 	assert.True(t, LazyStorage(s))
 	var allowed string
 	require.NoError(t, s.DB().QueryRow("SELECT CAST(value AS VARCHAR) FROM duckdb_settings() WHERE name = 'allowed_configs'").Scan(&allowed))
-	assert.Equal(t, "["+urlParamSetting+"]", allowed)
+	assert.True(t, sameSet("[http_retries, http_timeout, "+urlParamSetting+"]", allowed), allowed)
 
 	copyHTTPFS(t, src, dst)
 	require.NoError(t, EnsureExtension(context.Background(), s.DB(), "httpfs", "test"))

@@ -32,6 +32,8 @@ type config struct {
 	// lazyStorage is set by applyHardening when httpfs was not loaded at open:
 	// the lock then lets the URL-parameter setting through (allowed_configs).
 	lazyStorage bool
+	// httpTimeout and httpRetries override the httpfs limits (0 = the defaults).
+	httpTimeout, httpRetries int
 
 	// initCatalog, once set by SetDefaultCatalog, is USEd on every new pooled
 	// connection of an owned hub so the pool's default catalog follows it.
@@ -44,6 +46,28 @@ func newConfig(opts []Option) *config {
 		o(c)
 	}
 	return c
+}
+
+func (c *config) httpLimits() httpLimits {
+	l := defaultHTTPLimits()
+	if c == nil {
+		return l
+	}
+	l.atMost = false // this session knows its own limits: set them exactly
+	if c.httpTimeout > 0 {
+		l.timeout = c.httpTimeout
+	}
+	if c.httpRetries > 0 {
+		l.retries = c.httpRetries
+	}
+	return l
+}
+
+// WithHTTPLimits sets httpfs's http_timeout (seconds) and http_retries for a
+// session whose httpfs is loaded while it opens (0 keeps a default). A session
+// whose httpfs loads later uses the defaults.
+func WithHTTPLimits(timeoutSeconds, retries int) Option {
+	return func(c *config) { c.httpTimeout, c.httpRetries = timeoutSeconds, retries }
 }
 
 // withListing marks the private listing session (see ObjectLister).

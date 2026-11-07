@@ -90,7 +90,8 @@ func checkPiece(conn *sql.Conn, text string) error {
 func namesGuardedSetting(text string) bool {
 	t := strings.ToLower(text)
 	t = strings.NewReplacer(`"`, "", `'`, "", "\\", "", "`", "").Replace(t)
-	return strings.Contains(t, "s3_url_compatibility_mode") || strings.Contains(t, "s3_url_compat")
+	return strings.Contains(t, "s3_url_compatibility_mode") || strings.Contains(t, "s3_url_compat") ||
+		strings.Contains(t, "http_timeout") || strings.Contains(t, "http_retries")
 }
 
 // refuseIfNamed is the refusal for a statement that names the guarded setting.

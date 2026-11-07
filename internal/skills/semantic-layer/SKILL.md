@@ -164,3 +164,24 @@ write one with `write_watch` over a saved query or a metric that exists
 (`list_watches` and `get_watch` read them; send the `rev` to replace one). You
 cannot check a watch: the person checks it in Studio's Watches view or with
 `slaw watch check`, so tell them it is written and not yet checked.
+
+## 7. Tables in Iceberg catalogs
+
+An `iceberg_catalog` connection is an ordinary catalog (`list_connections`
+shows it with `catalog: true`). Name its tables with **three parts**,
+`catalog.namespace.table` (`cat.ns.orders`), so a saved query and the metric
+over it run wherever the connection is the default or not. A connection
+pinned to a catalog may set `default_namespace`, which lets a saved query on
+that connection say `orders` (without it, `orders` resolves only when the
+catalog has a single namespace). Joins with other connections' tables are fine: it is one
+DuckDB.
+
+When you check data, read a column (`SELECT max(id) ...`, `sum(amount)`),
+not `count(*)`: DuckDB answers `count(*)` from the table's metadata without
+opening a data file, so it proves nothing about the data. A metric over a
+catalog runs only on the connection its saved query names, and `run_query`
+has no connection argument, so save the query on the default connection with
+three-part names if you want to call `metric()` from `run_query`. Listing a
+catalog (`introspect_schema`) shows table names only; `describe_table` on one
+table fetches its columns, and a slow catalog fails after the hub's HTTP
+timeout instead of hanging.

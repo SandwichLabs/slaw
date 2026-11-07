@@ -324,6 +324,8 @@ What it cannot do: read the person's credentials (DuckDB signs with the matching
 
 ### L5. Agent policy and tools over Iceberg (main hub after the direction change)
 
+L5 built: PR <to be filled>
+
 > **Superseded in part (direction change):** there is no lake reader; the agent's reads run on the main hub (PR #347 allows the `ICEBERG_SCAN` plan operator over attached catalogs and the Iceberg write operators under the usual gates; PR #349 allows `iceberg_scan`/`delta_scan` under the `read_parquet` rules). What remains for L5: `http_timeout`, MCP end to end, the skill note and #20.
 
 - **Plan operators:** add `ICEBERG_SCAN` (S0 item 4) to the read matcher. There is no write operator, because a read-only attach refuses writes before planning. Teach the reader-count rule that an attached Iceberg scan is a catalog scan, not a file reader.
