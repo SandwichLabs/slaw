@@ -92,7 +92,7 @@ The semantic layer lives in the workspace as files, the data stays in the lake, 
 - **G1, G2 belong together.** Attaching a catalog turns Iceberg tables into ordinary catalog references (`s3t.ns.orders`), which `semantics/` can name in three parts.
   - Security questions from #20: answered by the S0 spike in the impl plan; the decision is below.
   - Decided (direction change, 2026-11-07): agent reads of a catalog run on the main hub like any catalog, joins included, with the metadata-directed read risk stated as a warning; vended credentials are off. The earlier confined-reader design (impl plan D1–D3) is superseded.
-- **G3 connection templates.** A committed file may *name* a lake (type, expected endpoint, connection name) without being trusted. Each person adopts it into their own scope. This keeps the own-scope rule and makes `table:` names in `semantics/` portable. The own-scope rule is gone (direction change 2026-11-07); templates now only make names portable.
+- **G3 connection templates.** A committed file may *name* a lake (type, expected endpoint, connection name) without being trusted. Each person adopts it, which makes `table:` names in `semantics/` portable. The own-scope rule is gone (direction change 2026-11-07); templates now only make names portable.
 - **G4 + G5 are the cheapest accuracy wins.**
   - `describe_table` returns catalog comments merged with the covering entity's column notes, PII flags and metrics, each labelled with its source.
   - A capped *semantics index* (metric names and titles) goes into the system prompt and MCP `instructions`.
