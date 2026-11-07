@@ -4,6 +4,16 @@ Status: **plan, not built (2026-11-07).** It implements [`semantic-layer-lakehou
 
 The goal: the Slaw assistant and Claude Code over MCP answer business questions through `semantics/` and `metric()`, on tables kept in **S3 Tables**, **Iceberg REST catalogs** and **DuckLake**, with the same policy and limits as today.
 
+> **Direction change (Zac, 2026-11-07, after S0 and L1–L2 review): open, not confined.** "Let's not restrict iceberg catalogs. This tool should be able to run the same queries DuckDB itself can. Just warn where necessary." This supersedes D1–D3 and the parts of L2–L5 built on them:
+> - **The agent reads `iceberg_catalog` on the main hub like any other catalog**, joins included. There is no lake reader and no `trust_writers` toggle; L4 as written below is **dropped**. L5 becomes "agent policy and tools over Iceberg on the main hub".
+> - **Vended credentials are off.** Every attach writes `ACCESS_DELEGATION_MODE 'none'`, so data reads go through the person's storage connections, and the deny secrets keep failing uncovered buckets closed. S0 item 8's scope takeover therefore cannot happen. A vend-only catalog needs a storage connection that covers its data.
+> - **Read-only by default stays.** `read_only: false` is allowed, and writes follow the usual rules: the tier, a writable connection, and approval, which is always asked for a non-local connection.
+> - **No own-scope rule** for `ducklake`, `iceberg`, `delta` or `iceberg_catalog`. A committed `slaw.yaml` or a bundle may define them; credentials still never go in either.
+> - **The agent may call `iceberg_scan`, `iceberg_metadata`, `iceberg_snapshots` and `delta_scan`**, under the same path and URL rules as `read_parquet`.
+> - **Warn where necessary.** The S0 item 6 risks remain by design. A table's writers can point its metadata at local files (rows come back with name mapping), loopback or local-network http, Azure, or any S3 object a storage connection covers. Those risks are stated in plain words on the connection form, in Test, in `connections.md` and in `agent-policy.md`. `http_timeout` is still set on the hub (S0 item 11).
+>
+> The S0 findings below are kept as the record of what the warning describes.
+
 ## Facts this plan rests on (checked against the code, 2026-11-07)
 
 - **Iceberg today is a table, not a catalog.** `tableSourceType` (`internal/connections/tablesource.go`) attaches nothing; the person reads with `iceberg_scan('<path>')`. `iceberg_scan`, `iceberg_metadata`, `iceberg_snapshots` and `delta_scan` are refused for the agent in every tier by the syntactic layer, before any `EXPLAIN` (`docs/reference/agent-policy.md`, #20).
@@ -241,7 +251,7 @@ connections:
 - With the storage connection signed out, the catalog shows "needs the `aws_lake` connection: it needs credentials".
 - The agent's `run_query` on `cat.ns.orders` is refused, with a message naming L5's rule ("this catalog's tables are not readable by the agent yet") and not a raw error.
 
-### L4. The lake reader: a confined DuckDB for the agent's Iceberg reads (#20)
+### L4. The lake reader: a confined DuckDB for the agent's Iceberg reads (#20) — dropped (direction change above)
 
 This is the security heart of phase 1. Per D1, every catalog is confined by default, and a person can mark one catalog `trust_writers: true` to opt it out.
 
@@ -450,6 +460,8 @@ Each package is one PR, in this order: N4 → N6 → N5 → N3. N6 before N5 bec
 - **Glue (`endpoint_type: glue`):** dropped from phase 1 (D4). It reuses `s3_tables`' SigV4 signing; add it with an env-gated real-account test when someone needs it.
 
 ## Decisions (2026-11-07)
+
+**D1, D2 and D3 are superseded by the direction change at the top of this plan.** D4–D7 stand.
 
 Settled by Zac. Where a decision differs from the plan's recommendation, the recommendation is noted.
 
