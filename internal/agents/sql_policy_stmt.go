@@ -620,7 +620,7 @@ func (a *analyzer) vetReaderTokens(fn string, toks []lexTok, open int) string {
 		}
 	}
 	for _, p := range paths {
-		if r := a.paths.vetRead(p); r != "" {
+		if r := a.paths.vetReaderPath(strings.ToLower(fn), p); r != "" {
 			return r
 		}
 		a.vetted[p] = true

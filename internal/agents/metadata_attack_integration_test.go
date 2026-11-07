@@ -73,4 +73,43 @@ func TestAgentCannotWriteThenReadTableMetadata(t *testing.T) {
 		}
 	}
 	assert.Empty(t, srv.Requests(), "nothing may fetch a URL the agent wrote")
+
+	// Every statement shape that holds a reader call is held to the same rule,
+	// in the full tier: a reader inside CTAS, INSERT ... SELECT, COPY (query),
+	// UPDATE and DELETE subqueries, macro and view bodies.
+	full := agentOn(t, ws, sess, agents.ModeFull, false)
+	e := filepath.Join(data, "e.json")
+	require.FileExists(t, e)
+	for _, q := range []string{
+		"CREATE TABLE zz(id INTEGER, k VARCHAR)",
+		"CREATE TABLE zz2(id INTEGER, k VARCHAR)",
+	} {
+		_ = sqlCall(full, q)
+	}
+	for _, fn := range []string{"iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "delta_scan"} {
+		src := fmt.Sprintf("SELECT * FROM %s('%s')", fn, e)
+		sub := fmt.Sprintf("(SELECT count(*) FROM %s('%s'))", fn, e)
+		for _, q := range []string{
+			"CREATE TABLE zz_ctas AS " + src,
+			"CREATE TEMP TABLE zz_tmp AS " + src,
+			"INSERT INTO zz " + src,
+			"INSERT INTO zz SELECT 1, 'a' WHERE " + sub + " > 0",
+			fmt.Sprintf("COPY (%s) TO '%s'", src, filepath.Join(data, "out.csv")),
+			"UPDATE zz SET id = " + sub,
+			"UPDATE zz SET id = 1 WHERE id IN (SELECT 1 FROM " + fn + "('" + e + "'))",
+			"DELETE FROM zz WHERE id IN (SELECT 1 FROM " + fn + "('" + e + "'))",
+			"DELETE FROM zz WHERE id = " + sub,
+			"CREATE VIEW zz_v AS " + src,
+			"CREATE MACRO zz_m() AS TABLE " + src,
+			"CREATE MACRO zz_s() AS " + sub,
+			"WITH c AS (" + src + ") SELECT * FROM c",
+			"SELECT * FROM zz WHERE id IN (SELECT 1 FROM " + fn + "('" + e + "'))",
+			"EXPLAIN " + src,
+		} {
+			resp := sqlCall(full, q)
+			require.NotNil(t, resp.Error, q)
+			assert.Equal(t, agents.ErrPermission, resp.Error.Code, q+": "+resp.Error.Message)
+		}
+	}
+	assert.Empty(t, srv.Requests(), "no statement shape may fetch a URL the agent wrote")
 }

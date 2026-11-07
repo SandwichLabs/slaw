@@ -115,6 +115,20 @@ func realPath(p string) (string, error) {
 	return filepath.Join(rd, base), nil
 }
 
+// vetReaderPath is the one check of a path given to reader function fn (lower
+// case), whichever statement the call is in: the read rules, plus for the
+// Iceberg and Delta readers the table-folder rule. Every place that vets a
+// reader call's path goes through here, so no statement kind can miss it.
+func (p *pathPolicy) vetReaderPath(fn, lit string) string {
+	if r := p.vetRead(lit); r != "" {
+		return r
+	}
+	if lakeReaders[fn] {
+		return lakeReaderPathRefusal(lit)
+	}
+	return ""
+}
+
 const dataDirHint = "the agent can only read files inside the workspace's data/ folder, by absolute path"
 
 // vetRead returns "" when lit may be read, else the reason it may not.

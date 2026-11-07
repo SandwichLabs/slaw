@@ -240,15 +240,9 @@ func (a *analyzer) tableFunc(fn map[string]any, st *walkState) {
 				return
 			}
 			for _, s := range paths {
-				if r := a.paths.vetRead(s); r != "" {
+				if r := a.paths.vetReaderPath(lname, s); r != "" {
 					st.fail("%s", r)
 					return
-				}
-				if lakeReaders[lname] {
-					if r := lakeReaderPathRefusal(s); r != "" {
-						st.fail("%s", r)
-						return
-					}
 				}
 				a.vetted[s] = true
 			}

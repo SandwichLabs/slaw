@@ -119,6 +119,24 @@ func TestPolicy_WriteThenReadMetadataAttackIsRefused(t *testing.T) {
 		assert.Equal(t, sqlClassOther, v.Class, fn)
 		assert.Contains(t, v.Reason, "never from a metadata file", fn)
 	}
+	// Every statement shape that holds a reader call (token-screened statements
+	// as well as the select walk) refuses it.
+	for _, fn := range []string{"iceberg_scan", "delta_scan"} {
+		src := "SELECT * FROM " + fn + "('%DATA%/e.json')"
+		for _, q := range []string{
+			"CREATE TABLE zz AS " + src,
+			"INSERT INTO t " + src,
+			"COPY (" + src + ") TO '%DATA%/o.csv'",
+			"UPDATE t SET a = (SELECT count(*) FROM " + fn + "('%DATA%/e.json'))",
+			"DELETE FROM t WHERE a IN (SELECT 1 FROM " + fn + "('%DATA%/e.json'))",
+			"CREATE VIEW vv AS " + src,
+			"CREATE MACRO mm() AS TABLE " + src,
+		} {
+			v := fx.classify(fx.expand(q))
+			assert.Equal(t, sqlClassOther, v.Class, q)
+			assert.NotContains(t, v.Reason, "could not validate query", q+": the refusal must come from the policy, not from binding")
+		}
+	}
 	// And the half that writes: no folder or name that reads as table metadata.
 	for _, q := range []string{
 		"COPY (SELECT 1) TO '%DATA%/e.metadata.json' (FORMAT json)",
