@@ -11,6 +11,7 @@ The goal: the Slaw assistant and Claude Code over MCP answer business questions 
 > - **No own-scope rule** for `ducklake`, `iceberg`, `delta` or `iceberg_catalog`. A committed `slaw.yaml` or a bundle may define them; credentials still never go in either.
 > - **The agent may call `iceberg_scan`, `iceberg_metadata`, `iceberg_snapshots` and `delta_scan`**, under the same path and URL rules as `read_parquet`.
 > - **Warn where necessary.** The S0 item 6 risks remain by design. A table's writers can point its metadata at local files (rows come back with name mapping), loopback or local-network http, Azure, or any S3 object a storage connection covers. Those risks are stated in plain words on the connection form, in Test, in `connections.md` and in `agent-policy.md`. `http_timeout` is still set on the hub (S0 item 11).
+> - **Never metadata the agent could have written:** the lake readers refuse local metadata files, and COPY refuses `metadata`/`_delta_log` paths (#349). `iceberg_catalog` gains a `default_namespace` option for unqualified names (#347).
 >
 > The S0 findings below are kept as the record of what the warning describes.
 
@@ -49,8 +50,8 @@ Sequential, each a Sonnet implementer in a worktree, Opus adversarial review, li
 | L1 | Test fixture: REST catalog + MinIO under `integration` | 1 | S0 |
 | L2 | The `iceberg_catalog` type: definition, attach, secrets, extensions, Test | 2 | L1 |
 | L3 | Workspace resolution, dependency, Studio form, CLI, docs (person reads end to end) | 3 | L2 |
-| L4 | The lake reader: confined DuckDB for agent reads of `iceberg_catalog` (#20), and the per-catalog `trust_writers` toggle | 4 | L3 |
-| L5 | Agent policy and tools over the lake reader; `metric()` over Iceberg over MCP | 5 | L4 |
+| L4 | ~~The lake reader and `trust_writers`~~ dropped (direction change); `http_timeout` hardening moves to L5 | 4 | L3 |
+| L5 | Agent policy and tools over Iceberg on the main hub; `metric()` over Iceberg over MCP; `http_timeout` | 5 | L3 |
 | L6 | End to end on real AWS: S3 Tables via SSO; Rodney QA; release notes | 6 | L5 |
 
 No release after L3 (D7): phase 1 ships once both halves are ready, people's reads (L1-L3) and the agent's (L4-L5), after L6. Between L3 and L5 on `main`, the agent refuses `iceberg_catalog` references with a clear message.
@@ -148,6 +149,8 @@ Run on duckdb-go v2.10506.0 / DuckDB 1.5.6, against the `apache/iceberg-rest-fix
 **Acceptance:** `go test -tags integration ./internal/testsupport/icebergtest/...` brings the fixture up and down, and seeds and crafts tables; it skips cleanly without Docker.
 
 ### L2. The `iceberg_catalog` type (`internal/connections`)
+
+> **Superseded in part (direction change):** attach with `ACCESS_DELEGATION_MODE 'none'`, no `trust_writers`, `read_only` a default not a force, no own-scope rule, and an optional `default_namespace`. As built: PR #347.
 
 **Definition.** A new file `internal/connections/icebergcatalog.go`, registered in `model.go`'s `init`:
 
@@ -319,7 +322,9 @@ What it cannot do: read the person's credentials (DuckDB signs with the matching
 - Rotation: a replaced storage secret keeps the reader working (aws-sso rotation test with `ssofake`).
 - A hung catalog endpoint (the fixture proxy stalls) is cut by `http_timeout`, not by the context (S0 item 11), and `CancelRun` on a watch check returns when that fires.
 
-### L5. Agent policy and tools over the lake reader
+### L5. Agent policy and tools over Iceberg (main hub after the direction change)
+
+> **Superseded in part (direction change):** there is no lake reader; the agent's reads run on the main hub (PR #347 allows `ICEBERG_SCAN` and the Iceberg write operators under the usual gates). What remains for L5: `http_timeout`, MCP end to end, the skill note and #20.
 
 - **Plan operators:** add `ICEBERG_SCAN` (S0 item 4) to the read matcher. There is no write operator, because a read-only attach refuses writes before planning. Teach the reader-count rule that an attached Iceberg scan is a catalog scan, not a file reader.
 - **Tools:**
@@ -423,7 +428,7 @@ Each package is one PR, in this order: N4 → N6 → N5 → N3. N6 before N5 bec
 1. **`slaw.yaml`:** a `connection_templates:` block with `{name, type, expect: {endpoint_type?, warehouse?, uri?, path?, catalog?}, description}`.
    - It is validated by the type's own `Validate` on a synthesised spec, with every credential field refused.
    - It never attaches and is never resolved into a `Spec`.
-   - It is allowed for own-scope-only types: that is its purpose.
+   - ~~It is allowed for own-scope-only types: that is its purpose.~~ There is no own-scope rule any more (direction change): templates now only make connection names portable.
    - It is decoded in `internal/workspace/config.go`.
 2. **Adopt:**
    - Studio shows a banner, "This workspace expects an Iceberg catalog called `s3t`", with **Set up**, which opens the form pre-filled with the name and `expect` fields fixed and saves to the person's own scope.
@@ -480,7 +485,7 @@ Checked against the code while writing this plan; both drafts are edited to matc
 - **`describe_table`** returns `{name, type, not_null, pk}` per column, with `pk` always false (`handler_introspect.go:70-78`). It does not return position; `position` is only in `session.ColumnInfo` (`types.go:144-149`). (N4, G4.)
 - **MCP clients do get a semantics hint.** The MCP instructions say to `read_skill semantic-layer` before working on `semantics/` (`internal/hub/instructions.go:85`). What is missing is any content from `semantics/`. The in-app prompt mentions `propose_definition` (`runner.go:176`) and names the Meaning tools (`prompt.go:34`). (N6.)
 - **N7's premise:** any saved query may call `metric()`. What is refused is a **metric's own** saved query calling `metric()` (`expand.go:425`).
-- **N1's credential:** no new credential kind is needed (`secrets.Credential` has `Token`, `KeyID`, `Secret`). The AWS kinds should sign with the storage connection rather than hold credentials of their own. DuckDB's default is to **accept** vended credentials; D2 keeps them on, and the mode is written out explicitly on every attach so an upstream default change cannot move it (`'vended_credentials'`, or `'none'` for an untrusted catalog on the main hub, L4 note).
+- **N1's credential:** no new credential kind is needed (`secrets.Credential` has `Token`, `KeyID`, `Secret`). The AWS kinds should sign with the storage connection rather than hold credentials of their own. DuckDB's default is to **accept** vended credentials; D2 keeps them on, and the mode is written out explicitly on every attach so an upstream default change cannot move it (`'vended_credentials'`, or `'none'` for an untrusted catalog on the main hub, L4 note). *(Superseded, direction change 2026-11-07: vended credentials are off, and every attach writes `'none'`.)*
 - **Review corrections (2026-11-07):** `sql_catalog.go` is the catalog snapshot, not the reference classifier (that is `sql_classify.go` + `sql_policy_select.go`); the plan JSON carries no database name for a scan; `hardening.go` never sets `enable_external_access` (it is on by default); the deny secrets' scopes are bare schemes; `handler_query.go`'s empty-result note is at line 353; the MCP instructions text is `instructions.go:77-88`.
 - **#242's title** is "Epic E2: VibeBench"; the draft comment called it SlawBench.
 - **`list_definitions`' 500** is the store's per-kind file cap (`semantics.MaxFilesPerKind`), not a tool parameter.
