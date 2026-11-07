@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -171,12 +172,19 @@ func (d ConnectionDef) Validate() error {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	lower := map[string]string{}
 	for _, k := range keys {
 		v := d.Options[k]
 		if !optionKeyRE.MatchString(k) {
 			return fmt.Errorf("connection %q: invalid option name %q", d.Name, k)
 		}
-		if secretKeyRE.MatchString(k) {
+		// The session lowercases option names, so two that differ only in case
+		// would be one option with a value that depends on map order.
+		if other, dup := lower[strings.ToLower(k)]; dup {
+			return fmt.Errorf("connection %q: options %q and %q are the same option written twice (names are not case-sensitive)", d.Name, other, k)
+		}
+		lower[strings.ToLower(k)] = k
+		if secretKeyRE.MatchString(k) && !nonSecretOption(d.Type, k) {
 			return fmt.Errorf("connection %q: option %q looks like a credential; credentials never go in config, use the keychain", d.Name, k)
 		}
 		if strings.ContainsAny(v, "\x00\n\r") || looksLikeEmbeddedSecret(v) {
@@ -184,6 +192,18 @@ func (d ConnectionDef) Validate() error {
 		}
 	}
 	return nil
+}
+
+// nonSecretOptions are option names a type defines that the credential-name
+// pattern would otherwise refuse ("auth" is a setting, never a secret: the
+// secrets of these types are per person, in the keychain). The list is per type
+// and exact, so the pattern keeps guarding every other option.
+var nonSecretOptions = map[string][]string{
+	"iceberg_catalog": {"auth", "oauth2_server_uri"},
+}
+
+func nonSecretOption(typ, key string) bool {
+	return slices.Contains(nonSecretOptions[typ], strings.ToLower(key))
 }
 
 func looksLikeEmbeddedSecret(v string) bool {
@@ -384,13 +404,14 @@ func marshalYAML(v any, header string) ([]byte, error) {
 }
 
 // OwnScopeOnlyType reports a connection type that trusts the metadata of what it
-// points at: a DuckLake catalog, an Iceberg or Delta table decides which files
+// points at: a DuckLake catalog, an Iceberg or Delta table, or an Iceberg
+// catalog (whose tables' writers decide which files are read) decides which files
 // are read (a crafted one can name any file on this computer). Only the person
 // adds one, in their own scopes ("This computer" or all their workspaces); the
 // shared slaw.yaml, which a pull can change, and a bundle import refuse them.
 func OwnScopeOnlyType(typ string) bool {
 	switch typ {
-	case "ducklake", "iceberg", "delta":
+	case "ducklake", "iceberg", "delta", "iceberg_catalog":
 		return true
 	}
 	return false

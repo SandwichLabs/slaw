@@ -327,7 +327,7 @@ func attachesOnlyInWorkspace(def Def) bool {
 // signsWithStorage is true for an S3 Tables catalog: it signs with the secret of
 // the s3 connection its option storage names.
 func signsWithStorage(def Def) bool {
-	return def.Type == "iceberg_catalog" && def.Options["endpoint_type"] == endpointS3Tables
+	return def.Type == "iceberg_catalog" && opt(def.Spec(), "endpoint_type") == endpointS3Tables
 }
 
 // --- MotherDuck subprocess ---

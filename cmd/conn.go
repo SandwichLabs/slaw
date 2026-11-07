@@ -169,10 +169,10 @@ func runConnAdd(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "Added %s connection %s (scope: %s).\n", typ, def.Name, scope)
 	printStorageHint(out, ws, def, scope)
-	if !connections.NeedsCredential(typ) {
+	c, _ := findConn(ws, def.Name)
+	if !c.ConnectionDef.NeedsCredential() {
 		return nil
 	}
-	c, _ := findConn(ws, def.Name)
 	method := c.SignIn
 	if kind, _, _ := secrets.ParseMethod(method); kind == "env" {
 		names := secrets.EnvVarNames(strings.TrimPrefix(method, "env:"))
@@ -276,7 +276,7 @@ func runConnList(cmd *cobra.Command, _ []string) error {
 		for _, s := range st.Shadows {
 			r.Shadows = append(r.Shadows, string(s))
 		}
-		if connections.NeedsCredential(st.Type) {
+		if c, ok := findConn(o.WS, st.Name); (ok && c.ConnectionDef.NeedsCredential()) || (!ok && connections.NeedsCredential(st.Type)) {
 			r.SignIn = st.SignIn
 		}
 		if info, err := connections.TypeInfoFor(st.Type); err == nil && r.ReadOnly && !info.Capabilities.ReadOnlyAttach && info.Capabilities.Catalog {

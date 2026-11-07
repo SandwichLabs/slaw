@@ -244,6 +244,20 @@ func NeedsCredential(typ string) bool {
 	return false
 }
 
+// NeedsCredentialFor reports whether this connection signs in: the definition
+// decides for a type whose answer depends on it (an iceberg_catalog signs in
+// only for a REST catalog with a token or OAuth2 client credentials). Use it
+// wherever a definition is at hand; NeedsCredential(type) is the type-wide
+// "can need one" answer for forms and listings.
+func NeedsCredentialFor(d Def) bool {
+	if t, ok := registry[d.Type]; ok {
+		if ct, ok := t.(session.CredentialedType); ok {
+			return ct.NeedsCredential(d.Spec())
+		}
+	}
+	return false
+}
+
 // IsRemote reports whether a type dials on first use (lazy attach).
 func IsRemote(typ string) bool {
 	t, ok := registry[typ]

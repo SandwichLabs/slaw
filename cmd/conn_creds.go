@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SandwichLabs/slaw/internal/connections"
 	"github.com/SandwichLabs/slaw/internal/secrets"
 	"github.com/SandwichLabs/slaw/internal/workspace"
 	"github.com/spf13/cobra"
@@ -48,7 +47,7 @@ func runConnCredsSet(cmd *cobra.Command, args []string) error {
 	if !ok {
 		return fmt.Errorf("unknown connection %q", args[0])
 	}
-	if !connections.NeedsCredential(c.Type) {
+	if !c.ConnectionDef.NeedsCredential() {
 		return fmt.Errorf("%s connections have no credentials", c.Type)
 	}
 	if m := flagString(cmd, "sign-in"); m != "" {

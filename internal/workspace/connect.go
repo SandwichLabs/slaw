@@ -102,6 +102,13 @@ func toConnDef(d ConnectionDef, readOnly bool, path string) connections.Def {
 	}
 }
 
+// NeedsCredential reports whether a connection with this definition signs in
+// (the definition-aware answer: an s3_tables or auth-none iceberg_catalog does
+// not, whatever its type).
+func (d ConnectionDef) NeedsCredential() bool {
+	return connections.NeedsCredentialFor(toConnDef(d, true, d.Path))
+}
+
 // signInGuard withholds an env: or aws-sso: credential unless this person's
 // sign-in was chosen for exactly this definition. A keychain or prompt
 // credential carries its own fingerprint (checked by the resolver); these two

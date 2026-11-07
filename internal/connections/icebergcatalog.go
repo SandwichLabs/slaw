@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -35,7 +36,9 @@ import (
 // that covers save, open and a hand edit) and trust_writers says whether the
 // agent may read the catalog on the main hub (true) or only on the confined lake
 // reader (false, the default; internal/connections only records the choice, the
-// routing is the agent's). Only the person can add one (workspace.OwnScopeOnlyType).
+// routing is the agent's). Only the person can add one (workspace.OwnScopeOnlyType:
+// a committed slaw.yaml and a bundle refuse it), and until the lake reader (L4)
+// exists the agent's policy refuses every statement that names one.
 //
 // The ACCESS_DELEGATION_MODE is always written out, never left to DuckDB's
 // default, and comes from where the catalog attaches, not from what the person
@@ -156,8 +159,8 @@ func (t icebergCatalogType) Validate(s session.Spec) error {
 	if !s.ReadOnly {
 		return fmt.Errorf("iceberg_catalog connection %q must be read-only (set read_only: true): Slaw does not write to an Iceberg catalog", s.Name)
 	}
-	if err := oneOf("trust_writers", opt(s, "trust_writers"), "true", "false"); err != nil {
-		return err
+	if tw := opt(s, "trust_writers"); tw != "" && tw != "true" && tw != "false" {
+		return fmt.Errorf("iceberg_catalog connection %q: trust_writers %q is not true or false", s.Name, tw)
 	}
 	kind := opt(s, "endpoint_type")
 	switch kind {
@@ -250,6 +253,11 @@ func validateCatalogURI(s session.Spec, field, v string) error {
 	u, err := url.Parse(v)
 	if err != nil || u.Host == "" || u.Hostname() == "" {
 		return bad("is not a URL (want https://host/path)")
+	}
+	if p := u.Port(); p != "" {
+		if n, perr := strconv.Atoi(p); perr != nil || n < 1 || n > 65535 {
+			return bad("has a port outside 1-65535")
+		}
 	}
 	if u.User != nil {
 		return bad("must not carry a user name or password")

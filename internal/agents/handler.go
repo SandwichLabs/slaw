@@ -250,10 +250,16 @@ func (h *Handler) connectReferenced(ctx context.Context, catalog, sqlText string
 		return nil
 	}
 	if s := h.access.Session(); s != nil {
-		return s.ConnectReferenced(ctx, catalog, sqlText)
+		return s.ConnectReferencedExcept(ctx, catalog, sqlText, agentNeverConnects...)
 	}
 	return nil
 }
+
+// agentNeverConnects are the connection types an agent statement never dials:
+// until the lake reader routes them (L4), the policy refuses their tables, and
+// refusing must not first attach the catalog (a catalog request, and a vended
+// secret) on the main hub.
+var agentNeverConnects = []string{"iceberg_catalog"}
 
 // withConnectError prefers the connection's own failure over a policy denial
 // that it caused.

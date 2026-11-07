@@ -453,6 +453,8 @@ func (a *analyzer) refDenied(catalogName, schema string, st *walkState) bool {
 		st.fail("%s", duckLakeInternalMsg)
 	case a.mysqlServerSchema(catalogName, schema):
 		st.fail("%s", mysqlSystemSchemaMsg)
+	case a.icebergCatalogRef(catalogName, schema):
+		st.fail("%s", icebergCatalogMsg)
 	default:
 		return false
 	}
@@ -521,6 +523,39 @@ const duckLakeInternalMsg = "a DuckLake's internal metadata catalog is not avail
 
 func isDuckLakeInternal(name string) bool {
 	return strings.HasPrefix(strings.ToLower(name), duckLakeInternalPrefix)
+}
+
+// icebergCatalogMsg is the refusal for a reference into an iceberg_catalog
+// connection. A catalog's tables are written by whoever can commit to them and
+// their metadata names the files that are read, so the agent reads them only on
+// a confined reader (L4/L5); until that routing exists this is a plain refusal.
+const icebergCatalogMsg = "this catalog's tables are not readable by the agent yet (an Iceberg catalog's metadata decides which files are read, so it needs the confined reader that is not built); read it in your own SQL"
+
+// icebergCatalogRef reports whether a reference lands in an iceberg_catalog:
+// a qualified name, a schema that is really a catalog name, or (unqualified)
+// the default catalog. It goes by the registered connection type and by
+// DuckDB's own engine type for the database, so a hand-attached catalog is
+// held to it too.
+func (a *analyzer) icebergCatalogRef(catalogName, schema string) bool {
+	dbs := a.databases()
+	cat := catalogName
+	if cat == "" && schema != "" {
+		_, attached := dbs[strings.ToLower(schema)]
+		if c, registered := a.env.conn(schema); attached || registered {
+			cat = schema // catalog.table: the table is in that catalog's default schema
+			if registered && c.Type == "iceberg_catalog" {
+				return true // registered but never attached: still named
+			}
+		}
+	}
+	if cat == "" {
+		cat = a.defaultCatalog()
+	}
+	if c, ok := a.env.conn(cat); ok && c.Type == "iceberg_catalog" {
+		return true
+	}
+	r, ok := dbs[strings.ToLower(cat)]
+	return ok && r.typ == "iceberg"
 }
 
 // mysqlSystemSchemas are the MySQL server's own databases. A MySQL catalog lists

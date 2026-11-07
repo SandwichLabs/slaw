@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -470,6 +471,11 @@ func (h *hub) RefreshCatalog(ctx context.Context, name string) error {
 
 // ConnectReferenced implements Session.
 func (h *hub) ConnectReferenced(ctx context.Context, catalog, sqlText string) error {
+	return h.ConnectReferencedExcept(ctx, catalog, sqlText)
+}
+
+// ConnectReferencedExcept implements Session.
+func (h *hub) ConnectReferencedExcept(ctx context.Context, catalog, sqlText string, skipTypes ...string) error {
 	// Before the "nothing pending" early return: it is the attached storage
 	// secrets that may be about to end, not the pending connections.
 	rotErr := h.rotateDue(ctx)
@@ -492,6 +498,8 @@ func (h *hub) ConnectReferenced(ctx context.Context, catalog, sqlText string) er
 		if n == catalog || named[strings.ToLower(n)] {
 			if e, _ := h.entryOf(n); e != nil && h.catalogless(e) {
 				continue // storage secrets are made at preflight; a URL names no catalog
+			} else if e != nil && slices.Contains(skipTypes, e.spec.Type) {
+				continue
 			}
 			if err := h.connectImplicit(ctx, n); err != nil {
 				firstErr = errors.Join(firstErr, err)

@@ -198,7 +198,7 @@ func (b *sessionBuild) resolveOne(ctx context.Context, c Connection) (sessionIte
 	def := rc.Def(readOnly)
 	spec := def.Spec()
 	spec.Requires = rc.Requires
-	if connections.NeedsCredential(rc.Resolved.Type) {
+	if connections.NeedsCredentialFor(def) {
 		b.attachCredential(&spec, rc)
 	}
 	if err := prep.Prepare(ctx, b.env(), rc, def, &spec); err != nil {

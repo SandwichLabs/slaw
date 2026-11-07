@@ -185,6 +185,7 @@ func TestPlantedSharedDefinitionsAreSkippedWithAnIssue(t *testing.T) {
 	cfg.Connections = append(cfg.Connections,
 		ConnectionDef{Name: "planted_delta", Type: "delta", Path: "data/planted", Scope: "file:///"},
 		ConnectionDef{Name: "planted_lake", Type: "ducklake", Path: "data/p.ducklake", Options: map[string]string{"data_path": "data/pf"}},
+		ConnectionDef{Name: "planted_catalog", Type: "iceberg_catalog", ReadOnly: Bool(true), Options: map[string]string{"endpoint_type": "rest", "uri": "https://c.example.com/api", "warehouse": "w", "auth": "none", "trust_writers": "true"}},
 		ConnectionDef{Name: "stray_sqlite", Type: "sqlite", Path: "data/x.sqlite", Scope: "file:///"},
 		ConnectionDef{Name: "fine", Type: "duckdb", Path: "data/fine.duckdb", ReadOnly: Bool(false)},
 	)
@@ -199,6 +200,8 @@ func TestPlantedSharedDefinitionsAreSkippedWithAnIssue(t *testing.T) {
 	}
 	require.Contains(t, byName, "planted_delta")
 	require.Contains(t, byName, "planted_lake")
+	require.Contains(t, byName, "planted_catalog")
+	assert.Contains(t, byName["planted_catalog"], "only you can add them")
 	require.Contains(t, byName, "stray_sqlite")
 	assert.Contains(t, byName["planted_delta"], "ask the person who committed it to move it to their own connections")
 	assert.Contains(t, byName["planted_lake"], "only you can add them")
@@ -211,7 +214,7 @@ func TestPlantedSharedDefinitionsAreSkippedWithAnIssue(t *testing.T) {
 	}
 	assert.True(t, infos["fine"], "the other connections work")
 	assert.True(t, infos["local"])
-	assert.False(t, infos["planted_delta"] || infos["planted_lake"] || infos["stray_sqlite"], "the refused ones are not registered")
+	assert.False(t, infos["planted_delta"] || infos["planted_lake"] || infos["stray_sqlite"] || infos["planted_catalog"], "the refused ones are not registered")
 	_, err = sess.Query(context.Background(), "SELECT 1")
 	require.NoError(t, err)
 }

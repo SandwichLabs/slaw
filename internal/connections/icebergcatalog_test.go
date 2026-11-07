@@ -280,6 +280,76 @@ func TestIcebergCatalogInfo(t *testing.T) {
 	assert.Equal(t, []string{"httpfs", "avro", "iceberg"}, ExtensionsFor(restDef("none")))
 }
 
+func TestIcebergCatalogURIPortRange(t *testing.T) {
+	for _, p := range []string{"0", "65536", "99999"} {
+		err := Validate(with(restDef(""), setOpt("uri", "https://catalog.example.com:"+p+"/x")))
+		require.Error(t, err, p)
+		assert.Contains(t, err.Error(), "port", p)
+	}
+	for _, p := range []string{"1", "443", "65535"} {
+		assert.NoError(t, Validate(with(restDef(""), setOpt("uri", "https://catalog.example.com:"+p+"/x"))), p)
+	}
+}
+
+func TestIcebergCatalogTrustWritersErrorNamesTheConnection(t *testing.T) {
+	err := Validate(with(s3tDef(), setOpt("trust_writers", "yes")))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"s3t"`)
+	assert.Contains(t, err.Error(), "trust_writers")
+}
+
+// Option names are lowercased by Def.Params, so two spellings of one name are
+// refused rather than left to map order, and every reader sees the same value.
+func TestIcebergCatalogOptionNamesThatDifferOnlyInCase(t *testing.T) {
+	d := with(s3tDef(), func(d *Def) {
+		d.Options["trust_writers"] = "false"
+		d.Options["Trust_Writers"] = "true"
+	})
+	err := Validate(d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "written twice")
+	// Test refuses it too (it validates first), instead of attaching either way.
+	res := Test(context.Background(), d, secrets.Credential{})
+	assert.False(t, res.OK)
+	// A mixed-case spelling alone is read the same everywhere.
+	mixed := with(s3tDef(), func(d *Def) {
+		delete(d.Options, "endpoint_type")
+		d.Options["Endpoint_Type"] = "s3_tables"
+	})
+	require.NoError(t, Validate(mixed))
+	assert.True(t, signsWithStorage(mixed))
+	assert.Error(t, checkSignedBy(mixed, []requiredStorage{{def: Def{Name: "other", Type: "s3"}}}))
+	assert.NoError(t, checkSignedBy(mixed, []requiredStorage{{def: Def{Name: "aws_lake", Type: "s3"}}}))
+	// The same rule for another type.
+	pg := Def{Name: "pg", Type: "postgres", Host: "h", Database: "d", Options: map[string]string{"ssl_mode": "a", "SSL_MODE": "b"}}
+	require.Error(t, Validate(pg))
+}
+
+// The definition decides whether a connection signs in; the type-wide answer is
+// only "can need one".
+func TestNeedsCredentialForEachKind(t *testing.T) {
+	for name, c := range map[string]struct {
+		d    Def
+		want bool
+	}{
+		"s3_tables":   {s3tDef(), false},
+		"rest none":   {restDef("none"), false},
+		"rest bearer": {restDef("bearer"), true},
+		"rest oauth2": {restDef("oauth2"), true},
+		"rest dflt":   {restDef(""), true},
+		"postgres":    {Def{Name: "p", Type: "postgres", Host: "h", Database: "d"}, true},
+		"sqlite":      {Def{Name: "l", Type: "sqlite", Path: "/x"}, false},
+		"duckdb":      {Def{Name: "d", Type: "duckdb", Path: "/x"}, false},
+		"unknown":     {Def{Name: "u", Type: "nope"}, false},
+	} {
+		assert.Equal(t, c.want, NeedsCredentialFor(c.d), name)
+	}
+	assert.True(t, NeedsCredential("iceberg_catalog"), "the type can need one")
+	assert.False(t, ct("iceberg_catalog").NeedsCredential(session.Spec{Params: map[string]string{"opt.endpoint_type": "s3_tables"}}))
+}
+
+func ct(name string) session.CredentialedType { return asCred(registry[name]) }
+
 func TestIcebergCatalogTestNeedsItsStorageConnection(t *testing.T) {
 	// A Test without the storage connection does not attach: it says what to set up.
 	res := Test(context.Background(), s3tDef(), secrets.Credential{})

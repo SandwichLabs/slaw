@@ -278,6 +278,15 @@ connections:
     path: data/lake.ducklake
     options:
       data_path: data/lake_files
+  - name: cat
+    type: iceberg_catalog
+    read_only: true
+    options:
+      endpoint_type: rest
+      uri: https://catalog.example.com/api
+      warehouse: w
+      auth: none
+      trust_writers: "true"
   - name: smuggle
     type: delta
     path: data/x
@@ -288,7 +297,7 @@ connections:
     database: prod
 `)
 	w := strings.Join(pkg.Warnings, "|")
-	for _, n := range []string{"tbl", "ice", "lake", "smuggle"} {
+	for _, n := range []string{"tbl", "ice", "lake", "cat", "smuggle"} {
 		assert.Contains(t, w, fmt.Sprintf("connection %q was not imported", n))
 	}
 	assert.Contains(t, w, "only you can add them")
@@ -300,7 +309,7 @@ connections:
 	_, err = pkg.Import(context.Background(), ws, ImportOptions{IncludeConnections: []string{"pg"}})
 	require.NoError(t, err)
 	for _, c := range ws.Connections() {
-		assert.NotContains(t, []string{"tbl", "ice", "lake", "smuggle"}, c.Name)
+		assert.NotContains(t, []string{"tbl", "ice", "lake", "cat", "smuggle"}, c.Name)
 	}
 }
 

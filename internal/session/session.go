@@ -70,6 +70,10 @@ type Session interface {
 	// mentions pg.public.orders dials pg on first use. Opening a workspace
 	// dials nothing. It returns the first connect failure (already redacted).
 	ConnectReferenced(ctx context.Context, catalog, sqlText string) error
+	// ConnectReferencedExcept is ConnectReferenced for a statement the agent
+	// wrote: connections of the given types are never dialled by it (an
+	// untrusted catalog attaches only where the person asked for it).
+	ConnectReferencedExcept(ctx context.Context, catalog, sqlText string, skipTypes ...string) error
 	// Preflight resolves a registered connection's credential and extension
 	// state without dialling, so its status reads needs-credentials or
 	// extension-missing before anyone connects.

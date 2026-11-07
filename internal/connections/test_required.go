@@ -137,9 +137,9 @@ func checkCovered(def Def, required []requiredStorage) error {
 // signed with a different identity from the one it is saved with.
 func checkSignedBy(def Def, required []requiredStorage) error {
 	for _, r := range required {
-		if r.def.Name == def.Options["storage"] {
+		if r.def.Name == opt(def.Spec(), "storage") {
 			return nil
 		}
 	}
-	return fmt.Errorf("the catalog signs with the connection %q, which was not part of this test; nothing was read", def.Options["storage"])
+	return fmt.Errorf("the catalog signs with the connection %q, which was not part of this test; nothing was read", opt(def.Spec(), "storage"))
 }
