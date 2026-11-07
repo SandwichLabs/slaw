@@ -78,7 +78,7 @@ The semantic layer lives in the workspace as files, the data stays in the lake, 
 |---|---|---|---|
 | G1 | Attach Iceberg catalogs: S3 Tables, REST (Glue later) | P0 | `iceberg` is a table type read by path; a REST catalog is "Not built" ([connections.md](../reference/connections.md) §iceberg) |
 | G2 | Agent read path for Iceberg | P0 | `iceberg_*` readers refused for the agent in every tier (#20) |
-| G3 | DuckLake with a Postgres catalog; shareable lake definitions | P1 | `catalog` is `duckdb` or `sqlite`; lake types are own-scope only, so `semantics/` table names depend on what each person named their connection |
+| G3 | DuckLake with a Postgres catalog; shareable lake definitions | P1 | `catalog` is `duckdb` or `sqlite`; lake types are own-scope only, so `semantics/` table names depend on what each person named their connection. The own-scope rule is gone (direction change); templates now only make names portable |
 | G4 | Catalog comments reach the agent | P1 | `describe_table` returns name, type, not-null and an always-false `pk` per column; no comments anywhere in introspection (`handler_introspect.go`, `session.ColumnInfo`) |
 | G5 | Definition search, synonyms, table binding | P1 | No search tool, no synonym field, nothing injected into the prompt; definitions are not surfaced from `describe_table` |
 | G6 | Metric expressiveness | P2 | `metric()` takes a name and `by` only: no parameters, time grain, or derived metrics (#287) |
@@ -90,12 +90,9 @@ The semantic layer lives in the workspace as files, the data stays in the lake, 
 ### Design notes per gap
 
 - **G1, G2 belong together.** Attaching a catalog turns Iceberg tables into ordinary catalog references (`s3t.ns.orders`), which `semantics/` can name in three parts.
-  - Trust model: the **definition** is trusted as DuckLake's is today (only a person defines the catalog, in their own scope). The catalog's **metadata** is not trusted by default: it is written by whoever commits to its tables, so the agent reads it confined (D1 below). The agent reads its tables as references; the raw `iceberg_scan`/`iceberg_metadata` functions stay off the allow-list.
-  - Security questions from #20, and where the impl plan answers them:
-    - data-file URLs a manifest names: an uncovered `s3/r2/gcs` URL fails closed at the deny secrets; a local path, an `http(s)://` URL (loopback and metadata endpoints included) and an Azure URL are only refused on the confined reader (impl L4);
-    - vended credentials (S3 Tables, REST): decided **on**, set explicitly. A vended secret's scope and endpoint are the catalog's to choose and DuckDB picks the longest matching scope, so they vend into the confined reader always and into the main hub only for a trusted catalog (impl L4 note on D2/D3, settled by spike item 8).
-  - Decided (impl plan D1): agent reads of a catalog run on a confined second DuckDB with the local filesystem off, unless the person marks that catalog `trust_writers: true`, which reads it on the main hub with joins allowed. A person's `semantics check` and `watch check` follow the same routing (D3); the Query Explorer stays on the main hub.
-- **G3 connection templates.** A committed file may *name* a lake (type, expected endpoint, connection name) without being trusted. Each person adopts it into their own scope. This keeps the own-scope rule and makes `table:` names in `semantics/` portable.
+  - Security questions from #20: answered by the S0 spike in the impl plan; the decision is below.
+  - Decided (direction change, 2026-11-07): agent reads of a catalog run on the main hub like any catalog, joins included, with the metadata-directed read risk stated as a warning; vended credentials are off. The earlier confined-reader design (impl plan D1–D3) is superseded.
+- **G3 connection templates.** A committed file may *name* a lake (type, expected endpoint, connection name) without being trusted. Each person adopts it, which makes `table:` names in `semantics/` portable. The own-scope rule is gone (direction change 2026-11-07); templates now only make names portable.
 - **G4 + G5 are the cheapest accuracy wins.**
   - `describe_table` returns catalog comments merged with the covering entity's column notes, PII flags and metrics, each labelled with its source.
   - A capped *semantics index* (metric names and titles) goes into the system prompt and MCP `instructions`.

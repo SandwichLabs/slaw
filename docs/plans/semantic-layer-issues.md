@@ -14,7 +14,7 @@ To file a new issue: copy its body into a file, then run `gh issue create -R San
 
 Slaw reads an Iceberg *table* by path (`iceberg_scan`). It cannot attach an Iceberg *catalog*, and `docs/reference/connections.md` (§iceberg) lists a REST catalog as not built. S3 Tables is reached through Iceberg REST, so S3 Tables and Glue-catalogued tables are unreachable today.
 
-**Proposal:** a new own-scope-only type, `iceberg_catalog`, that attaches as a catalog, so `s3t.namespace.table` works in the rail, joins, saved queries and `semantics/` entity `table:` fields.
+**Proposal:** a new own-scope-only type, `iceberg_catalog`, that attaches as a catalog, so `s3t.namespace.table` works in the rail, joins, saved queries and `semantics/` entity `table:` fields. *(superseded, direction change 2026-11-07)*
 
 - **Endpoints**
   - `s3_tables`: table-bucket ARN, SigV4.
@@ -26,10 +26,7 @@ Slaw reads an Iceberg *table* by path (`iceberg_scan`). It cannot attach an Iceb
   - `s3_tables` holds no credential of its own and signs with the storage connection it requires (see the implementation plan).
 - **Endpoint rule (in the spirit of #138):**
   - the catalog endpoint is fixed by the definition;
-  - data files are read with the catalog's vended credentials where vending is allowed (below); any `s3/r2/gcs` location no secret covers falls through to the deny secrets;
-  - a local, `http(s)://` or Azure location is refused on the confined reader; on the main hub it is a trusted catalog's documented residual risk.
-- **Vended credentials: on**, set explicitly (`ACCESS_DELEGATION_MODE 'vended_credentials'`), never left to DuckDB's default. A vended secret's scope and endpoint are chosen by the catalog and DuckDB picks the longest matching scope, so the spike measures whether one can outrank the deny secrets (whose scope is the bare `s3`) or a storage connection's. Until shown otherwise, vending is on for the confined reader always and on the main hub only for a trusted catalog; an untrusted catalog attached on the main hub for the person uses `'none'` (impl plan, L4 note).
-- **Trust toggle:** `trust_writers` (default false). An untrusted catalog is read by the agent only on the confined lake reader (#20). A trusted one is read on the main hub and can be joined with other data, with the residual risk shown in the form (local files, `http(s)` requests from this machine, Azure and any object under the person's other storage scopes, and the catalog's own vended endpoint). The toggle trusts the catalog's operator as well as its writers.
+- **Open, with a warning (direction change 2026-11-07):** there is no trust toggle and no confined reader. The agent reads an `iceberg_catalog` on the main hub like any catalog, and vended credentials are off (`ACCESS_DELEGATION_MODE 'none'`). The form and docs warn that table metadata decides which files DuckDB reads: local files, `http(s)` requests from this machine, Azure, and any object under the person's storage scopes.
 - **Read-only:** writes stay out of scope.
 - **Release:** ships together with the agent read path (#20), not before it.
 - **Extensions:** `iceberg` + `avro` + `httpfs`, through the existing consent flow and the *Extension needed* status.
@@ -68,7 +65,7 @@ Plan: G3.
 
 **Labels:** `enhancement`, `workspaces-connections`
 
-`ducklake`, `iceberg` (and N1's `iceberg_catalog`) are own-scope only: a committed definition is refused, because crafted metadata can read local files. That rule is right, but it means every teammate defines the lake by hand. `semantics/` entity `table:` fields (`lake.main.orders`) then break whenever someone picks a different connection name.
+`ducklake`, `iceberg` (and N1's `iceberg_catalog`) are own-scope only: a committed definition is refused, because crafted metadata can read local files. That rule is right, but it means every teammate defines the lake by hand. `semantics/` entity `table:` fields (`lake.main.orders`) then break whenever someone picks a different connection name. *(superseded, direction change 2026-11-07)*
 
 **Proposal:** a committed `connection_templates:` block in `slaw.yaml` naming the connection, type and expected endpoint or catalog location. It carries no trust and nothing attaches from it.
 
@@ -233,13 +230,13 @@ Plan: G10.
 
 ### On #20: Agent reads of Iceberg/Delta tables via a confined path
 
-> The semantic layer over a lakehouse (`docs/plans/semantic-layer-lakehouse.md`, G2) needs the agent to read Iceberg. Proposal for the Iceberg half: once N1 (`iceberg_catalog`) attaches a catalog that **only a person can define** (own scope, like `ducklake`), the agent reads its tables as ordinary catalog references (`s3t.ns.t`). The raw `iceberg_scan` / `iceberg_metadata` / `iceberg_snapshots` stay off the allow-list. That matches the DuckLake trust model already shipped.
+> The semantic layer over a lakehouse (`docs/plans/semantic-layer-lakehouse.md`, G2) needs the agent to read Iceberg. Proposal for the Iceberg half: once N1 (`iceberg_catalog`) attaches a catalog that **only a person can define** (own scope, like `ducklake`), the agent reads its tables as ordinary catalog references (`s3t.ns.t`). The raw `iceberg_scan` / `iceberg_metadata` / `iceberg_snapshots` stay off the allow-list. That matches the DuckLake trust model already shipped. *(superseded, direction change 2026-11-07)*
 >
-> A catalog's **metadata** is written by anyone who can commit to its tables, and a crafted manifest can name a local file, an `http(s)://` URL (a loopback service, the cloud metadata endpoint) or an Azure URL. So by default the agent's statements over an `iceberg_catalog` run on a confined **lake reader**: a second in-process DuckDB with `disabled_filesystems = 'LocalFileSystem'` set and locked, no `azure` extension, holding only those catalogs and the `s3` connections they sign with. The policy's `EXPLAIN` runs there too, which covers bind-time fetches. Such statements cannot join other connections, and on the main hub a reference to such a catalog, directly or through a view, is refused for the agent.
+> A catalog's **metadata** is written by anyone who can commit to its tables, and a crafted manifest can name a local file, an `http(s)://` URL (a loopback service, the cloud metadata endpoint) or an Azure URL. The 2026-11-07 S0 spike confirmed DuckDB follows them. Per Zac's direction ("run the same queries DuckDB itself can; just warn where necessary"), the agent reads Iceberg catalogs on the main hub with joins, the raw `iceberg_scan`/`delta_scan` readers are allowed under the `read_parquet` path rules, and the risk is stated as a warning on the connection and in `agent-policy.md`.
 >
-> A person can set `trust_writers: true` on a catalog to read it on the main hub instead (joins allowed), accepting the documented residual risk. A person's `semantics check` and `watch check` follow the same routing. Vended credentials are on; because a vended secret's scope and endpoint are the catalog's to choose, they are accepted on the lake reader always and on the main hub only for a trusted catalog.
+> Vended credentials are off: every attach sets `ACCESS_DELEGATION_MODE 'none'`, because S0 showed a vended secret's scope follows a writer-chosen table location and can take over the person's other S3 reads.
 >
-> Design and acceptance: `docs/plans/semantic-layer-lakehouse-impl.md` (L4, L5). Snapshot functions for G9 go on the lake reader's allow-list only.
+> Design and acceptance: `docs/plans/semantic-layer-lakehouse-impl.md` (L4, L5). Snapshot functions for G9 go on the lake reader's allow-list only. *(superseded, direction change 2026-11-07)*
 >
 > **Acceptance:** `metric()` over an Iceberg-backed saved query works for the agent in the read-only tier over MCP.
 
