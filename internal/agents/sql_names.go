@@ -24,12 +24,17 @@ func nameSet(names ...string) map[string]bool {
 // (read_xlsx, st_read, sniff_csv, parquet_bloom_probe, ...) is not listed and
 // therefore refused.
 //
-// iceberg_scan, iceberg_metadata, iceberg_snapshots and delta_scan are NOT here
-// (#119 review): an Iceberg or Delta table's own metadata chooses which files
-// are read (a `_delta_log` add.path of "../../x", version_name_format,
-// allow_moved_paths ...), so no check on the literal path can confine them. They
-// are reachable only in the person's own SQL, through a connection they defined.
+// iceberg_scan, iceberg_metadata, iceberg_snapshots and delta_scan are listed
+// (queries.ReaderFunctions) and take exactly the read_parquet rules. A table's
+// own metadata (a `_delta_log` add.path, a manifest list URL) names the files
+// it reads, so a crafted table inside an allowed path can reach beyond it; that
+// is accepted and documented, and the options that redirect metadata lookup
+// (version_name_format, allow_moved_paths, ...) are still not on the safe list.
 var readerFuncs = nameSet(queries.ReaderFunctions...)
+
+// lakeReaders are the table-format readers: they follow the reader rules and a
+// further one (lakeReaderPathRefusal).
+var lakeReaders = nameSet("iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "delta_scan")
 
 // safeReaderParams are the only named options a reader may be given. They
 // change how a file is parsed, never which other file or URL is read or where
@@ -59,6 +64,7 @@ var readerPlanOps = nameSet(
 	"READ_JSON", "READ_JSON_AUTO", "READ_NDJSON", "READ_NDJSON_AUTO",
 	"READ_JSON_OBJECTS", "READ_JSON_OBJECTS_AUTO", "READ_NDJSON_OBJECTS",
 	"READ_TEXT", "READ_BLOB", "GLOB",
+	"ICEBERG_SCAN", "ICEBERG_METADATA", "ICEBERG_SNAPSHOTS", "DELTA_SCAN",
 )
 
 // allowedTableFunctions are pure catalog and generator table functions: they
@@ -113,12 +119,6 @@ var allowedPlanOperators = nameSet(
 	"RECURSIVE_CTE", "REC_CTE", "CTE", "CTE_SCAN", "RECURSIVE_CTE_SCAN", "REC_CTE_SCAN", "MATERIALIZED_CTE", "PARTITIONED_AGGREGATE",
 	"DELIM_SCAN", "COLUMN_DATA_SCAN", "CHUNK_SCAN", "EXPRESSION_SCAN", "DUMMY_SCAN", "EMPTY_RESULT",
 	"RESULT_COLLECTOR", "EXPLAIN",
-	// The scan of an attached Iceberg catalog's table (an iceberg_catalog
-	// connection; S0: extra_info Function = ICEBERG_SCAN, no Table entry). It is
-	// not a reader the statement wrote out, so it is not counted in
-	// readerPlanOps. A raw iceberg_scan('<path>') call is still refused by the
-	// syntactic layer before any plan is read.
-	"ICEBERG_SCAN",
 	// DML.
 	"INSERT", "BATCH_INSERT", "UPDATE", "DELETE", "MERGE_INTO",
 	// DDL. These carry no read of their own; their queries show as children.

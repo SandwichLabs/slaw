@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -21,11 +22,14 @@ import (
 // decision (path, scope, allow-list) is the one that fires, in the order the
 // policy decides it.
 
-// The metadata of an Iceberg or Delta table chooses which files are read, so no
-// check on the literal path can confine the readers: the agent may not call
-// them at all, in any tier, and the refusal comes from the syntactic layer
-// (before any EXPLAIN binds the statement and touches a file or URL).
-func TestPolicy_TableFormatReadersAreNotAgentReaders(t *testing.T) {
+// iceberg_scan, iceberg_metadata, iceberg_snapshots and delta_scan are agent
+// readers (Zac, 2026-11-07: run what DuckDB runs, warn where needed) and take
+// exactly the rules read_parquet takes: the data/ folder, storage scopes, plain
+// URLs, one string literal, the safe-option list and the reader count. In these
+// tests the extensions are not loaded, so a statement the policy lets through
+// ends at DuckDB's own "not in the catalog" (a "could not validate" reason);
+// the policy's own refusals carry their own words.
+func TestPolicy_TableFormatReadersFollowTheReaderRules(t *testing.T) {
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
@@ -37,24 +41,125 @@ func TestPolicy_TableFormatReadersAreNotAgentReaders(t *testing.T) {
 			session.ConnectionInfo{Name: "lake", Type: "s3", Kind: session.StatusOK, Remote: true, Catalogless: true, Scope: "s3://lake/raw/"},
 			session.ConnectionInfo{Name: "tbl", Type: "delta", Kind: session.StatusOK, Remote: true, Catalogless: true},
 		))
-		var cases []policyCase
 		for _, fn := range []string{"delta_scan", "iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "ICEBERG_SCAN", `"delta_scan"`} {
-			for _, arg := range []string{"'%DATA%/tbl'", "'%DATA%/sub/tbl'", "'s3://lake/raw/tbl'", "'" + srv.URL + "/x'", "'file:///etc/hostname'", "'%OUT%/tbl'", "getvariable('p')"} {
-				cases = append(cases, policyCase{fn + " " + arg, "SELECT * FROM " + fn + "(" + arg + ")", sqlClassOther, "allow-list"})
+			// Allowed by the policy: in data/, or inside a ready storage scope.
+			for _, arg := range []string{"'%DATA%/tbl'", "'%DATA%/sub/tbl'", "'s3://lake/raw/tbl'", "['%DATA%/a', 's3://lake/raw/b']"} {
+				q := fx.expand("SELECT * FROM " + fn + "(" + arg + ")")
+				v := fx.classify(q)
+				if v.Class != sqlClassRead {
+					assert.Contains(t, v.Reason, "could not validate query", "%s %s: only DuckDB's own missing-extension error may stop it (%s)", mode, q, v.Reason)
+				}
+			}
+			// Refused by the path rules, like read_parquet.
+			for arg, why := range map[string]string{
+				"'%OUT%/tbl'":             "outside the workspace's data/",
+				"'/etc/hostname'":         "outside the workspace's data/",
+				"'relative/tbl'":          "relative path",
+				"'%DATA%/../x'":           "..",
+				"'s3://other/tbl'":        "outside every storage connection's scope",
+				"'s3://lake/raw/../x'":    "not a plain storage url",
+				"'s3://lake/raw/t?x=1'":   "not a plain storage url",
+				"'" + srv.URL + "/x'":     "not a plain storage url",
+				"'file:///etc/hostname'":  "not a plain storage url",
+				"getvariable('p')":        "plain string literal",
+				"'%DATA%/a' || '/b'":      "plain string literal",
+				"['%DATA%/a', '%OUT%/b']": "outside the workspace's data/",
+			} {
+				v := fx.classify(fx.expand("SELECT * FROM " + fn + "(" + arg + ")"))
+				assert.Equal(t, sqlClassOther, v.Class, "%s %s %s", mode, fn, arg)
+				assert.Contains(t, strings.ToLower(v.Reason), strings.ToLower(why), "%s %s(%s)", mode, fn, arg)
 			}
 		}
-		cases = append(cases,
-			policyCase{"named version_name_format", "SELECT * FROM iceberg_snapshots('%DATA%/tbl', version='1', version_name_format='../../../../etc/hostname')", sqlClassOther, "allow-list"},
-			policyCase{"named allow_moved_paths", "SELECT * FROM iceberg_scan('%DATA%/tbl', allow_moved_paths = true)", sqlClassOther, "allow-list"},
-			policyCase{"in a CTE", "WITH d AS (SELECT * FROM delta_scan('%DATA%/tbl')) SELECT count(*) FROM d", sqlClassOther, "allow-list"},
-			policyCase{"in a view body", "CREATE VIEW dv AS SELECT * FROM delta_scan('%DATA%/tbl')", sqlClassOther, "can't be checked"},
-			policyCase{"as an INSERT source", "INSERT INTO t SELECT id, 'x' FROM delta_scan('%DATA%/tbl')", sqlClassOther, "can't be checked"},
-			policyCase{"CALL form", "CALL delta_scan('%DATA%/tbl')", sqlClassOther, "call"},
-			policyCase{"replacement scan of a table folder", "SELECT * FROM '%DATA%/tbl.delta'", sqlClassOther, ""},
-		)
-		runPolicyCases(t, fx, cases)
+		runPolicyCases(t, fx, []policyCase{
+			{"named version_name_format", "SELECT * FROM iceberg_snapshots('%DATA%/tbl', version='1', version_name_format='../../../../etc/hostname')", sqlClassOther, "safe reader options"},
+			{"named allow_moved_paths", "SELECT * FROM iceberg_scan('%DATA%/tbl', allow_moved_paths = true)", sqlClassOther, "safe reader options"},
+			{"walrus allow_moved_paths", "SELECT * FROM iceberg_scan('%DATA%/tbl', allow_moved_paths := true)", sqlClassOther, "safe reader options"},
+			{"CALL form", "CALL delta_scan('%DATA%/tbl')", sqlClassOther, "call"},
+			{"as a scalar", "SELECT iceberg_scan('%DATA%/tbl')", sqlClassOther, "can only be used as a table"},
+			{"in a view body, refused path", "CREATE VIEW dv AS SELECT * FROM delta_scan('%OUT%/tbl')", sqlClassOther, ""},
+			{"replacement scan of a table folder", "SELECT * FROM '%DATA%/tbl.delta'", sqlClassOther, ""},
+		})
 	}
 	assert.EqualValues(t, 0, atomic.LoadInt32(&hits), "the policy refused them before anything was fetched")
+}
+
+// The rule: the agent never reads table metadata it could have written. The
+// lake readers refuse a local path to a file (DuckDB reads any .json as Iceberg
+// metadata and follows the URLs in it while binding); only a table folder or a
+// storage URL is accepted.
+func TestPolicy_LakeReadersRefuseMetadataFiles(t *testing.T) {
+	for _, mode := range []SandboxMode{ModeReadOnly, ModeReadWrite, ModeFull} {
+		fx := newPolicyFixture(t, mode, withExtraConns(
+			session.ConnectionInfo{Name: "lake", Type: "s3", Kind: session.StatusOK, Remote: true, Catalogless: true, Scope: "s3://lake/raw/"},
+		))
+		for _, fn := range []string{"iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "delta_scan"} {
+			for _, f := range []string{"e.json", "e.JSON", "v1.metadata.json", "e.avro", "x.json.gz", "metadata", "version-hint.text", "sub/e.json", "e.json.zst"} {
+				v := fx.classify(fx.expand("SELECT * FROM " + fn + "('%DATA%/" + f + "')"))
+				assert.Equal(t, sqlClassOther, v.Class, "%s %s %s", mode, fn, f)
+				assert.Contains(t, v.Reason, "table", "%s %s %s: %s", mode, fn, f, v.Reason)
+			}
+			// A storage URL is not a local file the agent could have written.
+			v := fx.classify(fx.expand("SELECT * FROM " + fn + "('s3://lake/raw/t/metadata/v1.metadata.json')"))
+			if v.Class != sqlClassRead {
+				assert.Contains(t, v.Reason, "could not validate query", "%s %s: %s", mode, fn, v.Reason)
+			}
+		}
+	}
+}
+
+// The exact attack: write a JSON file that names a URL, then point the reader at
+// it. The write passes the COPY rules (it is not a metadata name), so the
+// reader half must refuse it, before EXPLAIN binds anything.
+func TestPolicy_WriteThenReadMetadataAttackIsRefused(t *testing.T) {
+	fx := newPolicyFixture(t, ModeFull)
+	attack := "COPY (SELECT 'http:' || chr(47) || chr(47) || '127.0.0.1:1' || chr(47) || 'leak' AS \"manifest-list\") TO '%DATA%/e.json' (FORMAT json)"
+	_ = fx.classify(fx.expand(attack)) // may pass or not; the read below must not
+	for _, fn := range []string{"iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "delta_scan"} {
+		v := fx.classify(fx.expand("SELECT * FROM " + fn + "('%DATA%/e.json')"))
+		assert.Equal(t, sqlClassOther, v.Class, fn)
+		assert.Contains(t, v.Reason, "never from a metadata file", fn)
+	}
+	// Every statement shape that holds a reader call (token-screened statements
+	// as well as the select walk) refuses it.
+	for _, fn := range []string{"iceberg_scan", "delta_scan"} {
+		src := "SELECT * FROM " + fn + "('%DATA%/e.json')"
+		for _, q := range []string{
+			"CREATE TABLE zz AS " + src,
+			"INSERT INTO t " + src,
+			"COPY (" + src + ") TO '%DATA%/o.csv'",
+			"UPDATE t SET a = (SELECT count(*) FROM " + fn + "('%DATA%/e.json'))",
+			"DELETE FROM t WHERE a IN (SELECT 1 FROM " + fn + "('%DATA%/e.json'))",
+			"CREATE VIEW vv AS " + src,
+			"CREATE MACRO mm() AS TABLE " + src,
+		} {
+			v := fx.classify(fx.expand(q))
+			assert.Equal(t, sqlClassOther, v.Class, q)
+			assert.NotContains(t, v.Reason, "could not validate query", q+": the refusal must come from the policy, not from binding")
+		}
+	}
+	// And the half that writes: no folder or name that reads as table metadata.
+	for _, q := range []string{
+		"COPY (SELECT 1) TO '%DATA%/e.metadata.json' (FORMAT json)",
+		"COPY (SELECT 1) TO '%DATA%/t/metadata/e.json' (FORMAT json)",
+		"COPY (SELECT 1) TO '%DATA%/t/_delta_log/0.json' (FORMAT json)",
+		"EXPORT DATABASE '%DATA%/exp'",
+	} {
+		v := fx.classify(fx.expand(q))
+		assert.Equal(t, sqlClassOther, v.Class, q)
+	}
+}
+
+// The reader-count rule of the plan check counts them like read_parquet: a plan
+// may hold no more readers than the statement wrote out and vetted.
+func TestPolicy_TableFormatReadersCountAsReaders(t *testing.T) {
+	for _, n := range []string{"ICEBERG_SCAN", "ICEBERG_METADATA", "ICEBERG_SNAPSHOTS", "DELTA_SCAN"} {
+		assert.True(t, readerPlanOps[n], n)
+		assert.True(t, readerFuncs[strings.ToLower(n)], n)
+		var readers int
+		r := planNode{Name: n + " ", ExtraInfo: map[string]any{"Function": n}}
+		assert.Empty(t, checkPlanNode(&r, &readers), n)
+		assert.Equal(t, 1, readers, n)
+	}
 }
 
 // Named options on a reader could name another file or change how files are
@@ -148,18 +253,6 @@ func TestPolicy_MySQLPlanOperators(t *testing.T) {
 	assert.Contains(t, checkPlanNode(&fn, &readers), "not on the allow-list")
 	fn = planNode{Name: "DUCKLAKE_EXPIRE_SNAPSHOTS", ExtraInfo: map[string]any{"Function": "DUCKLAKE_EXPIRE_SNAPSHOTS"}}
 	assert.Contains(t, checkPlanNode(&fn, &readers), "not on the allow-list")
-	// An attached Iceberg catalog's scan and DML are known (iceberg_catalog
-	// connection); the other iceberg readers and delta_scan are still not.
-	iscan := planNode{Name: "ICEBERG_SCAN ", ExtraInfo: map[string]any{"Function": "ICEBERG_SCAN"}}
-	assert.Empty(t, checkPlanNode(&iscan, &readers))
-	assert.Equal(t, 0, readers, "a catalog scan is not a reader the statement wrote out")
-	for _, n := range []string{"ICEBERG_INSERT", "ICEBERG_UPDATE", "ICEBERG_DELETE"} {
-		assert.True(t, isRemoteWriteOp(n), n)
-	}
-	for _, n := range []string{"ICEBERG_METADATA", "ICEBERG_SNAPSHOTS", "DELTA_SCAN"} {
-		r := planNode{Name: n + " ", ExtraInfo: map[string]any{"Function": n}}
-		assert.Contains(t, checkPlanNode(&r, &readers), "not on the allow-list", n)
-	}
 }
 
 func TestPolicy_DuckLakeFunctions(t *testing.T) {
@@ -226,7 +319,15 @@ func TestPolicy_NeverWritesTableMetadata(t *testing.T) {
 		{"iceberg manifest", "COPY (SELECT 1) TO '%DATA%/tbl/metadata/snap-1.avro'", sqlClassOther, "metadata"},
 		{"iceberg version hint", "COPY (SELECT 1) TO '%DATA%/tbl/metadata/version-hint.text'", sqlClassOther, "metadata"},
 		{"delta log upper case", "COPY (SELECT 1) TO '%DATA%/tbl/_DELTA_LOG/0.json'", sqlClassOther, "metadata"},
+		{"a metadata folder anywhere", "COPY (SELECT 1) TO '%DATA%/t/metadata/x.json'", sqlClassOther, "metadata"},
+		{"a metadata folder in a deep path", "COPY (SELECT 1) TO '%DATA%/a/b/Metadata/c/x.json'", sqlClassOther, "metadata"},
+		{"a delta log folder deep", "COPY (SELECT 1) TO '%DATA%/a/b/_delta_log/x.json'", sqlClassOther, "metadata"},
+		{"any metadata.json suffix", "COPY (SELECT 1) TO '%DATA%/v2.metadata.json'", sqlClassOther, "metadata"},
+		{"a file name pattern could name a manifest", "COPY (SELECT 1) TO '%DATA%/out' (FORMAT JSON, PARTITION_BY (a), FILENAME_PATTERN 'v1.metadata')", sqlClassOther, "filename_pattern"},
+		{"a file extension could name a version hint", "COPY (SELECT 1 AS a) TO '%DATA%/out' (FORMAT CSV, PARTITION_BY (a), FILENAME_PATTERN 'version-hint', FILE_EXTENSION 'text')", sqlClassOther, "filename_pattern"},
+		{"a file extension alone", "COPY (SELECT 1 AS a) TO '%DATA%/out2' (FORMAT CSV, FILE_EXTENSION 'json')", sqlClassOther, "file_extension"},
 		{"an ordinary export still works", "COPY (SELECT 1) TO '%DATA%/out.csv'", sqlClassDDL, ""},
+		{"a partitioned export still works", "COPY (SELECT 1 AS a, 2 AS b) TO '%DATA%/part' (FORMAT PARQUET, PARTITION_BY (a))", sqlClassDDL, ""},
 		{"a folder called metadata still works", "COPY (SELECT 1) TO '%DATA%/sub/out.parquet' (FORMAT PARQUET)", sqlClassDDL, ""},
 	})
 }

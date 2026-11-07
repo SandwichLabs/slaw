@@ -31,7 +31,6 @@ func icebergS3Tables(name string) ConnectionDef {
 // not credentials.
 func TestIcebergCatalogIsSavedInEveryScope(t *testing.T) {
 	ws, _, _ := memWorkspace(t, nil)
-	assert.False(t, OwnScopeOnlyType("iceberg_catalog"))
 	for _, d := range []ConnectionDef{
 		icebergRest("c_none", "none", nil),
 		icebergRest("c_bearer", "bearer", nil),
@@ -121,4 +120,24 @@ func TestIcebergCatalogCredentialsFollowTheDefinition(t *testing.T) {
 			assert.False(t, cred.HasSecret(), name)
 		}
 	}
+}
+
+// A shared (committed or pulled) iceberg_catalog carries the metadata warning on
+// its status, like a shared DuckLake, Iceberg or Delta definition; a writable
+// one says so too, and a definition in your own scopes carries none.
+func TestSharedIcebergCatalogShowsTheMetadataWarning(t *testing.T) {
+	ws, _, _ := memWorkspace(t, nil)
+	assert.True(t, MetadataDrivenType("iceberg_catalog"))
+	require.NoError(t, ws.AddConnection(ScopeShared, icebergRest("shared_cat", "none", nil)))
+	rw := icebergRest("shared_rw", "none", nil)
+	rw.ReadOnly = Bool(false)
+	require.NoError(t, ws.AddConnection(ScopeShared, rw))
+	require.NoError(t, ws.AddConnection(ScopeLocal, icebergRest("mine", "none", nil)))
+	warn := map[string]string{}
+	for _, st := range ConnectionStates(ws, nil, nil) {
+		warn[st.Name] = st.Warning
+	}
+	assert.Equal(t, MetadataWarning, warn["shared_cat"])
+	assert.Equal(t, MetadataWarning+" "+WritableSharedWarning, warn["shared_rw"])
+	assert.Empty(t, warn["mine"])
 }

@@ -244,7 +244,7 @@ func TestIcebergCatalogInfo(t *testing.T) {
 		assert.True(t, f.Option, f.Name)
 	}
 	assert.NotContains(t, byName, "trust_writers")
-	assert.Contains(t, byName["endpoint_type"].Help, IcebergWarning)
+	assert.Contains(t, byName["endpoint_type"].Help, MetadataWarning)
 	for _, f := range ti.Credentials {
 		assert.True(t, f.PerPerson, f.Name)
 	}

@@ -65,11 +65,11 @@ export function useConnectionForm() {
   // advanced setting: it sits with the main fields, with its asterisk.
   const mainFields = computed(() => (spec.value?.fields ?? []).filter((x) => (!x.option || x.required) && x.name !== 'port'))
   const advFields = computed(() => (spec.value?.fields ?? []).filter((x) => x.option && !x.required))
-  // These sources trust their own metadata (it decides which files are read), so
-  // only the person adds them, in their own scopes.
-  const ownScopeOnly = computed(() => ['ducklake', 'iceberg', 'delta'].includes(typeId.value))
+  // These sources trust their own metadata (it decides which files are read): any
+  // scope may define one, and the form warns.
+  const metadataDriven = computed(() => ['ducklake', 'iceberg', 'delta'].includes(typeId.value))
   const insideWorkspace = computed(() => {
-    if (!ownScopeOnly.value) return false
+    if (!metadataDriven.value) return false
     const root = workspaceInfo.value?.root ?? ''
     const loc = [f.path, f.options['data_path'] ?? ''].map((x) => x.trim()).filter(Boolean)
     return loc.some((x) => {
@@ -378,7 +378,7 @@ export function useConnectionForm() {
   return {
     types, loading, loadError, isNew, editName, typeId, spec, f, readOnly, connScope, origScope, method, envPrefix, ssoProfile,
     typed, status, detail, advancedOpen, origMethod, hadKeychainSecret, saved, saveError, result, isMD, remote,
-    mainFields, advFields, ownScopeOnly, insideWorkspace, exampleTail, portField, credFields, readableCreds,
+    mainFields, advFields, metadataDriven, insideWorkspace, exampleTail, portField, credFields, readableCreds,
     secretCreds, needsSignIn, methodString, envVars, val, setVal, buildDef, refreshDraftFingerprint,
     fingerprintChanged, bindingChanged, dirty, fingerprintHelp, secretIsSet, serverChangedHelp, privateCopy,
     shadowedBy, failedTest, title, chooseType, loadForm, validate, presets, applyPreset, storageLine, storageSlot, storageFailed, prefilled, changedWhileAway,

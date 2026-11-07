@@ -202,9 +202,9 @@ describe('ConnectionEditorView', () => {
     expect(w.find('details').exists()).toBe(false) // nothing left for Advanced
     expect(w.text()).toContain('.main.orders')
     expect(w.text()).not.toContain('read-only database user')
-    expect(w.find('[data-testid="scope-shared"]').exists()).toBe(false)
+    expect(w.find('[data-testid="scope-shared"]').exists()).toBe(true)
     expect(w.find('[data-testid="scope-local"]').exists()).toBe(true)
-    expect(w.find('[data-testid="trust-note"]').text()).toContain('Only point this at data you trust')
+    expect(w.find('[data-testid="trust-note"]').text()).toContain('Table metadata in this')
     // a relative location is inside the workspace folder: the note says so
     await w.find('#f-path').setValue('data/lake.ducklake')
     expect(w.find('[data-testid="trust-note"]').text()).toContain('inside the workspace folder')

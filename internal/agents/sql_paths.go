@@ -115,6 +115,20 @@ func realPath(p string) (string, error) {
 	return filepath.Join(rd, base), nil
 }
 
+// vetReaderPath is the one check of a path given to reader function fn (lower
+// case), whichever statement the call is in: the read rules, plus for the
+// Iceberg and Delta readers the table-folder rule. Every place that vets a
+// reader call's path goes through here, so no statement kind can miss it.
+func (p *pathPolicy) vetReaderPath(fn, lit string) string {
+	if r := p.vetRead(lit); r != "" {
+		return r
+	}
+	if lakeReaders[fn] {
+		return lakeReaderPathRefusal(lit)
+	}
+	return ""
+}
+
 const dataDirHint = "the agent can only read files inside the workspace's data/ folder, by absolute path"
 
 // vetRead returns "" when lit may be read, else the reason it may not.
@@ -253,12 +267,11 @@ func (p *pathPolicy) vetWrite(lit string) string {
 			return fmt.Sprintf("COPY ... TO %q: the agent does not write database or extension files", lit)
 		}
 	}
-	// Nor a table's own metadata: an Iceberg or Delta table names its data files
-	// in these, so a crafted one would let iceberg_scan / delta_scan read a file
-	// the path rule never saw.
-	for _, seg := range strings.FieldsFunc(lower, func(r rune) bool { return r == '/' || r == '\\' }) {
-		if seg == "_delta_log" || strings.HasSuffix(seg, ".avro") || strings.HasSuffix(seg, "metadata.json") || seg == "version-hint.text" {
-			return fmt.Sprintf("COPY ... TO %q: the agent does not write the metadata of an Iceberg or Delta table", lit)
+	// Nor a table's own metadata (see metadataWriteRefusal): the agent never
+	// reads table metadata it could have written.
+	if rel, ok := relUnder(p.dataDir, clean); ok {
+		if why := metadataWriteRefusal(rel); why != "" {
+			return fmt.Sprintf("COPY ... TO %q: %s", lit, why)
 		}
 	}
 	if fi, err := os.Lstat(clean); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
@@ -271,6 +284,11 @@ func (p *pathPolicy) vetWrite(lit string) string {
 	// Never into a connection's own files: a DuckLake's catalog or data folder
 	// (whatever the file is called), a duckdb or sqlite file.
 	target := filepath.Join(parent, filepath.Base(clean))
+	if rel, ok := relUnder(p.dataDir, target); ok {
+		if why := metadataWriteRefusal(rel); why != "" {
+			return fmt.Sprintf("COPY ... TO %q: %s", lit, why)
+		}
+	}
 	for _, prot := range p.protected {
 		if filestore.Within(prot, target) {
 			return fmt.Sprintf("COPY ... TO %q: the target is part of a connection's own files; the agent does not write there", lit)
@@ -291,4 +309,54 @@ func normalizeScope(scope string) string {
 		return ""
 	}
 	return sc
+}
+
+// relUnder is path relative to dir, when path is lexically inside dir.
+func relUnder(dir, path string) (string, bool) {
+	if dir == "" || !filestore.Within(dir, path) {
+		return "", false
+	}
+	rel := strings.TrimPrefix(strings.TrimPrefix(filepath.Clean(path), filepath.Clean(dir)), string(filepath.Separator))
+	return filepath.ToSlash(rel), true
+}
+
+// metadataWriteRefusal is the reason the agent may not write rel (a path
+// inside data/): it would be the metadata of an Iceberg or Delta table, which
+// names the files, and the URLs, that iceberg_scan and delta_scan then read.
+// Any `metadata` or `_delta_log` folder anywhere, a version hint, a manifest
+// (.avro) and any *metadata.json are refused. The lake readers refuse a local
+// file path in the first place (lakeReaderPathRefusal), so neither half alone
+// is trusted.
+func metadataWriteRefusal(rel string) string {
+	for _, seg := range strings.Split(strings.ToLower(rel), "/") {
+		if seg == "_delta_log" || seg == "metadata" || seg == "version-hint.text" ||
+			strings.HasSuffix(seg, ".avro") || strings.HasSuffix(seg, "metadata.json") {
+			return "the agent does not write the metadata of an Iceberg or Delta table"
+		}
+	}
+	return ""
+}
+
+// lakeReaderPathRefusal holds the local path given to iceberg_scan,
+// iceberg_metadata, iceberg_snapshots or delta_scan to a table directory. A
+// path to a file that is (or reads as) table metadata is refused: DuckDB treats
+// any .json path as an Iceberg metadata file and follows the URLs in it while
+// binding. Storage URLs are not touched here (the agent writes only to data/).
+func lakeReaderPathRefusal(lit string) string {
+	if urlSchemeRE.MatchString(lit) {
+		return ""
+	}
+	base := strings.ToLower(lit)
+	if i := strings.LastIndexAny(base, `/\`); i >= 0 {
+		base = base[i+1:]
+	}
+	for _, suf := range []string{".json", ".avro", ".gz", ".zst", ".text", ".txt"} {
+		if strings.Contains(base, suf) {
+			return fmt.Sprintf("%q is a file, not a table folder: the agent reads Iceberg and Delta tables by their folder or storage URL, never from a metadata file it could have written", lit)
+		}
+	}
+	if strings.Contains(base, "metadata") || strings.Contains(base, "version-hint") {
+		return fmt.Sprintf("%q looks like table metadata: the agent reads Iceberg and Delta tables by their folder or storage URL only", lit)
+	}
+	return ""
 }

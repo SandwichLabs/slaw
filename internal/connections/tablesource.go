@@ -22,9 +22,10 @@ import (
 // can prove it is readable. A table in object storage is read with the secret of
 // the s3 / gcs / r2 / azure connection whose scope contains it.
 //
-// Only you can add one (workspace.OwnScopeOnlyType): a table's own metadata
-// decides which files are read, so no check on the path can confine it, and the
-// agent may not call these readers at all (agent-policy.md).
+// Any scope may define one (workspace.MetadataWarning): a table's own metadata
+// decides which files are read, so no check on the path can confine it. The
+// agent may call these readers, but only on paths and URLs that pass the same
+// vetting as read_parquet (agent-policy.md).
 //
 // The location is Def.Path (not Scope, which makes a storage scope the agent
 // may read inside): a URL here does not widen what the agent can read.

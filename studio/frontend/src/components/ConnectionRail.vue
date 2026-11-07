@@ -135,6 +135,7 @@ defineExpose({ rows, toggleDrawer, refreshConn, expanded })
                 <span class="meta" :class="r.node?.pk ? 'pk' : r.node?.fk ? 'fk' : 'type'">{{ colMeta(r).type }}<template v-if="colMeta(r).tag"> &middot; {{ colMeta(r).tag }}</template></span>
               </template>
             </div>
+            <div v-if="r.kind === 'conn' && r.conn.warning" class="tn-note warn" role="note" :style="{ paddingLeft: '34px' }" data-testid="conn-warning">{{ r.conn.warning }}</div>
             <div v-if="r.kind === 'conn' && r.detail" :id="rowDescribedBy(r)" class="tn-note" :class="statusKey(r.conn.status) === 'err' ? 'err' : 'warn'" role="note" :style="{ paddingLeft: '34px' }" data-testid="conn-detail">
               {{ r.detail.text }}
               <button class="linkbtn" type="button" tabindex="-1" @click.stop="onDetailAction(r)">{{ r.detail.actionLabel }}</button>

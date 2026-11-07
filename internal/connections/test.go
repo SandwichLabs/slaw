@@ -116,9 +116,9 @@ func WithTestRedactor(r *secrets.Redactor) TestOption { return func(o *testOpts)
 // is tested in a subprocess because a process holds one MotherDuck token.
 func Test(ctx context.Context, def Def, cred secrets.Credential, opts ...TestOption) TestResult {
 	res := runClassified(def, func() TestResult { return test(ctx, def, cred, opts...) })
-	if def.Type == "iceberg_catalog" && !res.OK && res.Error != "" && !strings.Contains(res.Error, IcebergWarning) {
+	if def.Type == "iceberg_catalog" && !res.OK && res.Error != "" && !strings.Contains(res.Error, MetadataWarning) {
 		// A failed Test still says what attaching such a catalog means.
-		res.Error += " " + IcebergWarning
+		res.Error += " " + MetadataWarning
 	}
 	return res
 }

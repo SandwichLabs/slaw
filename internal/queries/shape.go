@@ -14,10 +14,10 @@ import (
 // ones that take a path, and the ones whose argument a parameter may never be
 // (the agent SQL policy builds its reader allow-list from the same names).
 //
-// iceberg_scan, iceberg_metadata, iceberg_snapshots and delta_scan are NOT here
-// (#119 review): an Iceberg or Delta table's own metadata chooses which files
-// are read, so no check on the literal path can confine them. They are
-// reachable only in the person's own SQL, through a connection they defined.
+// iceberg_scan, iceberg_metadata, iceberg_snapshots and delta_scan are here
+// too: a table's own metadata chooses which files they read (see
+// docs/reference/agent-policy.md), a risk the product accepts and warns about,
+// and the literal path they are given is held to the same rules as read_parquet.
 var ReaderFunctions = []string{
 	"read_csv", "read_csv_auto",
 	"read_parquet", "parquet_scan", "parquet_metadata", "parquet_schema",
@@ -25,6 +25,7 @@ var ReaderFunctions = []string{
 	"read_json", "read_json_auto", "read_ndjson", "read_ndjson_auto",
 	"read_json_objects", "read_json_objects_auto", "read_ndjson_objects",
 	"read_text", "read_blob", "glob",
+	"iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "delta_scan",
 }
 
 var readerOrQueryArgs = func() map[string]bool {

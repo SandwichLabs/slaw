@@ -240,7 +240,7 @@ func (a *analyzer) tableFunc(fn map[string]any, st *walkState) {
 				return
 			}
 			for _, s := range paths {
-				if r := a.paths.vetRead(s); r != "" {
+				if r := a.paths.vetReaderPath(lname, s); r != "" {
 					st.fail("%s", r)
 					return
 				}
@@ -359,6 +359,14 @@ func (a *analyzer) checkRef(parts []string, st *walkState) {
 func (a *analyzer) resolveRef(catalogName, schema, table string, st *walkState) {
 	if a.refDenied(catalogName, schema, st) {
 		return
+	}
+	if a.icebergCatalogRef(catalogName, schema) {
+		// An attached Iceberg catalog's table plans as ICEBERG_SCAN, the same
+		// operator a raw iceberg_scan('<path>') call plans as, and the plan cannot
+		// tell them apart. So each reference into such a catalog is one vetted
+		// scan: a raw call that no literal in the statement (or in a view body
+		// screened here) accounts for still exceeds the count and is refused.
+		st.readers++
 	}
 	if strings.EqualFold(schema, "pg_catalog") && (catalogName == "" || strings.EqualFold(catalogName, "system")) {
 		st.fail("%s", pgCatalogMsg)
@@ -521,6 +529,30 @@ const duckLakeInternalMsg = "a DuckLake's internal metadata catalog is not avail
 
 func isDuckLakeInternal(name string) bool {
 	return strings.HasPrefix(strings.ToLower(name), duckLakeInternalPrefix)
+}
+
+// icebergCatalogRef reports whether a reference lands in an attached Iceberg
+// catalog: a qualified name, a schema that is really a catalog name, or
+// (unqualified) the default catalog. It goes by the registered connection type
+// and by DuckDB's own engine type for the database.
+func (a *analyzer) icebergCatalogRef(catalogName, schema string) bool {
+	dbs := a.databases()
+	cat := catalogName
+	if cat == "" && schema != "" {
+		if _, attached := dbs[strings.ToLower(schema)]; attached {
+			cat = schema // catalog.table: the table is in that catalog's default schema
+		} else if _, registered := a.env.conn(schema); registered {
+			cat = schema
+		}
+	}
+	if cat == "" {
+		cat = a.defaultCatalog()
+	}
+	if c, ok := a.env.conn(cat); ok && c.Type == "iceberg_catalog" {
+		return true
+	}
+	r, ok := dbs[strings.ToLower(cat)]
+	return ok && r.typ == "iceberg"
 }
 
 // mysqlSystemSchemas are the MySQL server's own databases. A MySQL catalog lists

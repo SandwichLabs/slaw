@@ -6,7 +6,7 @@ A connection is a place your data lives. Slaw attaches each one into the workspa
 
 - **Add one** in Studio (the **+** in the connections rail, "New connection": pick a type, fill the form, **Test**, **Save**) or on the command line with `slaw conn add NAME --type TYPE ...`.
 - **Read-only by default.** Add `--read-only=false` (or switch it off in the editor) to allow writes. The read-only flag is a guard on Slaw's side; for a real guarantee use a read-only database role. MotherDuck has no read-only attach.
-- **Scope** is where the definition is kept: `local` (default; this computer, this workspace), `shared` (in the committed `slaw.yaml`; teammates get the definition and enter their own credentials) or `user` (all your workspaces). Use `--scope`. DuckLake, Iceberg and Delta can only be defined in your own scopes.
+- **Scope** is where the definition is kept: `local` (default; this computer, this workspace), `shared` (in the committed `slaw.yaml`; teammates get the definition and enter their own credentials) or `user` (all your workspaces). Use `--scope`. DuckLake, Iceberg and Delta may be defined in any scope; a shared one carries a warning (table metadata decides which files DuckDB reads).
 - **Credentials never go in the folder.** They go into your OS keychain, or are read from environment variables, or are asked for each time. Nothing secret is ever typed on a command line.
 - **Check it** with `slaw conn test NAME` (a throwaway session, 10 second limit) and `slaw conn list` (status per connection).
 - **DuckDB extensions** (postgres, mysql, httpfs, ...) are downloaded once, only when you ask for them (Install, `--install`; Excel import and export fetch `excel` the first time). A new connection reads `extension-missing` until you add `--install` to `slaw conn test` or `slaw conn connect`, or press **Install** in Studio. See [Privacy](privacy.md) and [troubleshooting](troubleshooting.md#extension-download-blocked-or-offline).
@@ -127,10 +127,10 @@ slaw conn add sales --type delta --path data/sales
 slaw conn add events_ice --type iceberg --path s3://acme-lake/warehouse/events/
 ```
 
-- Only in your own scopes (the default `local` is fine); never in a committed `slaw.yaml`.
+- Any scope. In a committed `slaw.yaml` or a bundle it carries a warning: Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover.
 - A `path` or `data_path` that is a URL must sit inside the scope of a storage connection (S3, GCS, R2 or Azure), which supplies the credential. In Studio the form shows whether one covers the URL and **Set up storage** opens a prefilled storage form; on the CLI `slaw conn add` prints the `slaw conn add ...` command that is missing. **Test** tries the storage connection first and says which of the two failed.
 - The extension (`ducklake`, `iceberg`, `delta`) downloads once when you press Install or pass `--install`.
-- The agent cannot read Iceberg or Delta tables yet; you can in the SQL editor.
+- The agent can read Iceberg and Delta tables with `iceberg_scan`, `iceberg_metadata`, `iceberg_snapshots` and `delta_scan`, under the same path and URL rules as `read_parquet` (a table folder inside `data/` or a storage URL inside a ready storage connection's scope; never a metadata file). See [agent-policy](reference/agent-policy.md).
 
 ## Sharing connections with a team
 

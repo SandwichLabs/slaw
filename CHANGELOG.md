@@ -4,6 +4,11 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+### Changed
+
+- **Lake and table connections are no longer own-scope only.** `ducklake`, `iceberg` and `delta` may be defined in a committed `slaw.yaml` and arrive in a `.slaw` bundle; a warning ("Table metadata in this lake decides which files DuckDB reads...") shows on the connection form, in `slaw conn add|move|list` and in bundle import notes. Credential rules are unchanged.
+- **The agent may call `iceberg_scan`, `iceberg_metadata`, `iceberg_snapshots` and `delta_scan`,** under the same path, URL, option and reader-count rules as `read_parquet`. See `docs/reference/agent-policy.md`.
+
 ## [0.7.0] - 2026-11-07
 
 Watches: standing questions with a condition, kept as files and checked on demand from Studio or `slaw watch check` (#247, phase 0).

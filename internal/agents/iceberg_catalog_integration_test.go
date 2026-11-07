@@ -82,7 +82,26 @@ func TestAgentReadsAnIcebergCatalog(t *testing.T) {
 		resp = sqlCall(h, q)
 		require.Nil(t, resp.Error, "%s: %s", q, errText(resp))
 	}
-	_, err := sess.DB().ExecContext(ctx, "CREATE TABLE local_ids AS SELECT i AS id FROM range(10) t(i)")
+	// Every reference is one vetted ICEBERG_SCAN: a self join, and a person's
+	// view or macro over the catalog (its body is screened and counted too).
+	_, err := sess.DB().ExecContext(ctx, "CREATE VIEW orders_v AS SELECT * FROM cat.ns.orders")
+	require.NoError(t, err)
+	_, err = sess.DB().ExecContext(ctx, "CREATE MACRO orders_m() AS TABLE SELECT * FROM cat.ns.orders")
+	require.NoError(t, err)
+	for _, q := range []string{
+		"SELECT count(*) FROM cat.ns.orders a JOIN cat.ns.orders b USING (id)",
+		"SELECT count(*) FROM orders_v",
+		"SELECT count(*) FROM orders_v a JOIN cat.ns.events e ON e.id = a.id",
+		"SELECT count(*) FROM orders_m()",
+	} {
+		resp = sqlCall(h, q)
+		require.Nil(t, resp.Error, "%s: %s", q, errText(resp))
+	}
+	// A raw reader the statement does not account for is still refused: the
+	// catalog reference does not pay for it (the plans of the two look alike).
+	resp = sqlCall(h, "SELECT * FROM cat.ns.orders, iceberg_scan('/etc/passwd')")
+	require.NotNil(t, resp.Error)
+	_, err = sess.DB().ExecContext(ctx, "CREATE TABLE local_ids AS SELECT i AS id FROM range(10) t(i)")
 	require.NoError(t, err)
 	resp = sqlCall(h, "SELECT count(*) FROM local_ids l JOIN cat.ns.orders o ON o.id = l.id")
 	require.Nil(t, resp.Error, errText(resp))

@@ -30,7 +30,7 @@ import (
 // token, OAuth2 client credentials or no authentication). Glue is refused as
 // not supported yet.
 //
-// WARNING (shown in the form, Test and the docs, IcebergWarning): table metadata
+// WARNING (shown in the form, Test and the docs, MetadataWarning): table metadata
 // decides which files DuckDB reads, so a catalog is as trustworthy as whoever can
 // write its tables. The attach is READ_ONLY by default (read_only defaults to
 // true; false attaches it writable, and writes then follow the usual rules: the
@@ -67,9 +67,10 @@ func (icebergCatalogType) NeedsCredential(s session.Spec) bool {
 	return true
 }
 
-// IcebergWarning is the plain-words risk of any Iceberg catalog, for the form,
-// Test and the docs.
-const IcebergWarning = "Table metadata decides which files DuckDB reads. Anyone who can write this catalog's tables can make a query, yours or the agent's, read local files, local network URLs or other S3 buckets your storage connections cover."
+// MetadataWarning is the plain-words risk of any metadata-driven lake (DuckLake,
+// Iceberg tables and catalogs, Delta): the one string the form, Test and
+// workspace.MetadataWarning (the status, the rail and `slaw conn list`) all say.
+const MetadataWarning = "Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover."
 
 const (
 	endpointS3Tables = "s3_tables"
@@ -375,7 +376,7 @@ func (icebergCatalogType) Probe(ctx context.Context, sess session.Session, s ses
 	}
 	detail := fmt.Sprintf("%s, %d tables", nsDetail, len(tables))
 	if len(tables) == 0 {
-		return 0, detail + ". " + IcebergWarning, nil
+		return 0, detail + ". " + MetadataWarning, nil
 	}
 	first := tables[0]
 	var cols int
@@ -383,7 +384,7 @@ func (icebergCatalogType) Probe(ctx context.Context, sess session.Session, s ses
 	if err := db.QueryRowContext(ctx, q).Scan(&cols); err != nil {
 		return 0, "", fmt.Errorf("attached, but reading the schema of %s.%s failed: %w", first[0], first[1], err)
 	}
-	return len(tables), fmt.Sprintf("%s; %s: %d columns. %s", detail, first[1], cols, IcebergWarning), nil
+	return len(tables), fmt.Sprintf("%s; %s: %d columns. %s", detail, first[1], cols, MetadataWarning), nil
 }
 
 // listTableNames returns (namespace, table) for the tables of the first
@@ -424,7 +425,7 @@ func (icebergCatalogType) Info() TypeInfo {
 		Name: "iceberg_catalog", Label: "Iceberg catalog (S3 Tables, REST)",
 		Fields: []Field{
 			{Name: "endpoint_type", Label: "Catalog kind", Kind: KindEnum, Choices: append([]string(nil), icebergEndpointKinds...), Required: true, Option: true, Prominent: true,
-				Help: "s3_tables is Amazon S3 Tables; rest is an Iceberg REST catalog (Polaris, Nessie, Lakekeeper, Unity, ...). Glue is not supported yet. " + IcebergWarning},
+				Help: "s3_tables is Amazon S3 Tables; rest is an Iceberg REST catalog (Polaris, Nessie, Lakekeeper, Unity, ...). Glue is not supported yet. " + MetadataWarning},
 			{Name: "warehouse", Label: "Warehouse", Kind: KindText, Required: true, Option: true,
 				Help: "s3_tables: the table bucket's ARN (arn:aws:s3tables:REGION:ACCOUNT:bucket/NAME). rest: the catalog's warehouse name."},
 			{Name: "storage", Label: "Signs with (S3 connection)", Kind: KindText, Option: true,
