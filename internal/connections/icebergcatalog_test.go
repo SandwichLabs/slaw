@@ -251,6 +251,34 @@ func TestIcebergCatalogInfo(t *testing.T) {
 	assert.Equal(t, []string{"httpfs", "avro", "iceberg"}, ExtensionsFor(restDef("none")))
 }
 
+func nsType(t *testing.T) session.NamespaceCatalogType {
+	t.Helper()
+	nt, ok := registry["iceberg_catalog"].(session.NamespaceCatalogType)
+	require.True(t, ok)
+	return nt
+}
+
+func TestIcebergCatalogDefaultNamespace(t *testing.T) {
+	for _, ns := range []string{"ns", "Sales-2024", "my ns", "ünï"} {
+		assert.NoError(t, Validate(with(restDef(""), setOpt("default_namespace", ns))), ns)
+	}
+	for name, ns := range map[string]string{"dot": "a.b", "long": strings.Repeat("n", 129), "control": "a\nb", "edge space": " ns", "tab": "a\tb"} {
+		assert.Error(t, Validate(with(restDef(""), setOpt("default_namespace", ns))), name)
+	}
+	assert.Equal(t, "ns", nsType(t).DefaultNamespace(with(s3tDef(), setOpt("default_namespace", "ns")).Spec()))
+	assert.Empty(t, nsType(t).DefaultNamespace(s3tDef().Spec()))
+	ti, err := TypeInfoFor("iceberg_catalog")
+	require.NoError(t, err)
+	assert.Contains(t, ti.FingerprintFields, "option:default_namespace")
+	// It is not part of the ATTACH.
+	stmts, err := registry["iceberg_catalog"].AttachSQL(with(restDef("none"), setOpt("default_namespace", "ns")).Spec())
+	require.NoError(t, err)
+	assert.NotContains(t, stmts[0], "ns")
+	// Only this type has the notion.
+	_, isNS := registry["postgres"].(session.NamespaceCatalogType)
+	assert.False(t, isNS)
+}
+
 func TestIcebergCatalogURIPortRange(t *testing.T) {
 	for _, p := range []string{"0", "65536", "99999"} {
 		err := Validate(with(restDef(""), setOpt("uri", "https://catalog.example.com:"+p+"/x")))

@@ -89,6 +89,7 @@ func TestIcebergCatalogTestWithBearerToken(t *testing.T) {
 			connections.WithRequiredStorage(store, storeCred))
 		require.False(t, res.OK)
 		assert.NotEmpty(t, res.Error)
+		assert.Contains(t, res.Error, connections.IcebergWarning, "a failed Test carries the warning too")
 		for _, s := range []string{resultText(res), logs.String()} {
 			assert.NotContains(t, s, wrong)
 			assert.NotContains(t, s, icebergtest.BearerToken)

@@ -115,7 +115,12 @@ func WithTestRedactor(r *secrets.Redactor) TestOption { return func(o *testOpts)
 // probes it. It never touches the workspace's session. A MotherDuck definition
 // is tested in a subprocess because a process holds one MotherDuck token.
 func Test(ctx context.Context, def Def, cred secrets.Credential, opts ...TestOption) TestResult {
-	return runClassified(def, func() TestResult { return test(ctx, def, cred, opts...) })
+	res := runClassified(def, func() TestResult { return test(ctx, def, cred, opts...) })
+	if def.Type == "iceberg_catalog" && !res.OK && res.Error != "" && !strings.Contains(res.Error, IcebergWarning) {
+		// A failed Test still says what attaching such a catalog means.
+		res.Error += " " + IcebergWarning
+	}
+	return res
 }
 
 // runClassified classifies a failed result against the definition tried. A

@@ -77,6 +77,15 @@ type CataloglessType interface {
 	Catalogless() bool
 }
 
+// NamespaceCatalogType is implemented by a catalog type with namespaces and no
+// default schema (an Iceberg catalog): USE <catalog> alone fails, so a pinned
+// connection USEs <catalog>.<namespace>. DefaultNamespace is the one the
+// definition configures ("" when it names none).
+type NamespaceCatalogType interface {
+	ConnectionType
+	DefaultNamespace(Spec) string
+}
+
 // StorageScopeType is implemented by the storage connections (s3, gcs, r2,
 // azure) whose Scope is the URL prefix agent reads are allowed inside. It is
 // the only way a connection widens what the agent may read: a catalog-less

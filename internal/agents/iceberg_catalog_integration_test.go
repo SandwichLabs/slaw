@@ -21,7 +21,7 @@ import (
 // icebergWorkspace opens a workspace over the fixture: an s3 connection that
 // reads the warehouse bucket, a read-only catalog "cat" and a writable one "catw"
 // (read_only: false) on the same REST catalog.
-func icebergWorkspace(t *testing.T, f *icebergtest.Fixture) (workspace.Workspace, session.Session) {
+func icebergWorkspace(t *testing.T, f *icebergtest.Fixture, catOpts ...map[string]string) (workspace.Workspace, session.Session) {
 	t.Helper()
 	ctx := context.Background()
 	ws := memWS(t)
@@ -34,6 +34,11 @@ func icebergWorkspace(t *testing.T, f *icebergtest.Fixture) (workspace.Workspace
 			"endpoint_type": "rest", "uri": f.RESTURI, "warehouse": icebergtest.Warehouse, "auth": "none"}}
 		if name == "catw" {
 			d.ReadOnly = ptr(false)
+		}
+		for _, o := range catOpts {
+			for k, v := range o {
+				d.Options[k] = v
+			}
 		}
 		// A committed definition: iceberg_catalog is not own-scope-only.
 		require.NoError(t, ws.AddConnection(workspace.ScopeShared, d))

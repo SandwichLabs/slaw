@@ -102,7 +102,10 @@ func (t icebergCatalogType) Validate(s session.Spec) error {
 	if err := noStrayFields(s); err != nil {
 		return err
 	}
-	if err := unknownOptions(s, "endpoint_type", "warehouse", "storage", "uri", "auth", "oauth2_server_uri"); err != nil {
+	if err := unknownOptions(s, "endpoint_type", "warehouse", "storage", "uri", "auth", "oauth2_server_uri", "default_namespace"); err != nil {
+		return err
+	}
+	if err := validateNamespace(s); err != nil {
 		return err
 	}
 	kind := opt(s, "endpoint_type")
@@ -117,6 +120,31 @@ func (t icebergCatalogType) Validate(s session.Spec) error {
 		return t.validateREST(s)
 	}
 	return fmt.Errorf("iceberg_catalog connection %q: endpoint_type %q is not one of %s", s.Name, kind, strings.Join(icebergEndpointKinds, ", "))
+}
+
+// DefaultNamespace implements session.NamespaceCatalogType: unqualified names
+// resolve in this namespace; without it, in the catalog's only namespace.
+func (icebergCatalogType) DefaultNamespace(s session.Spec) string { return opt(s, "default_namespace") }
+
+// validateNamespace checks option default_namespace: a printable name of at
+// most 128 characters with no dot (a dot would read as a qualifier).
+func validateNamespace(s session.Spec) error {
+	ns := opt(s, "default_namespace")
+	if ns == "" {
+		return nil
+	}
+	if err := noControl("default_namespace", ns); err != nil {
+		return fmt.Errorf("iceberg_catalog connection %q: %w", s.Name, err)
+	}
+	if utf8.RuneCountInString(ns) > 128 || strings.TrimSpace(ns) != ns || strings.Contains(ns, ".") {
+		return fmt.Errorf("iceberg_catalog connection %q: default_namespace must be one namespace name (at most 128 characters, no dot, no surrounding space)", s.Name)
+	}
+	for _, r := range ns {
+		if !unicode.IsPrint(r) {
+			return fmt.Errorf("iceberg_catalog connection %q: default_namespace contains a character that is not printable", s.Name)
+		}
+	}
+	return nil
 }
 
 func (icebergCatalogType) validateS3Tables(s session.Spec) error {
@@ -407,6 +435,8 @@ func (icebergCatalogType) Info() TypeInfo {
 				Help: "rest only: oauth2 (client id and secret), bearer (a token) or none."},
 			{Name: "oauth2_server_uri", Label: "OAuth2 token URL", Kind: KindURL, Option: true,
 				Help: "rest with oauth2 only: where the client id and secret are exchanged for a token. Leave empty for the catalog's own."},
+			{Name: "default_namespace", Label: "Default namespace", Kind: KindText, Option: true,
+				Help: "Where an unqualified table name resolves. Without it, the catalog's only namespace; with several, qualify names as catalog.namespace.table."},
 		},
 		Credentials: []Field{
 			{Name: "token", Label: "Bearer token", Kind: KindText, Secret: true, PerPerson: true, Help: "rest with auth bearer"},
@@ -415,7 +445,7 @@ func (icebergCatalogType) Info() TypeInfo {
 		},
 		Extensions:        icebergCatalogType{}.Extensions(),
 		Capabilities:      Capabilities{Catalog: true, Writable: true, ReadOnlyAttach: true, Remote: true, Test: true},
-		FingerprintFields: []string{"type", "option:endpoint_type", "option:warehouse", "option:uri"},
+		FingerprintFields: []string{"type", "option:endpoint_type", "option:warehouse", "option:uri", "option:default_namespace"},
 		SignInMethods:     []string{"keychain", "env", "prompt"},
 	}
 }
