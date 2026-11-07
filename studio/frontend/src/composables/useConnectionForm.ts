@@ -66,8 +66,10 @@ export function useConnectionForm() {
   const mainFields = computed(() => (spec.value?.fields ?? []).filter((x) => (!x.option || x.required) && x.name !== 'port'))
   const advFields = computed(() => (spec.value?.fields ?? []).filter((x) => x.option && !x.required))
   // These sources trust their own metadata (it decides which files are read): any
-  // scope may define one, and the form warns.
-  const metadataDriven = computed(() => ['ducklake', 'iceberg', 'delta'].includes(typeId.value))
+  // scope may define one, and the form warns. Go says which types (and the
+  // warning text); nothing here lists them.
+  const metadataDriven = computed(() => !!spec.value?.metadataDriven)
+  const metadataWarning = computed(() => spec.value?.warning ?? '')
   const insideWorkspace = computed(() => {
     if (!metadataDriven.value) return false
     const root = workspaceInfo.value?.root ?? ''
@@ -378,7 +380,7 @@ export function useConnectionForm() {
   return {
     types, loading, loadError, isNew, editName, typeId, spec, f, readOnly, connScope, origScope, method, envPrefix, ssoProfile,
     typed, status, detail, advancedOpen, origMethod, hadKeychainSecret, saved, saveError, result, isMD, remote,
-    mainFields, advFields, metadataDriven, insideWorkspace, exampleTail, portField, credFields, readableCreds,
+    mainFields, advFields, metadataDriven, metadataWarning, insideWorkspace, exampleTail, portField, credFields, readableCreds,
     secretCreds, needsSignIn, methodString, envVars, val, setVal, buildDef, refreshDraftFingerprint,
     fingerprintChanged, bindingChanged, dirty, fingerprintHelp, secretIsSet, serverChangedHelp, privateCopy,
     shadowedBy, failedTest, title, chooseType, loadForm, validate, presets, applyPreset, storageLine, storageSlot, storageFailed, prefilled, changedWhileAway,

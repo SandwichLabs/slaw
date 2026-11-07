@@ -43,6 +43,11 @@ type TypeSpec struct {
 	// Presets fill the s3 form for a known S3-compatible store (empty for
 	// every other type).
 	Presets []connections.Preset `json:"presets"`
+	// MetadataDriven marks a type whose table or catalog metadata decides which
+	// files DuckDB reads (workspace.MetadataDrivenType); Warning is the
+	// plain-words warning the form shows for it (workspace.MetadataWarning).
+	MetadataDriven bool   `json:"metadataDriven"`
+	Warning        string `json:"warning,omitempty"`
 	// Soon marks a type that is shown but cannot be chosen yet. Every type of
 	// the registry is available since #119; the flag stays for the picker.
 	Soon bool `json:"soon"`
@@ -87,7 +92,11 @@ func (a *App) ListConnectionTypes() []TypeSpec {
 			RequiresExtension: append([]string{}, i.Extensions...),
 			Capabilities:      i.Capabilities, FingerprintFields: append([]string{}, i.FingerprintFields...),
 			SignInMethods: methods, Presets: nonNilPresets(i.Presets),
+			MetadataDriven: workspace.MetadataDrivenType(id),
 		})
+		if workspace.MetadataDrivenType(id) {
+			out[len(out)-1].Warning = workspace.MetadataWarning
+		}
 	}
 	return out
 }

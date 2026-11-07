@@ -93,6 +93,13 @@ func TestAgentReadsAnIcebergCatalog(t *testing.T) {
 		"SELECT count(*) FROM orders_v",
 		"SELECT count(*) FROM orders_v a JOIN cat.ns.events e ON e.id = a.id",
 		"SELECT count(*) FROM orders_m()",
+		// Pruned scans (fewer ICEBERG_SCANs than references) still pass.
+		"WITH unused AS (SELECT * FROM cat.ns.orders) SELECT 1",
+		"SELECT * FROM cat.ns.orders LIMIT 0",
+		"SELECT id FROM cat.ns.orders WHERE false",
+		"SELECT count(*) FROM cat.ns.orders",
+		"SELECT 1 WHERE EXISTS (SELECT * FROM cat.ns.orders WHERE false)",
+		"SELECT id FROM cat.ns.orders UNION ALL SELECT id FROM cat.ns.events WHERE 1 = 0",
 	} {
 		resp = sqlCall(h, q)
 		require.Nil(t, resp.Error, "%s: %s", q, errText(resp))

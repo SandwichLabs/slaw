@@ -207,7 +207,7 @@ connections:
 
 ### `iceberg`, `delta`
 
-Apache Iceberg and Delta Lake **tables**. These are not catalogs: DuckDB reads one with a table function over its folder or URL, so the connection attaches nothing and holds no credential. It exists so the extension has a home in the product (the consent flow, the *Extension needed* status, loading when the workspace opens) and so Test can prove the table is readable. **Own scopes only**, like `ducklake` above.
+Apache Iceberg and Delta Lake **tables**. These are not catalogs: DuckDB reads one with a table function over its folder or URL, so the connection attaches nothing and holds no credential. It exists so the extension has a home in the product (the consent flow, the *Extension needed* status, loading when the workspace opens) and so Test can prove the table is readable. Any scope may define one (see the warning under `ducklake` above).
 
 | Field | Notes |
 |---|---|

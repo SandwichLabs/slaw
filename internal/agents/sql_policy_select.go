@@ -363,10 +363,12 @@ func (a *analyzer) resolveRef(catalogName, schema, table string, st *walkState) 
 	if a.icebergCatalogRef(catalogName, schema) {
 		// An attached Iceberg catalog's table plans as ICEBERG_SCAN, the same
 		// operator a raw iceberg_scan('<path>') call plans as, and the plan cannot
-		// tell them apart. So each reference into such a catalog is one vetted
-		// scan: a raw call that no literal in the statement (or in a view body
-		// screened here) accounts for still exceeds the count and is refused.
-		st.readers++
+		// tell them apart. Each reference into such a catalog is one vetted
+		// ICEBERG_SCAN, in a budget of its own (catalogScanUnit): only ICEBERG_SCAN
+		// nodes may spend it, so DuckDB pruning the scan (an unused CTE, LIMIT 0,
+		// a false filter, count(*)) can never leave a credit that covers another
+		// reader.
+		st.readers += catalogScanUnit
 	}
 	if strings.EqualFold(schema, "pg_catalog") && (catalogName == "" || strings.EqualFold(catalogName, "system")) {
 		st.fail("%s", pgCatalogMsg)

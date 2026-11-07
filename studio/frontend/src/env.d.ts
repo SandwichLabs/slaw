@@ -313,6 +313,9 @@ interface ConnTypeSpec {
   signInMethods: string[]
   // S3-compatible store presets (s3 only; an empty list for every other type).
   presets?: ConnPreset[]
+  // The type's metadata decides which files DuckDB reads (Go: workspace.MetadataDrivenType); warning is Go's MetadataWarning.
+  metadataDriven?: boolean
+  warning?: string
   soon: boolean
 }
 interface ConnPreset {
