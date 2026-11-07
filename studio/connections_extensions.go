@@ -21,13 +21,13 @@ type ExtensionInfo struct {
 
 var extensionPurpose = map[string]string{
 	"postgres":   "Read PostgreSQL databases.",
-	"httpfs":     "Read files from S3, Google Cloud Storage and R2.",
+	"httpfs":     "Read files from S3, Google Cloud Storage and R2, and talk to Iceberg REST catalogs.",
 	"sqlite":     "Read SQLite files.",
 	"motherduck": "Connect to MotherDuck.",
 	"mysql":      "Read MySQL and MariaDB databases.",
 	"azure":      "Read files from Azure Blob Storage and Data Lake.",
 	"ducklake":   "Read and write DuckLake lakehouses.",
-	"iceberg":    "Read Iceberg tables.",
+	"iceberg":    "Read Iceberg tables and catalogs (Amazon S3 Tables, REST).",
 	"avro":       "Read Avro files (Iceberg metadata needs it).",
 	"delta":      "Read Delta Lake tables.",
 }

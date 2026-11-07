@@ -66,3 +66,32 @@ func TestSyncRegistersBeforeItPreflights(t *testing.T) {
 	assert.NotContains(t, st.Message, "not defined")
 	assert.Empty(t, app.issues)
 }
+
+// An s3_tables iceberg_catalog follows the s3 connection that signs it: removing
+// that connection makes the catalog an issue, and adding one again repairs it,
+// with no change to the catalog's own definition.
+func TestSyncReregistersAnS3TablesCatalogWhenItsStorageConnectionChanges(t *testing.T) {
+	app, _ := connApp(t)
+	ctx := context.Background()
+	require.NoError(t, app.ws.AddConnection(workspace.ScopeLocal, workspace.ConnectionDef{Name: "aws_lake", Type: "s3", Scope: "s3://lake/", Region: "us-east-1"}))
+	require.NoError(t, app.ws.AddConnection(workspace.ScopeLocal, workspace.ConnectionDef{Name: "s3t", Type: "iceberg_catalog", ReadOnly: workspace.Bool(true),
+		Options: map[string]string{"endpoint_type": "s3_tables", "warehouse": "arn:aws:s3tables:us-east-1:111122223333:bucket/sales", "storage": "aws_lake"}}))
+	app.syncConnections()
+	app.connSigMu.Lock()
+	assert.Equal(t, []string{"aws_lake"}, app.connDeps["s3t"].Requires)
+	app.connSigMu.Unlock()
+	assert.Empty(t, app.issues)
+
+	require.NoError(t, app.ws.RemoveConnection(ctx, workspace.ScopeLocal, "aws_lake"))
+	app.syncConnections()
+	require.Len(t, app.issues, 1)
+	assert.Equal(t, "s3t", app.issues[0].Connection)
+	assert.Contains(t, app.issues[0].Message, "aws_lake")
+
+	require.NoError(t, app.ws.AddConnection(workspace.ScopeLocal, workspace.ConnectionDef{Name: "aws_lake", Type: "s3", Scope: "s3://lake/", Region: "us-east-1"}))
+	app.syncConnections()
+	assert.Empty(t, app.issues)
+	app.connSigMu.Lock()
+	assert.Equal(t, []string{"aws_lake"}, app.connDeps["s3t"].Requires)
+	app.connSigMu.Unlock()
+}

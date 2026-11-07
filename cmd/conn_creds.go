@@ -71,7 +71,7 @@ func runConnCredsSet(cmd *cobra.Command, args []string) error {
 		printSSONote(out, c.Name, prefix)
 		return nil
 	}
-	cred, err := promptCredentials(cmd.InOrStdin(), cmd.ErrOrStderr(), c.Type, secrets.Credential{})
+	cred, err := promptCredentials(cmd.InOrStdin(), cmd.ErrOrStderr(), c.Type, c.Options)
 	if err != nil {
 		return err
 	}

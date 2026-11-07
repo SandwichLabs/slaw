@@ -336,7 +336,7 @@ const (
 // Probe lists namespaces and table names (neither loads a table: S0 item 10),
 // then describes one table, the one LoadTable a Test makes.
 //
-// TODO(L3): report where up to 5 tables keep their data, run through
+// TODO(lakehouse, after L3): report where up to 5 tables keep their data, run through
 // workspace.StorageFor, so the form can say which storage connection reads it.
 // DuckDB 1.5 offers no cheap way to get a table's location from the attached
 // catalog, and the person-only test path (iceberg_metadata, or the REST
@@ -428,25 +428,34 @@ func (icebergCatalogType) Info() TypeInfo {
 				Help: "s3_tables is Amazon S3 Tables; rest is an Iceberg REST catalog (Polaris, Nessie, Lakekeeper, Unity, ...). Glue is not supported yet. " + MetadataWarning},
 			{Name: "warehouse", Label: "Warehouse", Kind: KindText, Required: true, Option: true,
 				Help: "s3_tables: the table bucket's ARN (arn:aws:s3tables:REGION:ACCOUNT:bucket/NAME). rest: the catalog's warehouse name."},
-			{Name: "storage", Label: "Signs with (S3 connection)", Kind: KindText, Option: true,
+			{Name: "storage", Label: "Signs with (S3 connection)", Kind: KindConnection, ConnectionType: "s3", Required: true, Option: true, VisibleWhen: whenKind(endpointS3Tables),
 				Help: "s3_tables only: the name of the s3 connection whose identity signs the catalog. Its scope should cover the table bucket's data."},
-			{Name: "uri", Label: "Catalog URL", Kind: KindURL, Option: true,
+			{Name: "uri", Label: "Catalog URL", Kind: KindURL, Required: true, Option: true, VisibleWhen: whenKind(endpointREST),
 				Help: "rest only: the catalog's base URL. https, or http for localhost only; no user name, query or fragment."},
-			{Name: "auth", Label: "Authentication", Kind: KindEnum, Choices: append([]string(nil), icebergAuths...), Default: authOAuth2, Option: true,
+			{Name: "auth", Label: "Authentication", Kind: KindEnum, Choices: append([]string(nil), icebergAuths...), Default: authOAuth2, Option: true, VisibleWhen: whenKind(endpointREST),
 				Help: "rest only: oauth2 (client id and secret), bearer (a token) or none."},
 			{Name: "oauth2_server_uri", Label: "OAuth2 token URL", Kind: KindURL, Option: true,
-				Help: "rest with oauth2 only: where the client id and secret are exchanged for a token. Leave empty for the catalog's own."},
+				VisibleWhen: []Condition{{Field: "endpoint_type", In: []string{endpointREST}}, {Field: "auth", In: []string{authOAuth2}}},
+				Help:        "rest with oauth2 only: where the client id and secret are exchanged for a token. Leave empty for the catalog's own."},
 			{Name: "default_namespace", Label: "Default namespace", Kind: KindText, Option: true,
 				Help: "Where an unqualified table name resolves. Without it, the catalog's only namespace; with several, qualify names as catalog.namespace.table."},
 		},
 		Credentials: []Field{
-			{Name: "token", Label: "Bearer token", Kind: KindText, Secret: true, PerPerson: true, Help: "rest with auth bearer"},
-			{Name: "key_id", Label: "OAuth2 client id", Kind: KindText, PerPerson: true, Help: "rest with auth oauth2"},
-			{Name: "secret", Label: "OAuth2 client secret", Kind: KindText, Secret: true, PerPerson: true, Help: "rest with auth oauth2"},
+			{Name: "token", Label: "Bearer token", Kind: KindText, Secret: true, PerPerson: true, Help: "rest with auth bearer",
+				VisibleWhen: []Condition{{Field: "endpoint_type", In: []string{endpointREST}}, {Field: "auth", In: []string{authBearer}}}},
+			{Name: "key_id", Label: "OAuth2 client id", Kind: KindText, PerPerson: true, Help: "rest with auth oauth2",
+				VisibleWhen: []Condition{{Field: "endpoint_type", In: []string{endpointREST}}, {Field: "auth", In: []string{authOAuth2}}}},
+			{Name: "secret", Label: "OAuth2 client secret", Kind: KindText, Secret: true, PerPerson: true, Help: "rest with auth oauth2",
+				VisibleWhen: []Condition{{Field: "endpoint_type", In: []string{endpointREST}}, {Field: "auth", In: []string{authOAuth2}}}},
 		},
 		Extensions:        icebergCatalogType{}.Extensions(),
 		Capabilities:      Capabilities{Catalog: true, Writable: true, ReadOnlyAttach: true, Remote: true, Test: true},
 		FingerprintFields: []string{"type", "option:endpoint_type", "option:warehouse", "option:uri", "option:default_namespace"},
 		SignInMethods:     []string{"keychain", "env", "prompt"},
 	}
+}
+
+// whenKind shows a field only for one endpoint_type.
+func whenKind(kind string) []Condition {
+	return []Condition{{Field: "endpoint_type", In: []string{kind}}}
 }

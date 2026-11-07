@@ -31,6 +31,7 @@ func icebergS3Tables(name string) ConnectionDef {
 // not credentials.
 func TestIcebergCatalogIsSavedInEveryScope(t *testing.T) {
 	ws, _, _ := memWorkspace(t, nil)
+	require.NoError(t, ws.AddConnection(ScopeShared, ConnectionDef{Name: "aws_lake", Type: "s3", Scope: "s3://lake/", Region: "us-east-1"}))
 	for _, d := range []ConnectionDef{
 		icebergRest("c_none", "none", nil),
 		icebergRest("c_bearer", "bearer", nil),
@@ -86,6 +87,7 @@ func TestOptionNamesThatDifferOnlyInCaseAreRefused(t *testing.T) {
 func TestIcebergCatalogCredentialsFollowTheDefinition(t *testing.T) {
 	ws, _, _ := memWorkspace(t, nil)
 	ctx := context.Background()
+	require.NoError(t, ws.AddConnection(ScopeLocal, ConnectionDef{Name: "aws_lake", Type: "s3", Scope: "s3://lake/", Region: "us-east-1"}))
 	for name, want := range map[string]bool{"c_s3t": false, "c_none": false, "c_bearer": true, "c_oauth": true, "c_default": true} {
 		var d ConnectionDef
 		switch name {
@@ -140,4 +142,40 @@ func TestSharedIcebergCatalogShowsTheMetadataWarning(t *testing.T) {
 	assert.Equal(t, MetadataWarning, warn["shared_cat"])
 	assert.Equal(t, MetadataWarning+" "+WritableSharedWarning, warn["shared_rw"])
 	assert.Empty(t, warn["mine"])
+}
+
+// An s3_tables catalog requires its storage connection: it must be defined, be
+// an s3 connection and resolve, and the hub gets it as Spec.Requires.
+func TestS3TablesCatalogRequiresItsStorageConnection(t *testing.T) {
+	ws, _, _ := memWorkspace(t, nil)
+	d := icebergS3Tables("s3t")
+	require.NoError(t, ws.AddConnection(ScopeLocal, d), "saving does not need the storage connection yet")
+
+	_, err := SessionSpec(ws, "s3t")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `storage connection "aws_lake" is not defined`)
+
+	require.NoError(t, ws.AddConnection(ScopeLocal, ConnectionDef{Name: "aws_lake", Type: "postgres", Host: "h", Database: "d"}))
+	_, err = SessionSpec(ws, "s3t")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is a postgres connection")
+	require.NoError(t, ws.RemoveConnection(context.Background(), ScopeLocal, "aws_lake"))
+
+	require.NoError(t, ws.AddConnection(ScopeLocal, ConnectionDef{Name: "aws_lake", Type: "s3", Scope: "s3://lake/", Region: "us-east-1"}))
+	spec, err := SessionSpec(ws, "s3t")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"aws_lake"}, spec.Requires)
+
+	// A storage connection whose ${ENV} reference does not resolve is refused, with the cause.
+	require.NoError(t, ws.RemoveConnection(context.Background(), ScopeLocal, "aws_lake"))
+	require.NoError(t, ws.AddConnection(ScopeLocal, ConnectionDef{Name: "aws_lake", Type: "s3", Scope: "s3://${SLAW_L3_UNSET_BUCKET}/", Region: "us-east-1"}))
+	_, err = SessionSpec(ws, "s3t")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not resolve")
+
+	// A REST catalog requires nothing.
+	require.NoError(t, ws.AddConnection(ScopeLocal, icebergRest("rest_cat", "none", nil)))
+	spec, err = SessionSpec(ws, "rest_cat")
+	require.NoError(t, err)
+	assert.Empty(t, spec.Requires)
 }

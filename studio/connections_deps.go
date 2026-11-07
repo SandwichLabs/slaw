@@ -37,7 +37,7 @@ func currentDeps(ws workspace.Workspace) map[string]connDeps {
 }
 
 func usesStorageSecret(t string) bool {
-	return t == "ducklake" || t == "iceberg" || t == "delta"
+	return t == "ducklake" || t == "iceberg" || t == "delta" || t == "iceberg_catalog"
 }
 
 // changedNames lists the connections that are new, edited or gone.

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/SandwichLabs/slaw/internal/engine"
 )
 
 // ItemKind is what a completion names.
@@ -390,7 +392,11 @@ func relationItems(cn *Connection, s *Schema) []Item {
 		if t.Kind == "view" {
 			kind = KindView
 		}
-		items = append(items, Item{Label: t.Name, Kind: kind, Detail: fmt.Sprintf("%s in %s.%s (%d columns)", t.Kind, cn.Name, s.Name, len(t.Columns))})
+		detail := fmt.Sprintf("%s in %s.%s (%d columns)", t.Kind, cn.Name, s.Name, len(t.Columns))
+		if len(t.Columns) == 0 && cn.Type == engine.IcebergCatalogType {
+			detail = fmt.Sprintf("%s in %s.%s (columns load when opened)", t.Kind, cn.Name, s.Name) // names-only listing
+		}
+		items = append(items, Item{Label: t.Name, Kind: kind, Detail: detail})
 	}
 	return items
 }

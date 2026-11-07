@@ -11,7 +11,7 @@ import { useRoute } from 'vue-router'
 import { App } from '../lib/bindings'
 import { workspaceInfo } from './useWorkspace'
 import { errorText } from '../lib/errors'
-import { NAME_RE, CRED_ENV_SUFFIX } from '../lib/connections'
+import { NAME_RE, CRED_ENV_SUFFIX, fieldVisible } from '../lib/connections'
 import { presetFill, endpointProblem, followRegion, REGION_PLACEHOLDER, type FilledTemplate } from '../lib/storagePresets'
 import { useStorageDetect, type DetectKey } from './useStorageDetect'
 import { parseStoragePrefill, type StoragePrefill } from '../lib/storagePrefill'
@@ -63,8 +63,11 @@ export function useConnectionForm() {
   const remote = computed(() => !!spec.value?.capabilities.remote)
   // A required option (a DuckLake's data folder, R2's account id) is not an
   // advanced setting: it sits with the main fields, with its asterisk.
-  const mainFields = computed(() => (spec.value?.fields ?? []).filter((x) => (!x.option || x.required) && x.name !== 'port'))
-  const advFields = computed(() => (spec.value?.fields ?? []).filter((x) => x.option && !x.required))
+  // A field with a visibleWhen rule (an iceberg_catalog's rest-only URL) is shown,
+  // validated and saved only while its rule holds for the options now set.
+  const visible = (fd: ConnField) => fieldVisible(fd, spec.value?.fields ?? [], f.options)
+  const mainFields = computed(() => (spec.value?.fields ?? []).filter((x) => (!x.option || x.required) && x.name !== 'port' && visible(x)))
+  const advFields = computed(() => (spec.value?.fields ?? []).filter((x) => x.option && !x.required && visible(x)))
   // These sources trust their own metadata (it decides which files are read): any
   // scope may define one, and the form warns. Go says which types (and the
   // warning text); nothing here lists them.
@@ -90,7 +93,8 @@ export function useConnectionForm() {
     }
   })
   const portField = computed(() => (spec.value?.fields ?? []).find((x) => x.name === 'port'))
-  const credFields = computed(() => spec.value?.credentials ?? [])
+  // Only the credentials the definition signs in with: a bearer catalog a token, an OAuth2 one a client id and secret, an s3_tables or auth-none one nothing.
+  const credFields = computed(() => (spec.value?.credentials ?? []).filter(visible))
   const readableCreds = computed(() => credFields.value.filter((c) => !c.secret))
   const secretCreds = computed(() => credFields.value.filter((c) => c.secret))
   const primarySecret = computed(() => secretCreds.value[0]?.name ?? '')
@@ -121,13 +125,13 @@ export function useConnectionForm() {
     const d: ConnectionDef = { name: f.name.trim(), type: typeId.value }
     const set = (k: keyof ConnectionDef, v: string) => { if (v.trim() !== '') (d as any)[k] = v.trim() }
     for (const fd of spec.value?.fields ?? []) {
-      if (fd.option) continue
+      if (fd.option || !visible(fd)) continue
       const v = val(fd)
       if (fd.name === 'port') { if (v.trim() !== '') d.port = parseInt(v, 10) || 0 }
       else set(fd.name as keyof ConnectionDef, v)
     }
     const opts: Record<string, string> = {}
-    for (const fd of (spec.value?.fields ?? []).filter((x) => x.option)) { // required options too
+    for (const fd of (spec.value?.fields ?? []).filter((x) => x.option && visible(x))) { // required options too
       const v = (f.options[fd.name] ?? '').trim()
       if (v) opts[fd.name] = v
     }
@@ -366,10 +370,10 @@ export function useConnectionForm() {
   function validate(): string {
     if (!spec.value) return 'Choose a connection type first.'
     if (isNew.value && !NAME_RE.test(f.name.trim())) return 'Give it a name with lowercase letters, numbers and underscores, like prod_pg.'
-    for (const fd of spec.value.fields) {
+    for (const fd of spec.value.fields.filter(visible)) {
       if (fd.required && !fd.option && val(fd).trim() === '') return `${fd.label} is needed.`
     }
-    for (const fd of (spec.value.fields ?? []).filter((x) => x.option)) {
+    for (const fd of (spec.value.fields ?? []).filter((x) => x.option && visible(x))) {
       if (fd.required && !(f.options[fd.name] ?? '').trim()) return `${fd.label} is needed.`
     }
     const ep = endpointProblem((f.options['endpoint'] ?? '').trim())
@@ -381,7 +385,7 @@ export function useConnectionForm() {
     types, loading, loadError, isNew, editName, typeId, spec, f, readOnly, connScope, origScope, method, envPrefix, ssoProfile,
     typed, status, detail, advancedOpen, origMethod, hadKeychainSecret, saved, saveError, result, isMD, remote,
     mainFields, advFields, metadataDriven, metadataWarning, insideWorkspace, exampleTail, portField, credFields, readableCreds,
-    secretCreds, needsSignIn, methodString, envVars, val, setVal, buildDef, refreshDraftFingerprint,
+    secretCreds, needsSignIn, visible, methodString, envVars, val, setVal, buildDef, refreshDraftFingerprint,
     fingerprintChanged, bindingChanged, dirty, fingerprintHelp, secretIsSet, serverChangedHelp, privateCopy,
     shadowedBy, failedTest, title, chooseType, loadForm, validate, presets, applyPreset, storageLine, storageSlot, storageFailed, prefilled, changedWhileAway,
   }

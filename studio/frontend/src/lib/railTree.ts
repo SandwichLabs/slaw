@@ -92,6 +92,7 @@ export function buildRows(conns: ConnectionInfo[], expanded: Set<string>, levels
       pushTables(out, c, top, 2, ck, top.schema, expanded, levels, query)
       return
     }
+    const nsMore = top.more ?? 0
     top.nodes.forEach((s, si) => {
       const sk = schemaKey(c.name, s.name)
       const sOpen = expanded.has(sk)
@@ -103,6 +104,8 @@ export function buildRows(conns: ConnectionInfo[], expanded: Set<string>, levels
       if ('error' in sl) { out.push(note(sk, c, 3, sl.error)); return }
       pushTables(out, c, sl, 3, sk, s.name, expanded, levels, query)
     })
+    // A catalog with more namespaces than the rail lists says so (engine.MaxCatalogNamespaces).
+    if (nsMore > 0) out.push(note(`${ck}+more`, c, 2, `${nsMore} more namespace${nsMore === 1 ? '' : 's'} not listed. Query ${c.name}.<namespace>.<table> by name.`))
   })
   return out
 }

@@ -68,6 +68,23 @@ func TableColumns(db RowQuerier, ref session.TableRef) ([]ColumnInfo, error) {
 		return nil, fmt.Errorf("failed to iterate columns: %w", err)
 	}
 
+	if len(cols) == 1 && cols[0].Name == "__" && strings.EqualFold(cols[0].Type, "UNKNOWN") && ref.Catalog != "" && ref.Schema != "" {
+		// A lazily resolved table (an Iceberg catalog's): bind it for its real columns.
+		dr, err := db.Query(session.DescribeSQL(ref))
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe the table: %w", err)
+		}
+		described, err := session.ScanDescribe(dr)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]ColumnInfo, 0, len(described))
+		for _, d := range described {
+			out = append(out, ColumnInfo{Name: d.Name, Type: d.DataType, NotNull: d.NotNull})
+		}
+		return out, nil
+	}
+
 	pk, err := constraintColumns(db, ref, "PRIMARY KEY")
 	if err != nil {
 		return nil, err

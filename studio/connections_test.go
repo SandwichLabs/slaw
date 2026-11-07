@@ -82,7 +82,7 @@ func TestListConnectionTypes_GeneratedFromRegistry(t *testing.T) {
 	for _, ty := range types {
 		ids = append(ids, ty.ID)
 	}
-	assert.Equal(t, []string{"duckdb", "postgres", "mysql", "motherduck", "sqlite", "ducklake", "s3", "gcs", "r2", "azure", "iceberg", "delta"}, ids)
+	assert.Equal(t, []string{"duckdb", "postgres", "mysql", "motherduck", "sqlite", "ducklake", "iceberg_catalog", "s3", "gcs", "r2", "azure", "iceberg", "delta"}, ids)
 	for _, id := range ids {
 		assert.False(t, byID[id].Soon, "%s: no type is greyed out any more", id)
 		assert.NotEmpty(t, byID[id].SignInMethods, id)
@@ -90,7 +90,7 @@ func TestListConnectionTypes_GeneratedFromRegistry(t *testing.T) {
 		assert.NotEmpty(t, byID[id].Fields, id)
 	}
 	// Go says which types are metadata-driven and what the form warns; the
-	// frontend lists neither (iceberg_catalog gets the note when it joins the picker).
+	// frontend lists neither.
 	for _, id := range ids {
 		assert.Equal(t, workspace.MetadataDrivenType(id), byID[id].MetadataDriven, id)
 		if byID[id].MetadataDriven {
