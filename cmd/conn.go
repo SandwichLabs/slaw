@@ -263,6 +263,16 @@ type connRow struct {
 	Message      string `json:"message,omitempty"`
 }
 
+// showsSignIn reports whether a connection's list row names its sign-in: only
+// a connection that needs a credential has one, judged on the definition when
+// it is found (an iceberg_catalog's kind decides) and on the type otherwise.
+func showsSignIn(ws workspace.Workspace, name, typ string) bool {
+	if c, ok := findConn(ws, name); ok {
+		return c.ConnectionDef.NeedsCredential()
+	}
+	return connections.NeedsCredential(typ)
+}
+
 func runConnList(cmd *cobra.Command, _ []string) error {
 	asJSON, _ := cmd.Flags().GetBool("json")
 	o, err := openWorkspace(cmdCtx(cmd), flagString(cmd, "workspace"), true, false, "slaw conn", io.Discard)
@@ -276,7 +286,7 @@ func runConnList(cmd *cobra.Command, _ []string) error {
 		for _, s := range st.Shadows {
 			r.Shadows = append(r.Shadows, string(s))
 		}
-		if c, ok := findConn(o.WS, st.Name); (ok && c.ConnectionDef.NeedsCredential()) || (!ok && connections.NeedsCredential(st.Type)) {
+		if showsSignIn(o.WS, st.Name, st.Type) {
 			r.SignIn = st.SignIn
 		}
 		if info, err := connections.TypeInfoFor(st.Type); err == nil && r.ReadOnly && !info.Capabilities.ReadOnlyAttach && info.Capabilities.Catalog {
