@@ -22,29 +22,34 @@ func resolveOne(t *testing.T, ws Workspace, name string) (ResolvedConnection, er
 	return ResolvedConnection{}, nil
 }
 
-func TestMetadataTrustingTypesAreOwnScopeOnly(t *testing.T) {
+func TestMetadataDrivenTypesMayBeShared(t *testing.T) {
 	ws, _, _ := memWorkspace(t, nil)
 	for _, d := range []ConnectionDef{
 		{Name: "lake", Type: "ducklake", Path: "data/lake.ducklake", Options: map[string]string{"data_path": "data/f"}},
 		{Name: "ice", Type: "iceberg", Path: "data/ice"},
 		{Name: "dl", Type: "delta", Path: "data/delta"},
 	} {
-		err := ws.AddConnection(ScopeShared, d)
-		require.Error(t, err, d.Type)
-		assert.Contains(t, err.Error(), "only you can add them", d.Type)
-		require.NoError(t, ws.AddConnection(ScopeLocal, d), d.Type)
-		ud := ConnectionDef{Name: d.Name + "_u", Type: d.Type, Path: filepath.Join(t.TempDir(), "x")}
-		if d.Type == "ducklake" {
-			ud.Options = map[string]string{"data_path": filepath.Join(t.TempDir(), "f")}
-		}
-		require.NoError(t, ws.AddConnection(ScopeUser, ud), d.Type)
-		// Moving one into the team's file is refused too.
-		require.Error(t, ws.MoveConnection(context.Background(), d.Name, ScopeLocal, ScopeShared), d.Type)
+		assert.True(t, MetadataDrivenType(d.Type))
+		require.NoError(t, ws.AddConnection(ScopeShared, d), d.Type)
+		require.NoError(t, ws.MoveConnection(context.Background(), d.Name, ScopeShared, ScopeLocal), d.Type)
+		require.NoError(t, ws.MoveConnection(context.Background(), d.Name, ScopeLocal, ScopeShared), d.Type)
+		// A shared definition resolves (it is no longer skipped at open).
+		_, err := ResolveConnection(ws, Connection{ConnectionDef: d, Scope: ScopeShared}, nil)
+		require.NoError(t, err, d.Type)
 	}
-	// A hand-edited slaw.yaml (a pull) is refused when resolved.
-	_, err := ResolveConnection(ws, Connection{ConnectionDef: ConnectionDef{Name: "planted", Type: "delta", Path: "data/planted"}, Scope: ScopeShared}, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only you can add them")
+	assert.False(t, MetadataDrivenType("postgres"))
+	// Credential and path rules still hold in the shared scope.
+	require.Error(t, ws.AddConnection(ScopeShared, ConnectionDef{Name: "abs", Type: "delta", Path: "/etc/x"}))
+	warned := 0
+	for _, st := range ConnectionStates(ws, nil, nil) {
+		if MetadataDrivenType(st.Type) {
+			assert.Equal(t, MetadataWarning, st.Warning, st.Name)
+			warned++
+		} else {
+			assert.Empty(t, st.Warning, st.Name)
+		}
+	}
+	assert.Equal(t, 3, warned)
 }
 
 func TestDuckLakePathsResolveInsideTheWorkspace(t *testing.T) {
@@ -175,9 +180,8 @@ func TestFingerprintCoversTheNewTypesFields(t *testing.T) {
 	assert.Equal(t, "l.ducklake", ServerDescription(base["ducklake"]))
 }
 
-// A pull can put anything in slaw.yaml. A definition the person may not have
-// (a source that trusts its metadata, or one with fields its type does not use,
-// such as a smuggled scope) is skipped with a visible issue; the workspace still
+// A pull can put anything in slaw.yaml. A definition with fields its type does
+// not use (such as a smuggled scope) is skipped with a visible issue; the workspace still
 // opens and the other connections work.
 func TestPlantedSharedDefinitionsAreSkippedWithAnIssue(t *testing.T) {
 	ws, _, _ := memWorkspace(t, nil)
@@ -198,10 +202,9 @@ func TestPlantedSharedDefinitionsAreSkippedWithAnIssue(t *testing.T) {
 		byName[i.Connection] = i.Message
 	}
 	require.Contains(t, byName, "planted_delta")
-	require.Contains(t, byName, "planted_lake")
 	require.Contains(t, byName, "stray_sqlite")
-	assert.Contains(t, byName["planted_delta"], "ask the person who committed it to move it to their own connections")
-	assert.Contains(t, byName["planted_lake"], "only you can add them")
+	assert.Contains(t, byName["planted_delta"], "not a setting of this type")
+	assert.NotContains(t, byName, "planted_lake", "a shared lake is allowed, with a warning")
 	assert.Contains(t, byName["stray_sqlite"], "not a setting of this type")
 	assert.NotContains(t, byName, "fine")
 	infos := map[string]bool{}
@@ -211,7 +214,7 @@ func TestPlantedSharedDefinitionsAreSkippedWithAnIssue(t *testing.T) {
 	}
 	assert.True(t, infos["fine"], "the other connections work")
 	assert.True(t, infos["local"])
-	assert.False(t, infos["planted_delta"] || infos["planted_lake"] || infos["stray_sqlite"], "the refused ones are not registered")
+	assert.False(t, infos["planted_delta"] || infos["stray_sqlite"], "the refused ones are not registered")
 	_, err = sess.Query(context.Background(), "SELECT 1")
 	require.NoError(t, err)
 }

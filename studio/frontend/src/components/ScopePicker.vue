@@ -6,7 +6,7 @@ import { computed } from 'vue'
 import Icon from './Icon.vue'
 import { workspaceInfo } from '../composables/useWorkspace'
 
-const props = defineProps<{ modelValue: ConnScope; name?: string; disabled?: boolean; ownOnly?: boolean }>()
+const props = defineProps<{ modelValue: ConnScope; name?: string; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [v: ConnScope] }>()
 
 const isGit = computed(() => !!workspaceInfo.value?.isGit)
@@ -16,8 +16,7 @@ const allOptions: { value: ConnScope; title: string; desc: string; file: string 
   { value: 'user', title: 'All my workspaces', desc: 'Only you, in every workspace on this computer.', file: '~/.config/slaw/' },
 ]
 
-// A source that trusts its own metadata is never shared with the team.
-const options = computed(() => (props.ownOnly ? allOptions.filter((o) => o.value !== 'shared') : allOptions))
+const options = computed(() => allOptions)
 
 function onKey(e: KeyboardEvent) {
   const i = options.value.findIndex((o) => o.value === props.modelValue)

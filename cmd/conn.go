@@ -168,6 +168,9 @@ func runConnAdd(cmd *cobra.Command, args []string) error {
 	}
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "Added %s connection %s (scope: %s).\n", typ, def.Name, scope)
+	if scope == workspace.ScopeShared && workspace.MetadataDrivenType(typ) {
+		fmt.Fprintf(out, "Warning: %s\n", workspace.MetadataWarning)
+	}
 	printStorageHint(out, ws, def, scope)
 	if !connections.NeedsCredential(typ) {
 		return nil
@@ -261,6 +264,8 @@ type connRow struct {
 	SignIn       string `json:"sign_in,omitempty"`
 	Default      bool   `json:"default,omitempty"`
 	Message      string `json:"message,omitempty"`
+	// Warning is set on a shared lake or table definition (not an error).
+	Warning string `json:"warning,omitempty"`
 }
 
 func runConnList(cmd *cobra.Command, _ []string) error {
@@ -272,7 +277,7 @@ func runConnList(cmd *cobra.Command, _ []string) error {
 	defer o.Close()
 	var rows []connRow
 	for _, st := range o.States() {
-		r := connRow{Name: st.Name, Type: st.Type, Scope: string(st.Scope), Default: st.Default, ReadOnly: st.ReadOnly, Status: string(st.Status), Message: st.Detail}
+		r := connRow{Name: st.Name, Type: st.Type, Scope: string(st.Scope), Default: st.Default, ReadOnly: st.ReadOnly, Status: string(st.Status), Message: st.Detail, Warning: st.Warning}
 		for _, s := range st.Shadows {
 			r.Shadows = append(r.Shadows, string(s))
 		}
@@ -293,6 +298,7 @@ func runConnList(cmd *cobra.Command, _ []string) error {
 	if ok, why := o.Sess.RelaunchRequired(); ok {
 		fmt.Fprintln(cmd.ErrOrStderr(), "note:", why)
 	}
+	printRowWarnings(cmd.ErrOrStderr(), rows)
 	out := cmd.OutOrStdout()
 	if asJSON {
 		enc := json.NewEncoder(out)
@@ -324,6 +330,15 @@ func runConnList(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, r.Type, r.Scope, r.Status, ro, dash(r.SignIn), oneLine(note))
 	}
 	return tw.Flush()
+}
+
+// printRowWarnings says, once per shared lake or table definition, why it needs care.
+func printRowWarnings(w io.Writer, rows []connRow) {
+	for _, r := range rows {
+		if r.Warning != "" {
+			fmt.Fprintf(w, "warning: %s is shared in slaw.yaml. %s\n", r.Name, r.Warning)
+		}
+	}
 }
 
 func dash(s string) string {
@@ -619,6 +634,9 @@ func runConnMove(cmd *cobra.Command, args []string) error {
 		return errors.New(cliRedactor.Redact(err.Error()))
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Moved %s from %s to %s.\n", args[0], from, to)
+	if to == workspace.ScopeShared && workspace.MetadataDrivenType(c.Type) {
+		fmt.Fprintf(cmd.OutOrStdout(), "Warning: %s\n", workspace.MetadataWarning)
+	}
 	return nil
 }
 

@@ -107,7 +107,7 @@ docs/                see docs/README.md
 
 **Workspace and files.** Files are the source of truth; writes are compare-and-write and a watcher picks up outside changes (git, editors, other processes). Notebook outputs are never persisted. A committed `slaw.yaml` can only *tighten* the agent's limits; looser per-person settings live outside the folder. A workspace `.env` is loaded only after the person allows it (direnv-style: allow is keyed by path + content hash, deny by path; decisions in the user config dir), into a per-workspace overlay read by `env:` sign-ins, never `os.Setenv`.
 
-**Connections.** Read-only by default, connect on first use, with a visible status. The connection name is the catalog alias in SQL (`prod_pg.public.orders`). Metadata-driven formats (DuckLake, Iceberg, Delta) may only be defined in your own scopes, never in a committed `slaw.yaml`. MotherDuck cannot be attached read-only.
+**Connections.** Read-only by default, connect on first use, with a visible status. The connection name is the catalog alias in SQL (`prod_pg.public.orders`). Metadata-driven formats (DuckLake, Iceberg, Delta) may be defined in any scope, a committed `slaw.yaml` and a `.slaw` bundle included: the tool runs what DuckDB itself runs and warns where a shared definition is shown or imported (`workspace.MetadataWarning`, "table metadata decides which files DuckDB reads"); credential rules are unchanged. MotherDuck cannot be attached read-only.
 
 **Notebooks (vibe-app#66).** JSON documents of `sql` / `markdown` / `a2ui` cells (schemaVersion 2; a cell may name a `connection`). Every data cell re-runs on open. The agent authors cells in **task mode**: `preview_query` before a terminal `write_cell` or `need_more_info`.
 

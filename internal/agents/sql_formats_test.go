@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -21,11 +22,14 @@ import (
 // decision (path, scope, allow-list) is the one that fires, in the order the
 // policy decides it.
 
-// The metadata of an Iceberg or Delta table chooses which files are read, so no
-// check on the literal path can confine the readers: the agent may not call
-// them at all, in any tier, and the refusal comes from the syntactic layer
-// (before any EXPLAIN binds the statement and touches a file or URL).
-func TestPolicy_TableFormatReadersAreNotAgentReaders(t *testing.T) {
+// iceberg_scan, iceberg_metadata, iceberg_snapshots and delta_scan are agent
+// readers (Zac, 2026-11-07: run what DuckDB runs, warn where needed) and take
+// exactly the rules read_parquet takes: the data/ folder, storage scopes, plain
+// URLs, one string literal, the safe-option list and the reader count. In these
+// tests the extensions are not loaded, so a statement the policy lets through
+// ends at DuckDB's own "not in the catalog" (a "could not validate" reason);
+// the policy's own refusals carry their own words.
+func TestPolicy_TableFormatReadersFollowTheReaderRules(t *testing.T) {
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
@@ -37,24 +41,59 @@ func TestPolicy_TableFormatReadersAreNotAgentReaders(t *testing.T) {
 			session.ConnectionInfo{Name: "lake", Type: "s3", Kind: session.StatusOK, Remote: true, Catalogless: true, Scope: "s3://lake/raw/"},
 			session.ConnectionInfo{Name: "tbl", Type: "delta", Kind: session.StatusOK, Remote: true, Catalogless: true},
 		))
-		var cases []policyCase
 		for _, fn := range []string{"delta_scan", "iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "ICEBERG_SCAN", `"delta_scan"`} {
-			for _, arg := range []string{"'%DATA%/tbl'", "'%DATA%/sub/tbl'", "'s3://lake/raw/tbl'", "'" + srv.URL + "/x'", "'file:///etc/hostname'", "'%OUT%/tbl'", "getvariable('p')"} {
-				cases = append(cases, policyCase{fn + " " + arg, "SELECT * FROM " + fn + "(" + arg + ")", sqlClassOther, "allow-list"})
+			// Allowed by the policy: in data/, or inside a ready storage scope.
+			for _, arg := range []string{"'%DATA%/tbl'", "'%DATA%/sub/tbl'", "'s3://lake/raw/tbl'", "['%DATA%/a', 's3://lake/raw/b']"} {
+				q := fx.expand("SELECT * FROM " + fn + "(" + arg + ")")
+				v := fx.classify(q)
+				if v.Class != sqlClassRead {
+					assert.Contains(t, v.Reason, "could not validate query", "%s %s: only DuckDB's own missing-extension error may stop it (%s)", mode, q, v.Reason)
+				}
+			}
+			// Refused by the path rules, like read_parquet.
+			for arg, why := range map[string]string{
+				"'%OUT%/tbl'":             "outside the workspace's data/",
+				"'/etc/hostname'":         "outside the workspace's data/",
+				"'relative/tbl'":          "relative path",
+				"'%DATA%/../x'":           "..",
+				"'s3://other/tbl'":        "outside every storage connection's scope",
+				"'s3://lake/raw/../x'":    "not a plain storage url",
+				"'s3://lake/raw/t?x=1'":   "not a plain storage url",
+				"'" + srv.URL + "/x'":     "not a plain storage url",
+				"'file:///etc/hostname'":  "not a plain storage url",
+				"getvariable('p')":        "plain string literal",
+				"'%DATA%/a' || '/b'":      "plain string literal",
+				"['%DATA%/a', '%OUT%/b']": "outside the workspace's data/",
+			} {
+				v := fx.classify(fx.expand("SELECT * FROM " + fn + "(" + arg + ")"))
+				assert.Equal(t, sqlClassOther, v.Class, "%s %s %s", mode, fn, arg)
+				assert.Contains(t, strings.ToLower(v.Reason), strings.ToLower(why), "%s %s(%s)", mode, fn, arg)
 			}
 		}
-		cases = append(cases,
-			policyCase{"named version_name_format", "SELECT * FROM iceberg_snapshots('%DATA%/tbl', version='1', version_name_format='../../../../etc/hostname')", sqlClassOther, "allow-list"},
-			policyCase{"named allow_moved_paths", "SELECT * FROM iceberg_scan('%DATA%/tbl', allow_moved_paths = true)", sqlClassOther, "allow-list"},
-			policyCase{"in a CTE", "WITH d AS (SELECT * FROM delta_scan('%DATA%/tbl')) SELECT count(*) FROM d", sqlClassOther, "allow-list"},
-			policyCase{"in a view body", "CREATE VIEW dv AS SELECT * FROM delta_scan('%DATA%/tbl')", sqlClassOther, "can't be checked"},
-			policyCase{"as an INSERT source", "INSERT INTO t SELECT id, 'x' FROM delta_scan('%DATA%/tbl')", sqlClassOther, "can't be checked"},
-			policyCase{"CALL form", "CALL delta_scan('%DATA%/tbl')", sqlClassOther, "call"},
-			policyCase{"replacement scan of a table folder", "SELECT * FROM '%DATA%/tbl.delta'", sqlClassOther, ""},
-		)
-		runPolicyCases(t, fx, cases)
+		runPolicyCases(t, fx, []policyCase{
+			{"named version_name_format", "SELECT * FROM iceberg_snapshots('%DATA%/tbl', version='1', version_name_format='../../../../etc/hostname')", sqlClassOther, "safe reader options"},
+			{"named allow_moved_paths", "SELECT * FROM iceberg_scan('%DATA%/tbl', allow_moved_paths = true)", sqlClassOther, "safe reader options"},
+			{"walrus allow_moved_paths", "SELECT * FROM iceberg_scan('%DATA%/tbl', allow_moved_paths := true)", sqlClassOther, "safe reader options"},
+			{"CALL form", "CALL delta_scan('%DATA%/tbl')", sqlClassOther, "call"},
+			{"as a scalar", "SELECT iceberg_scan('%DATA%/tbl')", sqlClassOther, "can only be used as a table"},
+			{"in a view body, refused path", "CREATE VIEW dv AS SELECT * FROM delta_scan('%OUT%/tbl')", sqlClassOther, ""},
+			{"replacement scan of a table folder", "SELECT * FROM '%DATA%/tbl.delta'", sqlClassOther, ""},
+		})
 	}
 	assert.EqualValues(t, 0, atomic.LoadInt32(&hits), "the policy refused them before anything was fetched")
+}
+
+// The reader-count rule of the plan check counts them like read_parquet: a plan
+// may hold no more readers than the statement wrote out and vetted.
+func TestPolicy_TableFormatReadersCountAsReaders(t *testing.T) {
+	for _, n := range []string{"ICEBERG_SCAN", "ICEBERG_METADATA", "ICEBERG_SNAPSHOTS", "DELTA_SCAN"} {
+		assert.True(t, readerPlanOps[n], n)
+		assert.True(t, readerFuncs[strings.ToLower(n)], n)
+		var readers int
+		r := planNode{Name: n + " ", ExtraInfo: map[string]any{"Function": n}}
+		assert.Empty(t, checkPlanNode(&r, &readers), n)
+		assert.Equal(t, 1, readers, n)
+	}
 }
 
 // Named options on a reader could name another file or change how files are
@@ -148,11 +187,6 @@ func TestPolicy_MySQLPlanOperators(t *testing.T) {
 	assert.Contains(t, checkPlanNode(&fn, &readers), "not on the allow-list")
 	fn = planNode{Name: "DUCKLAKE_EXPIRE_SNAPSHOTS", ExtraInfo: map[string]any{"Function": "DUCKLAKE_EXPIRE_SNAPSHOTS"}}
 	assert.Contains(t, checkPlanNode(&fn, &readers), "not on the allow-list")
-	// The iceberg and delta readers are no agent readers: the plan refuses them too.
-	for _, n := range []string{"ICEBERG_SCAN", "ICEBERG_METADATA", "ICEBERG_SNAPSHOTS", "DELTA_SCAN"} {
-		r := planNode{Name: n + " ", ExtraInfo: map[string]any{"Function": n}}
-		assert.Contains(t, checkPlanNode(&r, &readers), "not on the allow-list", n)
-	}
 }
 
 func TestPolicy_DuckLakeFunctions(t *testing.T) {
