@@ -32,7 +32,7 @@ Slaw reads an Iceberg *table* by path (`iceberg_scan`). It cannot attach an Iceb
 - **Trust toggle:** `trust_writers` (default false). An untrusted catalog is read by the agent only on the confined lake reader (#20). A trusted one is read on the main hub and can be joined with other data, with the residual risk shown in the form (local files, `http(s)` requests from this machine, Azure and any object under the person's other storage scopes, and the catalog's own vended endpoint). The toggle trusts the catalog's operator as well as its writers.
 - **Read-only:** writes stay out of scope.
 - **Release:** ships together with the agent read path (#20), not before it.
-- **Extensions:** `iceberg` + `avro` + `httpfs` (+ `aws`), through the existing consent flow and the *Extension needed* status.
+- **Extensions:** `iceberg` + `avro` + `httpfs`, through the existing consent flow and the *Extension needed* status.
 - **Studio:** a connection form with the storage line (#130 pattern) and Test (list namespaces, then read one table's schema).
 
 **Acceptance**
