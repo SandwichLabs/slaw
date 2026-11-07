@@ -35,6 +35,8 @@ var (
 	_ session.Stager             = ducklakeType{}
 	_ session.CredentialedType   = tableSourceType{}
 	_ session.CataloglessType    = tableSourceType{}
+	_ session.CredentialedType   = icebergCatalogType{}
+	_ session.SpecExtensionsType = icebergCatalogType{}
 )
 
 // TestTimeout bounds one Test (secret, attach and probe).
@@ -319,7 +321,13 @@ func attachAndProbe(ctx context.Context, sess session.Session, def Def, spec ses
 // storage: it needs the storage connection's secret, which only the workspace's
 // own session has.
 func attachesOnlyInWorkspace(def Def) bool {
-	return def.Type == "ducklake" && IsDataURL(def.Path)
+	return (def.Type == "ducklake" && IsDataURL(def.Path)) || signsWithStorage(def)
+}
+
+// signsWithStorage is true for an S3 Tables catalog: it signs with the secret of
+// the s3 connection its option storage names.
+func signsWithStorage(def Def) bool {
+	return def.Type == "iceberg_catalog" && def.Options["endpoint_type"] == endpointS3Tables
 }
 
 // --- MotherDuck subprocess ---

@@ -161,6 +161,7 @@ func init() {
 	register(ducklakeType{})
 	register(tableSourceType{kind: "iceberg"})
 	register(tableSourceType{kind: "delta"})
+	register(icebergCatalogType{})
 }
 
 // Types returns the session types to hand to session.WithConnectionTypes.

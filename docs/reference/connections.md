@@ -228,6 +228,27 @@ SELECT * FROM iceberg_snapshots('/abs/path/to/workspace/data/orders');
 - Read-only: these extensions are not used to write. Test reads the table's schema, a folder directly and a URL through the covering storage connection (tried first; see Storage connections).
 - **Not built (follow-up):** an Iceberg REST catalog (`ATTACH ... (TYPE iceberg)` with an OAuth or token secret). It needs its own secret type and endpoint rules. Iceberg has no end-to-end fixture in the test suite (the policy and path rules are tested with unit tests and a real Delta table).
 
+### `iceberg_catalog`
+
+An Iceberg **catalog** (tables listed and read through the catalog, not a table folder): Amazon S3 Tables or an Iceberg REST catalog. **Not yet wired into the workspace** (lakehouse plan L2): the type validates, emits its attach and secret SQL and passes Test, but it is **not yet restricted to your own scopes** (L3 adds it to the own-scope-only types, so a committed `slaw.yaml` or a bundle will refuse it; do not put one there), has no storage dependency resolution, Studio form or `slaw conn add` flags, and the agent cannot read it. Those arrive in L3 (people) and L4/L5 (agent); until then this section describes the definition the type accepts.
+
+| Field | Notes |
+|---|---|
+| `endpoint_type` | `s3_tables` or `rest`; `glue` is refused as not supported yet. Under `options:` |
+| `warehouse` | `s3_tables`: the table bucket ARN (`arn:aws:s3tables:REGION:ACCOUNT:bucket/NAME`). `rest`: the catalog's warehouse name, at most 200 printable characters |
+| `storage` | `s3_tables` only: the name of the `s3` connection whose identity signs the catalog (the credential lives once, on that connection). Refused for `rest` |
+| `uri` | `rest` only: the catalog's base URL. `https://`, or `http://` for a loopback host only; no user name, query or fragment |
+| `auth` | `rest` only: `oauth2` (the default; client id and secret), `bearer` (a token) or `none` |
+| `oauth2_server_uri` | `rest` with `oauth2` only: the token URL; same URL rules as `uri`. Without it DuckDB derives `<uri>/v1/oauth/tokens` |
+| `trust_writers` | `true` or `false` (default). Whether the agent may read this catalog on the main hub with your own access (`true`) or only in a confined reader (`false`) |
+
+- **Read-only.** `read_only` must be `true`; a writable definition is refused. The attach is `READ_ONLY` and DuckDB refuses writes to it.
+- **Credentials** (per person, never in the definition): `token` for `bearer`; `key_id` (the client id) and `secret` for `oauth2`. `s3_tables` and `none` have none of their own.
+- **Delegation mode.** The `ACCESS_DELEGATION_MODE` is always written out. Where the catalog attaches decides it, not the definition: the main hub attaches an untrusted catalog with `none` (its vended credentials never enter the main hub) and a catalog with `trust_writers: true` with `vended_credentials`; the agent's confined reader (L4) asks for `vended_credentials`.
+- **What `trust_writers` risks, in plain words.** A trusted catalog's operator and writers can change where your own S3 reads go and the answers they get, and can make agent queries read local files and loopback http. Turn it on only for catalogs whose operator and writers you would trust with your machine.
+- **Extensions:** `httpfs`, `avro` and `iceberg` (no `aws`).
+- **Test** attaches the catalog in a throwaway session, lists up to 50 namespaces and the table names (no table is loaded for that), and describes one table. An `s3_tables` catalog is tested with its storage connection tried first; without it the Test says which connection to set up.
+
 ## DuckDB version and extensions
 
 - **Known gap: DuckDB's `VARIANT` type** (new in 1.5) cannot be scanned by duckdb-go v2.10506 yet: a query that returns one fails with a query error. Cast it (`::VARCHAR` or `::JSON`) in your SQL.
