@@ -105,6 +105,9 @@ func isStorageDef(def Def) bool {
 // storage connection's own scope contains: DuckDB would read it with no secret
 // (anonymously, or as the host's ambient identity).
 func checkCovered(def Def, required []requiredStorage) error {
+	if signsWithStorage(def) {
+		return checkSignedBy(def, required)
+	}
 	urls := map[string]string{"location": def.Path}
 	if def.Type == "ducklake" {
 		urls = map[string]string{"catalog": def.Path, "data path": def.Options["data_path"]}
@@ -127,4 +130,16 @@ func checkCovered(def Def, required []requiredStorage) error {
 		}
 	}
 	return nil
+}
+
+// checkSignedBy refuses an S3 Tables catalog tested with storage connections
+// among which is not the one its option storage names: the catalog would be
+// signed with a different identity from the one it is saved with.
+func checkSignedBy(def Def, required []requiredStorage) error {
+	for _, r := range required {
+		if r.def.Name == opt(def.Spec(), "storage") {
+			return nil
+		}
+	}
+	return fmt.Errorf("the catalog signs with the connection %q, which was not part of this test; nothing was read", opt(def.Spec(), "storage"))
 }

@@ -479,12 +479,81 @@ func (c *Conn) Use(ctx context.Context, catalog string) error {
 	if err := c.h.checkPinnable(catalog); err != nil {
 		return err
 	}
-	if _, err := c.c.ExecContext(ctx, "USE "+QuoteIdent(catalog)); err != nil {
+	if nt := c.h.namespaceCatalog(catalog); nt != nil {
+		if err := c.useNamespace(ctx, catalog, nt); err != nil {
+			return err
+		}
+	} else if _, err := c.c.ExecContext(ctx, "USE "+QuoteIdent(catalog)); err != nil {
 		return fmt.Errorf("failed to switch to connection %q: %w", catalog, err)
 	}
 	c.catalog = catalog
 	c.cfg = c.h.callCfg([]QueryOption{WithCatalog(catalog)})
 	return nil
+}
+
+// useNamespace pins a catalog that has namespaces and no default schema (an
+// Iceberg catalog). Unqualified names resolve in the configured default
+// namespace, or in the catalog's only namespace; with several and none
+// configured there is no stable answer (a new namespace would silently take
+// unqualified names over), so it is an error that says how to fix it.
+func (c *Conn) useNamespace(ctx context.Context, catalog string, nt NamespaceCatalogType) error {
+	spec := c.h.specOf(catalog)
+	ns := nt.DefaultNamespace(spec)
+	if ns == "" {
+		rows, err := c.c.QueryContext(ctx, `SELECT schema_name FROM duckdb_schemas()
+			WHERE database_name = $1 AND NOT internal AND schema_name NOT IN ('information_schema', 'pg_catalog')
+			ORDER BY schema_name LIMIT 2`, catalog)
+		if err != nil {
+			return fmt.Errorf("failed to list the namespaces of %q: %w", catalog, err)
+		}
+		var found []string
+		for rows.Next() {
+			var n string
+			if err := rows.Scan(&n); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("failed to list the namespaces of %q: %w", catalog, err)
+			}
+			found = append(found, n)
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
+			return fmt.Errorf("failed to list the namespaces of %q: %w", catalog, err)
+		}
+		switch len(found) {
+		case 0:
+			return fmt.Errorf("connection %q has no namespaces yet: qualify names as %s.ns.table once it has", catalog, catalog)
+		case 1:
+			ns = found[0]
+		default:
+			return fmt.Errorf("this catalog has several namespaces: qualify names as %s.ns.table, or set default_namespace on the connection %q", catalog, catalog)
+		}
+	}
+	if _, err := c.c.ExecContext(ctx, "USE "+QuoteQualified(catalog, ns)); err != nil {
+		return fmt.Errorf("failed to switch to namespace %q of connection %q: %w", ns, catalog, err)
+	}
+	return nil
+}
+
+// namespaceCatalog returns the catalog's type when it is a NamespaceCatalogType.
+func (h *hub) namespaceCatalog(catalog string) NamespaceCatalogType {
+	e, _ := h.entryOf(catalog)
+	if e == nil {
+		return nil
+	}
+	t, err := h.types.Get(e.spec.Type)
+	if err != nil {
+		return nil
+	}
+	nt, _ := t.(NamespaceCatalogType)
+	return nt
+}
+
+func (h *hub) specOf(catalog string) Spec {
+	if e, _ := h.entryOf(catalog); e != nil {
+		return e.spec
+	}
+	return Spec{}
 }
 
 // Conn is one pinned connection. Not safe for concurrent use.

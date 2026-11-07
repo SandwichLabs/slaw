@@ -35,6 +35,8 @@ var (
 	_ session.Stager             = ducklakeType{}
 	_ session.CredentialedType   = tableSourceType{}
 	_ session.CataloglessType    = tableSourceType{}
+	_ session.CredentialedType   = icebergCatalogType{}
+	_ session.SpecExtensionsType = icebergCatalogType{}
 )
 
 // TestTimeout bounds one Test (secret, attach and probe).
@@ -113,7 +115,12 @@ func WithTestRedactor(r *secrets.Redactor) TestOption { return func(o *testOpts)
 // probes it. It never touches the workspace's session. A MotherDuck definition
 // is tested in a subprocess because a process holds one MotherDuck token.
 func Test(ctx context.Context, def Def, cred secrets.Credential, opts ...TestOption) TestResult {
-	return runClassified(def, func() TestResult { return test(ctx, def, cred, opts...) })
+	res := runClassified(def, func() TestResult { return test(ctx, def, cred, opts...) })
+	if def.Type == "iceberg_catalog" && !res.OK && res.Error != "" && !strings.Contains(res.Error, MetadataWarning) {
+		// A failed Test still says what attaching such a catalog means.
+		res.Error += " " + MetadataWarning
+	}
+	return res
 }
 
 // runClassified classifies a failed result against the definition tried. A
@@ -319,7 +326,13 @@ func attachAndProbe(ctx context.Context, sess session.Session, def Def, spec ses
 // storage: it needs the storage connection's secret, which only the workspace's
 // own session has.
 func attachesOnlyInWorkspace(def Def) bool {
-	return def.Type == "ducklake" && IsDataURL(def.Path)
+	return (def.Type == "ducklake" && IsDataURL(def.Path)) || signsWithStorage(def)
+}
+
+// signsWithStorage is true for an S3 Tables catalog: it signs with the secret of
+// the s3 connection its option storage names.
+func signsWithStorage(def Def) bool {
+	return def.Type == "iceberg_catalog" && opt(def.Spec(), "endpoint_type") == endpointS3Tables
 }
 
 // --- MotherDuck subprocess ---

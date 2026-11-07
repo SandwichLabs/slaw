@@ -207,7 +207,7 @@ connections:
 
 ### `iceberg`, `delta`
 
-Apache Iceberg and Delta Lake **tables**. These are not catalogs: DuckDB reads one with a table function over its folder or URL, so the connection attaches nothing and holds no credential. It exists so the extension has a home in the product (the consent flow, the *Extension needed* status, loading when the workspace opens) and so Test can prove the table is readable. **Own scopes only**, like `ducklake` above.
+Apache Iceberg and Delta Lake **tables**. These are not catalogs: DuckDB reads one with a table function over its folder or URL, so the connection attaches nothing and holds no credential. It exists so the extension has a home in the product (the consent flow, the *Extension needed* status, loading when the workspace opens) and so Test can prove the table is readable. Any scope may define one (see the warning under `ducklake` above).
 
 | Field | Notes |
 |---|---|
@@ -226,7 +226,30 @@ SELECT * FROM iceberg_snapshots('/abs/path/to/workspace/data/orders');
 - **Storage.** A table in a bucket is read with the secret of the `s3`, `gcs`, `r2` or `azure` connection whose scope contains it; add that connection first (the location is checked against the connection scopes when the workspace opens, with the same URL normaliser as the agent's reads).
 - **Iceberg needs two extensions.** On DuckDB 1.5 the `iceberg` extension reads its metadata through `avro` and cannot auto-install it (autoinstall is off), so the connection needs both. A missing one shows as *Extension needed* naming the **first missing** extension (`avro`, then `iceberg`); `slaw conn test|connect --install` downloads both in order, and Studio asks for them one after the other.
 - Read-only: these extensions are not used to write. Test reads the table's schema, a folder directly and a URL through the covering storage connection (tried first; see Storage connections).
-- **Not built (follow-up):** an Iceberg REST catalog (`ATTACH ... (TYPE iceberg)` with an OAuth or token secret). It needs its own secret type and endpoint rules. Iceberg has no end-to-end fixture in the test suite (the policy and path rules are tested with unit tests and a real Delta table).
+- **Catalogs** (an Iceberg REST catalog, Amazon S3 Tables) are the `iceberg_catalog` type below. Iceberg tables have an end-to-end fixture only for that type (`internal/testsupport/icebergtest`); the policy and path rules for table folders are tested with unit tests and a real Delta table.
+
+### `iceberg_catalog`
+
+An Iceberg **catalog** (tables listed and read through the catalog, not a table folder): Amazon S3 Tables or an Iceberg REST catalog. It is an ordinary catalog connection: you and the agent read its tables with the same SQL as any attached database (`SELECT ... FROM cat.ns.orders`, joins with other catalogs included), `describe_table` and `introspect_schema` work on it, and a definition may live in any scope, the team's `slaw.yaml` included (credentials never do). Storage-dependency resolution, the Studio form and `slaw conn add` flags arrive in L3, so this section describes the definition the type accepts.
+
+> **Warning.** Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover. Only attach catalogs whose writers you would trust with your machine. It is the same warning a shared DuckLake, Iceberg or Delta definition shows on its status, in the rail and in `slaw conn list`; a shared `iceberg_catalog` shows it too.
+
+| Field | Notes |
+|---|---|
+| `endpoint_type` | `s3_tables` or `rest`; `glue` is refused as not supported yet. Under `options:` |
+| `warehouse` | `s3_tables`: the table bucket ARN (`arn:aws:s3tables:REGION:ACCOUNT:bucket/NAME`). `rest`: the catalog's warehouse name, at most 200 printable characters |
+| `storage` | `s3_tables` only: the name of the `s3` connection whose identity signs the catalog (the credential lives once, on that connection). Refused for `rest` |
+| `uri` | `rest` only: the catalog's base URL. `https://`, or `http://` for a loopback host only; no user name, query or fragment |
+| `auth` | `rest` only: `oauth2` (the default; client id and secret), `bearer` (a token) or `none` |
+| `oauth2_server_uri` | `rest` with `oauth2` only: the token URL; same URL rules as `uri`. **Without it DuckDB derives `<uri>/v1/oauth/tokens` and sends your OAuth2 client id and secret there**, so check that the catalog's own token endpoint is that URL, or set this field |
+| `default_namespace` | optional: the one namespace an unqualified table name resolves in (at most 128 characters, no dot). See *Unqualified names* below |
+
+- **Read-only by default.** `read_only` defaults to `true` and attaches with `READ_ONLY`; DuckDB then refuses writes. `read_only: false` attaches it writable, and writes follow the usual rules: a sandbox tier that allows them, a writable connection and your approval, which is always asked for a remote connection (the plan operators `ICEBERG_INSERT`, `ICEBERG_UPDATE`, `ICEBERG_DELETE` are the catalog's own DML, as `PG_INSERT` is Postgres's). Option names are not case-sensitive, and two that differ only in case are refused.
+- **Unqualified names.** An Iceberg catalog has namespaces and no default schema, so a connection pinned to it (a notebook cell, a watch, a saved query or `slaw semantics check` that names it as its connection) resolves `orders` as follows: in `default_namespace` when that option is set; otherwise in the catalog's **only** namespace; and when it has several and none is set, the run fails with "this catalog has several namespaces: qualify names as cat.ns.table, or set default_namespace". Choosing the first of several would let anyone who adds a namespace redirect your unqualified names, so Slaw never does. The failure is at pinning, so it applies even to a run whose SQL is fully qualified: set `default_namespace`, or run it without naming the catalog as its connection. Statements that do not pin the catalog are unaffected.
+- **Credentials** (per person, never in the definition): `token` for `bearer`; `key_id` (the client id) and `secret` for `oauth2`. `s3_tables` and `none` have none of their own.
+- **No vended credentials.** The attach always writes `ACCESS_DELEGATION_MODE 'none'`: the catalog is never asked to hand out storage credentials, so a catalog cannot choose a scope or endpoint for your reads. Data is read through your storage connections (an `s3` connection whose scope covers the table's location; for `s3_tables` the one named by `storage` signs the catalog), and an S3 bucket no connection covers fails closed. A REST catalog that only vends credentials (some Polaris setups) therefore needs a storage connection for its bucket.
+- **Extensions:** `httpfs`, `avro` and `iceberg` (no `aws`).
+- **Test** attaches the catalog in a throwaway session, lists up to 50 namespaces and the table names (no table is loaded for that), and describes one table, and says the warning above. An `s3_tables` catalog is tested with its storage connection tried first; without it the Test says which connection to set up.
 
 ## DuckDB version and extensions
 

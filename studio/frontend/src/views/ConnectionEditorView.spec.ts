@@ -77,6 +77,7 @@ const TYPES: ConnTypeSpec[] = [
     id: 'ducklake', label: 'DuckLake', description: 'A lake.',
     fields: [field({ name: 'path', label: 'Catalog (file or storage URL)', kind: 'path', required: true }), field({ name: 'data_path', label: 'Data folder', required: true, option: true })],
     credentials: [], requiresExtension: ['ducklake'], capabilities: { catalog: true, writable: true, readOnlyAttach: true, remote: true, test: true }, fingerprintFields: ['type', 'path', 'option:data_path'], signInMethods: [], soon: false,
+    metadataDriven: true, warning: 'Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover.',
   },
 ]
 

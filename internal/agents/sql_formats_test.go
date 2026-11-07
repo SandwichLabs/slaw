@@ -158,7 +158,12 @@ func TestPolicy_TableFormatReadersCountAsReaders(t *testing.T) {
 		var readers int
 		r := planNode{Name: n + " ", ExtraInfo: map[string]any{"Function": n}}
 		assert.Empty(t, checkPlanNode(&r, &readers), n)
-		assert.Equal(t, 1, readers, n)
+		plain, scans := splitReaders(readers)
+		if n == "ICEBERG_SCAN" {
+			assert.Equal(t, []int{0, 1}, []int{plain, scans}, "an iceberg scan has a budget of its own")
+		} else {
+			assert.Equal(t, []int{1, 0}, []int{plain, scans}, n)
+		}
 	}
 }
 

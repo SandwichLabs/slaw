@@ -433,7 +433,7 @@ func TestTableSourceTypes(t *testing.T) {
 // secrets live only in the temporary secret.
 func TestNewTypesKeepCredentialsOutOfAttach(t *testing.T) {
 	banned := []string{"password", "PASSWORD", "needle", "db.internal", "user=", "host=", "AccountKey", "CONNECTION_STRING"}
-	defs := []Def{myDef(), azDef("account_key"), lakeDef(t), {Name: "t", Type: "delta", Path: "data/t"}, {Name: "t2", Type: "iceberg", Path: "s3://b/t/"}}
+	defs := []Def{myDef(), azDef("account_key"), lakeDef(t), {Name: "t", Type: "delta", Path: "data/t"}, {Name: "t2", Type: "iceberg", Path: "s3://b/t/"}, s3tDef(), restDef("bearer")}
 	for _, d := range defs {
 		stmts, err := registry[d.Type].AttachSQL(d.Spec())
 		require.NoError(t, err, d.Type)
@@ -446,7 +446,7 @@ func TestNewTypesKeepCredentialsOutOfAttach(t *testing.T) {
 }
 
 func TestNewTypesMetadata(t *testing.T) {
-	for _, n := range []string{"mysql", "azure", "ducklake", "iceberg", "delta"} {
+	for _, n := range []string{"mysql", "azure", "ducklake", "iceberg", "delta", "iceberg_catalog"} {
 		i, err := TypeInfoFor(n)
 		require.NoError(t, err, n)
 		assert.NotEmpty(t, i.Label)
@@ -497,14 +497,15 @@ func TestTypesRejectFieldsTheyDoNotUse(t *testing.T) {
 		func(d *Def) { d.Region = "us-east-1" },
 	}
 	good := map[string]Def{
-		"delta":    {Name: "t", Type: "delta", Path: "data/t"},
-		"iceberg":  {Name: "t", Type: "iceberg", Path: "data/t"},
-		"ducklake": {Name: "t", Type: "ducklake", Path: "data/t.ducklake", Options: map[string]string{"data_path": "data/f"}},
-		"sqlite":   {Name: "t", Type: "sqlite", Path: "data/t.sqlite"},
-		"mysql":    {Name: "t", Type: "mysql", Host: "h", Database: "d"},
-		"postgres": {Name: "t", Type: "postgres", Host: "h", Database: "d"},
-		"azure":    {Name: "t", Type: "azure", Scope: "az://c/", Options: map[string]string{"sign_in": "connection_string"}},
-		"s3":       {Name: "t", Type: "s3", Scope: "s3://b/"},
+		"delta":           {Name: "t", Type: "delta", Path: "data/t"},
+		"iceberg":         {Name: "t", Type: "iceberg", Path: "data/t"},
+		"iceberg_catalog": {Name: "t", Type: "iceberg_catalog", ReadOnly: true, Options: map[string]string{"endpoint_type": "s3_tables", "warehouse": testARN, "storage": "aws_lake"}},
+		"ducklake":        {Name: "t", Type: "ducklake", Path: "data/t.ducklake", Options: map[string]string{"data_path": "data/f"}},
+		"sqlite":          {Name: "t", Type: "sqlite", Path: "data/t.sqlite"},
+		"mysql":           {Name: "t", Type: "mysql", Host: "h", Database: "d"},
+		"postgres":        {Name: "t", Type: "postgres", Host: "h", Database: "d"},
+		"azure":           {Name: "t", Type: "azure", Scope: "az://c/", Options: map[string]string{"sign_in": "connection_string"}},
+		"s3":              {Name: "t", Type: "s3", Scope: "s3://b/"},
 	}
 	for typ, g := range good {
 		require.NoError(t, Validate(g), typ)
@@ -528,7 +529,7 @@ func TestTypesRejectFieldsTheyDoNotUse(t *testing.T) {
 		}
 	}
 	// Specifically: the smuggled scope on every metadata-trusting type.
-	for _, typ := range []string{"delta", "iceberg", "ducklake"} {
+	for _, typ := range []string{"delta", "iceberg", "ducklake", "iceberg_catalog"} {
 		d := good[typ]
 		d.Scope = "file:///"
 		require.Error(t, Validate(d), typ)
@@ -547,6 +548,7 @@ func TestOnlyStorageConnectionsExportAScope(t *testing.T) {
 		{Name: "tbl", Type: "delta", Path: "data/t", Params: map[string]string{"scope": "file:///"}},
 		{Name: "ice", Type: "iceberg", Path: "data/t", Params: map[string]string{"scope": "http://"}},
 		{Name: "lake", Type: "ducklake", Path: "/tmp/x.ducklake", Params: map[string]string{"scope": "file:///", "opt.data_path": "/tmp/f"}},
+		{Name: "icat", Type: "iceberg_catalog", ReadOnly: true, Params: map[string]string{"scope": "s3://b/p/", "opt.endpoint_type": "s3_tables", "opt.warehouse": testARN, "opt.storage": "aws_lake"}},
 		{Name: "s3c", Type: "s3", Params: map[string]string{"scope": "s3://b/p/"}},
 	}
 	for _, sp := range specs {

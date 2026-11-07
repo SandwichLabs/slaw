@@ -360,6 +360,16 @@ func (a *analyzer) resolveRef(catalogName, schema, table string, st *walkState) 
 	if a.refDenied(catalogName, schema, st) {
 		return
 	}
+	if a.icebergCatalogRef(catalogName, schema) {
+		// An attached Iceberg catalog's table plans as ICEBERG_SCAN, the same
+		// operator a raw iceberg_scan('<path>') call plans as, and the plan cannot
+		// tell them apart. Each reference into such a catalog is one vetted
+		// ICEBERG_SCAN, in a budget of its own (catalogScanUnit): only ICEBERG_SCAN
+		// nodes may spend it, so DuckDB pruning the scan (an unused CTE, LIMIT 0,
+		// a false filter, count(*)) can never leave a credit that covers another
+		// reader.
+		st.readers += catalogScanUnit
+	}
 	if strings.EqualFold(schema, "pg_catalog") && (catalogName == "" || strings.EqualFold(catalogName, "system")) {
 		st.fail("%s", pgCatalogMsg)
 		return
@@ -521,6 +531,30 @@ const duckLakeInternalMsg = "a DuckLake's internal metadata catalog is not avail
 
 func isDuckLakeInternal(name string) bool {
 	return strings.HasPrefix(strings.ToLower(name), duckLakeInternalPrefix)
+}
+
+// icebergCatalogRef reports whether a reference lands in an attached Iceberg
+// catalog: a qualified name, a schema that is really a catalog name, or
+// (unqualified) the default catalog. It goes by the registered connection type
+// and by DuckDB's own engine type for the database.
+func (a *analyzer) icebergCatalogRef(catalogName, schema string) bool {
+	dbs := a.databases()
+	cat := catalogName
+	if cat == "" && schema != "" {
+		if _, attached := dbs[strings.ToLower(schema)]; attached {
+			cat = schema // catalog.table: the table is in that catalog's default schema
+		} else if _, registered := a.env.conn(schema); registered {
+			cat = schema
+		}
+	}
+	if cat == "" {
+		cat = a.defaultCatalog()
+	}
+	if c, ok := a.env.conn(cat); ok && c.Type == "iceberg_catalog" {
+		return true
+	}
+	r, ok := dbs[strings.ToLower(cat)]
+	return ok && r.typ == "iceberg"
 }
 
 // mysqlSystemSchemas are the MySQL server's own databases. A MySQL catalog lists

@@ -106,10 +106,34 @@ func planCheck(ctx context.Context, userDB queryDB, stmt string, args []any, vet
 			return reason
 		}
 	}
-	if readers > vettedReaders {
+	// Two budgets. Raw readers (everything but a catalog scan) may not exceed the
+	// readers the statement wrote out as literals; ICEBERG_SCAN nodes, which an
+	// attached catalog's table and a raw iceberg_scan('<path>') both plan as, may
+	// spend the literals not used by other readers plus one credit per catalog
+	// reference. A catalog reference's credit is spendable only on ICEBERG_SCAN.
+	if readersExceedBudget(readers, vettedReaders) {
 		return "this query reads a file or URL that is not written out as a literal inside the statement (a view or macro that wraps a reader?), so it can't be verified"
 	}
 	return ""
+}
+
+// catalogScanUnit is the weight of one reference into an attached Iceberg
+// catalog in a reader count (a plain reader weighs 1): the count is one int, so
+// the two budgets travel through every place that sums it. splitReaders takes it
+// apart: (plain readers, catalog scans).
+const catalogScanUnit = 1 << 16
+
+func splitReaders(v int) (plain, catalogScans int) {
+	return v & (catalogScanUnit - 1), v >> 16
+}
+
+// readersExceedBudget is the reader-count rule over the two budgets (see
+// planCheck): plain readers may not exceed the literals the statement wrote out,
+// and ICEBERG_SCANs may spend the unused literals plus the catalog references.
+func readersExceedBudget(planReaders, vetted int) bool {
+	other, scans := splitReaders(planReaders)
+	raw, catalog := splitReaders(vetted)
+	return other > raw || other+scans > raw+catalog
 }
 
 // planOpName is an operator's name without MotherDuck's location marker. With
@@ -132,6 +156,8 @@ func checkPlanNode(n *planNode, readers *int) string {
 	table, hasTable := n.ExtraInfo["Table"].(string)
 	_, hasFunc := n.ExtraInfo["Function"]
 	switch {
+	case name == "ICEBERG_SCAN":
+		*readers += catalogScanUnit // one scan: see planCheck for the budgets
 	case readerPlanOps[name]:
 		*readers++
 	case hasTable && table != "" && !hasFunc && strings.HasSuffix(name, "_SCAN"):

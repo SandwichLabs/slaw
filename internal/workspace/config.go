@@ -8,10 +8,12 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/SandwichLabs/slaw/internal/awssso"
+	"github.com/SandwichLabs/slaw/internal/connections"
 	"github.com/SandwichLabs/slaw/internal/sandbox"
 	"github.com/SandwichLabs/slaw/internal/secrets"
 	"github.com/google/uuid"
@@ -171,12 +173,19 @@ func (d ConnectionDef) Validate() error {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	lower := map[string]string{}
 	for _, k := range keys {
 		v := d.Options[k]
 		if !optionKeyRE.MatchString(k) {
 			return fmt.Errorf("connection %q: invalid option name %q", d.Name, k)
 		}
-		if secretKeyRE.MatchString(k) {
+		// The session lowercases option names, so two that differ only in case
+		// would be one option with a value that depends on map order.
+		if other, dup := lower[strings.ToLower(k)]; dup {
+			return fmt.Errorf("connection %q: options %q and %q are the same option written twice (names are not case-sensitive)", d.Name, other, k)
+		}
+		lower[strings.ToLower(k)] = k
+		if secretKeyRE.MatchString(k) && !nonSecretOption(d.Type, k) {
 			return fmt.Errorf("connection %q: option %q looks like a credential; credentials never go in config, use the keychain", d.Name, k)
 		}
 		if strings.ContainsAny(v, "\x00\n\r") || looksLikeEmbeddedSecret(v) {
@@ -184,6 +193,18 @@ func (d ConnectionDef) Validate() error {
 		}
 	}
 	return nil
+}
+
+// nonSecretOptions are option names a type defines that the credential-name
+// pattern would otherwise refuse ("auth" is a setting, never a secret: the
+// secrets of these types are per person, in the keychain). The list is per type
+// and exact, so the pattern keeps guarding every other option.
+var nonSecretOptions = map[string][]string{
+	"iceberg_catalog": {"auth", "oauth2_server_uri"},
+}
+
+func nonSecretOption(typ, key string) bool {
+	return slices.Contains(nonSecretOptions[typ], strings.ToLower(key))
 }
 
 func looksLikeEmbeddedSecret(v string) bool {
@@ -384,12 +405,12 @@ func marshalYAML(v any, header string) ([]byte, error) {
 }
 
 // MetadataDrivenType reports a connection type whose table or catalog metadata
-// decides which files DuckDB reads: a DuckLake catalog, an Iceberg or Delta
-// table. Any scope may define one; the type only earns a warning where a shared
+// decides which files DuckDB reads: a DuckLake catalog, an Iceberg catalog, an
+// Iceberg or Delta table. Any scope may define one; the type only earns a warning where a shared
 // or imported definition is shown (MetadataWarning).
 func MetadataDrivenType(typ string) bool {
 	switch typ {
-	case "ducklake", "iceberg", "delta":
+	case "ducklake", "iceberg", "delta", "iceberg_catalog":
 		return true
 	}
 	return false
@@ -397,7 +418,7 @@ func MetadataDrivenType(typ string) bool {
 
 // MetadataWarning is the plain-words warning shown where a definition of a
 // metadata-driven type is shared, imported or inspected. It is not a refusal.
-const MetadataWarning = "Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover."
+const MetadataWarning = connections.MetadataWarning
 
 // WritableSharedWarning is added to MetadataWarning for a shared definition that
 // is not read-only.

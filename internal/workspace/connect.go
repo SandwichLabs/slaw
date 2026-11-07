@@ -102,6 +102,13 @@ func toConnDef(d ConnectionDef, readOnly bool, path string) connections.Def {
 	}
 }
 
+// NeedsCredential reports whether a connection with this definition signs in
+// (the definition-aware answer: an s3_tables or auth-none iceberg_catalog does
+// not, whatever its type).
+func (d ConnectionDef) NeedsCredential() bool {
+	return connections.NeedsCredentialFor(toConnDef(d, true, d.Path))
+}
+
 // ValidateType runs the connection type's own validation (required fields,
 // closed option set, no field the type does not use) on d as written. It reads
 // no environment, so a definition with ${ENV} references is the caller's to skip.

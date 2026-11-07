@@ -317,7 +317,7 @@ func TestListConnectionTypesMetadata(t *testing.T) {
 	for _, i := range infos {
 		names = append(names, i.Name)
 	}
-	assert.Equal(t, []string{"duckdb", "azure", "delta", "ducklake", "gcs", "iceberg", "motherduck", "mysql", "postgres", "r2", "s3", "sqlite"}, names)
+	assert.Equal(t, []string{"duckdb", "azure", "delta", "ducklake", "gcs", "iceberg", "iceberg_catalog", "motherduck", "mysql", "postgres", "r2", "s3", "sqlite"}, names)
 	for _, i := range infos {
 		assert.NotEmpty(t, i.Label, i.Name)
 		assert.Contains(t, i.FingerprintFields, "type", i.Name)

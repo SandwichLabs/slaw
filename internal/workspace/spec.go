@@ -51,7 +51,7 @@ func SessionSpec(ws Workspace, name string, opts ...SessionOption) (session.Spec
 			return session.Spec{}, fmt.Errorf("%s", secrets.RedactPatterns(err.Error()))
 		}
 	}
-	if connections.NeedsCredential(resolved.Type) {
+	if connections.NeedsCredentialFor(cdef) {
 		ref := credentialRef(ws.ID(), c.Scope, c.Name)
 		b, method := rc.Binding(), c.SignIn
 		guard := signInGuard(resolver, c, rc.Resolved)

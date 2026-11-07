@@ -161,6 +161,7 @@ func init() {
 	register(ducklakeType{})
 	register(tableSourceType{kind: "iceberg"})
 	register(tableSourceType{kind: "delta"})
+	register(icebergCatalogType{})
 }
 
 // Types returns the session types to hand to session.WithConnectionTypes.
@@ -238,6 +239,20 @@ func NeedsCredential(typ string) bool {
 	if t, ok := registry[typ]; ok {
 		if ct, ok := t.(session.CredentialedType); ok {
 			return ct.NeedsCredential(session.Spec{Type: typ})
+		}
+	}
+	return false
+}
+
+// NeedsCredentialFor reports whether this connection signs in: the definition
+// decides for a type whose answer depends on it (an iceberg_catalog signs in
+// only for a REST catalog with a token or OAuth2 client credentials). Use it
+// wherever a definition is at hand; NeedsCredential(type) is the type-wide
+// "can need one" answer for forms and listings.
+func NeedsCredentialFor(d Def) bool {
+	if t, ok := registry[d.Type]; ok {
+		if ct, ok := t.(session.CredentialedType); ok {
+			return ct.NeedsCredential(d.Spec())
 		}
 	}
 	return false

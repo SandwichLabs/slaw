@@ -172,10 +172,10 @@ func runConnAdd(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(out, "Warning: %s\n", w)
 	}
 	printStorageHint(out, ws, def, scope)
-	if !connections.NeedsCredential(typ) {
+	c, _ := findConn(ws, def.Name)
+	if !c.ConnectionDef.NeedsCredential() {
 		return nil
 	}
-	c, _ := findConn(ws, def.Name)
 	method := c.SignIn
 	if kind, _, _ := secrets.ParseMethod(method); kind == "env" {
 		names := secrets.EnvVarNames(strings.TrimPrefix(method, "env:"))
@@ -268,6 +268,16 @@ type connRow struct {
 	Warning string `json:"warning,omitempty"`
 }
 
+// showsSignIn reports whether a connection's list row names its sign-in: only
+// a connection that needs a credential has one, judged on the definition when
+// it is found (an iceberg_catalog's kind decides) and on the type otherwise.
+func showsSignIn(ws workspace.Workspace, name, typ string) bool {
+	if c, ok := findConn(ws, name); ok {
+		return c.ConnectionDef.NeedsCredential()
+	}
+	return connections.NeedsCredential(typ)
+}
+
 func runConnList(cmd *cobra.Command, _ []string) error {
 	asJSON, _ := cmd.Flags().GetBool("json")
 	o, err := openWorkspace(cmdCtx(cmd), flagString(cmd, "workspace"), true, false, "slaw conn", io.Discard)
@@ -281,7 +291,7 @@ func runConnList(cmd *cobra.Command, _ []string) error {
 		for _, s := range st.Shadows {
 			r.Shadows = append(r.Shadows, string(s))
 		}
-		if connections.NeedsCredential(st.Type) {
+		if showsSignIn(o.WS, st.Name, st.Type) {
 			r.SignIn = st.SignIn
 		}
 		if info, err := connections.TypeInfoFor(st.Type); err == nil && r.ReadOnly && !info.Capabilities.ReadOnlyAttach && info.Capabilities.Catalog {

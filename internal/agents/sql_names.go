@@ -143,11 +143,11 @@ var allowedPlanOperators = nameSet(
 
 // remoteWriteOps matches the plan operators a remote catalog's own DML shows as
 // (PG_INSERT, PG_UPDATE, PG_DELETE, PG_CREATE_TABLE_AS, MYSQL_INSERT,
-// MYSQL_CREATE_TABLE_AS, DUCKLAKE_INSERT, DUCKLAKE_UPDATE, DUCKLAKE_DELETE, DUCKLAKE_INLINE_DATA (DuckLake 1.0
+// MYSQL_CREATE_TABLE_AS, ICEBERG_INSERT, ICEBERG_DELETE, ICEBERG_UPDATE, DUCKLAKE_INSERT, DUCKLAKE_UPDATE, DUCKLAKE_DELETE, DUCKLAKE_INLINE_DATA (DuckLake 1.0
 // stages small inserts in its catalog; a child of DUCKLAKE_INSERT / DUCKLAKE_CREATE_TABLE_AS), ...). The statement was
 // already refused unless its target is a writable, approved connection.
 func isRemoteWriteOp(name string) bool {
-	for _, prefix := range []string{"PG_", "SQLITE_", "MYSQL_", "DUCKLAKE_", "MD_", "MOTHERDUCK_"} {
+	for _, prefix := range []string{"PG_", "SQLITE_", "MYSQL_", "DUCKLAKE_", "ICEBERG_", "MD_", "MOTHERDUCK_"} {
 		if strings.HasPrefix(name, prefix) {
 			switch strings.TrimPrefix(name, prefix) {
 			case "INSERT", "UPDATE", "DELETE", "CREATE_TABLE", "CREATE_TABLE_AS", "ALTER", "DROP", "INLINE_DATA":

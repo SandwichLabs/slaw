@@ -338,18 +338,19 @@ func TestLazyAttachThroughAQualifiedName(t *testing.T) {
 
 func TestEveryDeclaredFingerprintFieldChangesTheFingerprint(t *testing.T) {
 	base := map[string]ConnectionDef{
-		"postgres":   {Name: "x", Type: "postgres", Host: "h", Port: 5432, Database: "d", Options: map[string]string{"sslmode": "require"}},
-		"motherduck": {Name: "x", Type: "motherduck", Database: "d"},
-		"sqlite":     {Name: "x", Type: "sqlite", Path: "data/x.sqlite"},
-		"duckdb":     {Name: "x", Type: "duckdb", Path: "data/x.duckdb"},
-		"s3":         {Name: "x", Type: "s3", Scope: "s3://b/", Region: "us-east-1", Options: map[string]string{"endpoint": "e", "url_style": "path", "use_ssl": "true"}},
-		"gcs":        {Name: "x", Type: "gcs", Scope: "gs://b/"},
-		"r2":         {Name: "x", Type: "r2", Scope: "r2://b/", Options: map[string]string{"account_id": "a1"}},
-		"mysql":      {Name: "x", Type: "mysql", Host: "h", Port: 3306, Database: "d", Options: map[string]string{"ssl_mode": "required"}},
-		"azure":      {Name: "x", Type: "azure", Scope: "az://c/", Options: map[string]string{"sign_in": "service_principal", "account_name": "acct", "tenant_id": "t1"}},
-		"ducklake":   {Name: "x", Type: "ducklake", Path: "data/x.ducklake", Options: map[string]string{"data_path": "data/files"}},
-		"iceberg":    {Name: "x", Type: "iceberg", Path: "data/ice"},
-		"delta":      {Name: "x", Type: "delta", Path: "data/delta"},
+		"postgres":        {Name: "x", Type: "postgres", Host: "h", Port: 5432, Database: "d", Options: map[string]string{"sslmode": "require"}},
+		"motherduck":      {Name: "x", Type: "motherduck", Database: "d"},
+		"sqlite":          {Name: "x", Type: "sqlite", Path: "data/x.sqlite"},
+		"duckdb":          {Name: "x", Type: "duckdb", Path: "data/x.duckdb"},
+		"s3":              {Name: "x", Type: "s3", Scope: "s3://b/", Region: "us-east-1", Options: map[string]string{"endpoint": "e", "url_style": "path", "use_ssl": "true"}},
+		"gcs":             {Name: "x", Type: "gcs", Scope: "gs://b/"},
+		"r2":              {Name: "x", Type: "r2", Scope: "r2://b/", Options: map[string]string{"account_id": "a1"}},
+		"mysql":           {Name: "x", Type: "mysql", Host: "h", Port: 3306, Database: "d", Options: map[string]string{"ssl_mode": "required"}},
+		"azure":           {Name: "x", Type: "azure", Scope: "az://c/", Options: map[string]string{"sign_in": "service_principal", "account_name": "acct", "tenant_id": "t1"}},
+		"ducklake":        {Name: "x", Type: "ducklake", Path: "data/x.ducklake", Options: map[string]string{"data_path": "data/files"}},
+		"iceberg":         {Name: "x", Type: "iceberg", Path: "data/ice"},
+		"delta":           {Name: "x", Type: "delta", Path: "data/delta"},
+		"iceberg_catalog": {Name: "x", Type: "iceberg_catalog", Options: map[string]string{"endpoint_type": "rest", "uri": "https://c.example.com/api", "warehouse": "w"}},
 	}
 	for _, info := range connections.ListConnectionTypes() {
 		d := base[info.Name]

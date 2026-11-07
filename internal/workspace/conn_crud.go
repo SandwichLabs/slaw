@@ -469,12 +469,12 @@ func (w *workspace) SetCredentials(ctx context.Context, name string, cred secret
 	if err != nil {
 		return err
 	}
-	if !connections.NeedsCredential(c.Type) {
-		return fmt.Errorf("%s connections have no credentials", c.Type)
-	}
 	resolved, err := c.ConnectionDef.Resolve(nil, c.Scope)
 	if err != nil {
 		return err
+	}
+	if !resolved.NeedsCredential() {
+		return fmt.Errorf("%s connections have no credentials", c.Type)
 	}
 	return w.Resolver().SetCredentials(ctx, credentialRef(w.ID(), c.Scope, name), c.SignIn, cred, BindingFor(resolved), remember)
 }

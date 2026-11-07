@@ -26,7 +26,7 @@ const router = useRouter()
 const form = useConnectionForm()
 const {
   types, loading, loadError, isNew, editName, typeId, spec, f, readOnly, connScope, method, envPrefix, ssoProfile, typed,
-  status, detail, advancedOpen, saveError, result, isMD, remote, mainFields, advFields, metadataDriven,
+  status, detail, advancedOpen, saveError, result, isMD, remote, mainFields, advFields, metadataDriven, metadataWarning,
   insideWorkspace, exampleTail, portField, readableCreds, secretCreds, needsSignIn, envVars, credFields, val, setVal,
   bindingChanged, fingerprintHelp, secretIsSet, serverChangedHelp, privateCopy, shadowedBy, failedTest, title,
   chooseType, presets, applyPreset, storageLine, storageSlot, storageFailed, prefilled, changedWhileAway,
@@ -241,7 +241,7 @@ const {
       <!-- Scope -->
       <div class="form-sec">
         <h3>Who can use this connection</h3>
-        <div v-if="metadataDriven" class="note warn" data-testid="trust-note"><Icon name="alert" :size="16" /><span><b>Only point this at data you trust.</b> Table metadata in this {{ spec?.label ?? 'lake or table' }} decides which files DuckDB reads. Anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover.<template v-if="connScope === 'shared'">{{ ' ' }}Saved in the team's slaw.yaml, this warning applies to everyone who opens the workspace.</template><template v-if="insideWorkspace">{{ ' ' }}<b>This location is inside the workspace folder</b>, where files that came with a cloned repository may be crafted tables.</template></span></div>
+        <div v-if="metadataDriven" class="note warn" data-testid="trust-note"><Icon name="alert" :size="16" /><span><b>Only point this at data you trust.</b> {{ metadataWarning }}<template v-if="connScope === 'shared'">{{ ' ' }}Saved in the team's slaw.yaml, this warning applies to everyone who opens the workspace.</template><template v-if="insideWorkspace">{{ ' ' }}<b>This location is inside the workspace folder</b>, where files that came with a cloned repository may be crafted tables.</template></span></div>
         <ScopePicker v-model="connScope" :name="f.name" />
       </div>
 

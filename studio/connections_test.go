@@ -89,6 +89,18 @@ func TestListConnectionTypes_GeneratedFromRegistry(t *testing.T) {
 		assert.NotEmpty(t, byID[id].Description, id)
 		assert.NotEmpty(t, byID[id].Fields, id)
 	}
+	// Go says which types are metadata-driven and what the form warns; the
+	// frontend lists neither (iceberg_catalog gets the note when it joins the picker).
+	for _, id := range ids {
+		assert.Equal(t, workspace.MetadataDrivenType(id), byID[id].MetadataDriven, id)
+		if byID[id].MetadataDriven {
+			assert.Equal(t, workspace.MetadataWarning, byID[id].Warning, id)
+		} else {
+			assert.Empty(t, byID[id].Warning, id)
+		}
+	}
+	assert.True(t, byID["ducklake"].MetadataDriven)
+	assert.False(t, byID["postgres"].MetadataDriven)
 	assert.Equal(t, []string{"mysql"}, byID["mysql"].RequiresExtension)
 	assert.Equal(t, []string{"azure"}, byID["azure"].RequiresExtension)
 	assert.Equal(t, []string{"ducklake"}, byID["ducklake"].RequiresExtension)

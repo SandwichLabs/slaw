@@ -124,5 +124,26 @@ func Validate(d Def) error {
 	if !ok {
 		return fmt.Errorf("unknown connection type %q (want one of %s)", d.Type, strings.Join(AllTypeNames(), ", "))
 	}
+	if err := distinctOptions(d); err != nil {
+		return err
+	}
 	return t.Validate(d.Spec())
+}
+
+// distinctOptions refuses option names that are the same once lowercased:
+// Def.Params lowercases them, so the value that won would depend on map order.
+func distinctOptions(d Def) error {
+	seen := map[string]string{}
+	for k := range d.Options {
+		lk := strings.ToLower(k)
+		if other, dup := seen[lk]; dup {
+			a, b := other, k
+			if a > b {
+				a, b = b, a
+			}
+			return fmt.Errorf("%s connection %q: options %q and %q are the same option written twice (names are not case-sensitive)", d.Type, d.Name, a, b)
+		}
+		seen[lk] = k
+	}
+	return nil
 }

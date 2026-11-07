@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/SandwichLabs/slaw/internal/connections"
 	"github.com/SandwichLabs/slaw/internal/secrets"
 )
 
@@ -33,7 +32,7 @@ const credentialTimeout = 15 * time.Second
 // and a caller that wants Test to report the missing credential may ignore err
 // unless it is *secrets.ErrFingerprintChanged.
 func TestCredential(ctx context.Context, ws Workspace, rc ResolvedConnection, signIn string, typed secrets.Credential) (secrets.Credential, error) {
-	needs := connections.NeedsCredential(rc.Resolved.Type)
+	needs := rc.Resolved.NeedsCredential()
 	if !needs {
 		// Nothing to look up (duckdb, sqlite, ...): the keychain is never touched.
 		return secrets.Credential{}.Overlay(typed), nil
