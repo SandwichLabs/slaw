@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/SandwichLabs/slaw/internal/agents"
+	"github.com/SandwichLabs/slaw/internal/session"
 	"github.com/SandwichLabs/slaw/internal/testsupport/icebergtest"
 )
 
@@ -32,6 +33,18 @@ func TestIcebergUnqualifiedNamesResolveByDefaultNamespace(t *testing.T) {
 		// introspect_schema on the catalog lists its only namespace.
 		resp := call(h, "introspect_schema", map[string]any{"connection": "cat"})
 		require.Nil(t, resp.Error, errText(resp))
+		// A pinned connection carries the catalog's bookkeeping, as for any other
+		// type: Catalog() names it and Use moves it there too.
+		require.NoError(t, sess.Connect(ctx, "cat"))
+		conn, err := sess.Conn(ctx, session.WithCatalog("cat"))
+		require.NoError(t, err)
+		defer conn.Close()
+		assert.Equal(t, "cat", conn.Catalog())
+		conn2, err := sess.Conn(ctx)
+		require.NoError(t, err)
+		defer conn2.Close()
+		require.NoError(t, conn2.Use(ctx, "cat"))
+		assert.Equal(t, "cat", conn2.Catalog())
 	})
 
 	// A second namespace with its own orders table, made through an unhardened DuckDB.

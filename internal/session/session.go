@@ -480,9 +480,10 @@ func (c *Conn) Use(ctx context.Context, catalog string) error {
 		return err
 	}
 	if nt := c.h.namespaceCatalog(catalog); nt != nil {
-		return c.useNamespace(ctx, catalog, nt)
-	}
-	if _, err := c.c.ExecContext(ctx, "USE "+QuoteIdent(catalog)); err != nil {
+		if err := c.useNamespace(ctx, catalog, nt); err != nil {
+			return err
+		}
+	} else if _, err := c.c.ExecContext(ctx, "USE "+QuoteIdent(catalog)); err != nil {
 		return fmt.Errorf("failed to switch to connection %q: %w", catalog, err)
 	}
 	c.catalog = catalog
