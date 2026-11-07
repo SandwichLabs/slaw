@@ -140,3 +140,13 @@ func TestCraftKinds(t *testing.T) {
 		}
 	}
 }
+
+func TestSharedDBSurvivesSubtest(t *testing.T) {
+	f := icebergtest.Start(t)
+	f.Seed(t)
+	t.Run("craft", func(t *testing.T) {
+		f.Craft(t, "hostm1", icebergtest.Hostile{ManifestListDir: t.TempDir()})
+	})
+	f.Craft(t, "hostm2", icebergtest.Hostile{ManifestListDir: t.TempDir()})
+	require.NotEmpty(t, f.List(t, f.Open(t), "s3://warehouse/ns/hostm2/metadata/*"))
+}

@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -49,7 +48,6 @@ type Fixture struct {
 	// KeyID and Secret are MinIO's credentials.
 	KeyID, Secret string
 
-	mu sync.Mutex
 	db *sql.DB
 }
 
@@ -101,7 +99,9 @@ func catalogEnv() []string {
 }
 
 func minioArgs() []string {
-	args := []string{"--entrypoint", "sh"}
+	// tmpfs on /data: the image declares VOLUME /data, which would leave an
+	// anonymous volume behind on every run.
+	args := []string{"--mount", "type=tmpfs,destination=/data", "--entrypoint", "sh"}
 	args = append(args, envArgs("MINIO_ROOT_USER="+KeyID, "MINIO_ROOT_PASSWORD="+Secret)...)
 	return append(args, minioImage, "-c",
 		"mkdir -p /data/"+Warehouse+" /data/"+Other+" && exec minio server /data")
@@ -152,9 +152,9 @@ func Start(t testing.TB) *Fixture {
 		restHP, s3HP = hostPort(t, bin, infra, "8181"), hostPort(t, bin, infra, "9000")
 	} else {
 		mid := run(append([]string{"-p", "127.0.0.1::8181", "-p", "127.0.0.1::9000"}, minioArgs()...)...)
-		t.Cleanup(func() { _ = exec.Command(bin, "rm", "-f", mid).Run() })
+		t.Cleanup(func() { _ = exec.Command(bin, "rm", "-f", "-v", mid).Run() })
 		cid := run(append(append([]string{"--network", "container:" + mid}, catalogEnv()...), catalogImage)...)
-		t.Cleanup(func() { _ = exec.Command(bin, "rm", "-f", cid).Run() })
+		t.Cleanup(func() { _ = exec.Command(bin, "rm", "-f", "-v", cid).Run() })
 		restHP, s3HP = hostPort(t, bin, mid, "8181"), hostPort(t, bin, mid, "9000")
 	}
 	f := &Fixture{RESTURI: "http://" + restHP, S3Endpoint: s3HP, KeyID: KeyID, Secret: Secret}
@@ -164,6 +164,7 @@ func Start(t testing.TB) *Fixture {
 	if err := waitHTTP(f.RESTURI+"/v1/config", "iceberg rest catalog"); err != nil {
 		fail("%v", err)
 	}
+	f.db = f.Open(t)
 	return f
 }
 
@@ -183,15 +184,12 @@ func waitHTTP(url, what string) error {
 	return fmt.Errorf("%s never became ready", what)
 }
 
-// shared is one unhardened DuckDB per fixture for the object helpers
-// (ReadObject, PutObject, List, ObjectSize), so extensions load once.
+// shared is the one unhardened DuckDB per fixture for the object helpers
+// (ReadObject, PutObject, List, ObjectSize), opened in Start with Start's t so a
+// subtest that crafts first cannot close it under later callers.
 func (f *Fixture) shared(t testing.TB) *sql.DB {
 	t.Helper()
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.db == nil {
-		f.db = f.Open(t)
-	}
+	require.NotNil(t, f.db, "Fixture not made by Start")
 	return f.db
 }
 
