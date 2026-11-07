@@ -66,7 +66,7 @@ func UseExtensionCache(t *testing.T) {
 func Start(t testing.TB) string {
 	t.Helper()
 	bin := containerBin()
-	out, err := exec.Command(bin, "run", "--rm", "-d", "--entrypoint", "sh",
+	out, err := exec.Command(bin, "run", "--rm", "-d", "--mount", "type=tmpfs,destination=/data", "--entrypoint", "sh",
 		"-e", "MINIO_ROOT_USER="+KeyID, "-e", "MINIO_ROOT_PASSWORD="+Secret,
 		"-p", "127.0.0.1::9000", "docker.io/minio/minio",
 		"-c", "mkdir -p /data/"+Bucket+" && exec minio server /data").CombinedOutput()
@@ -77,7 +77,7 @@ func Start(t testing.TB) string {
 	if i := strings.LastIndex(id, "\n"); i >= 0 {
 		id = id[i+1:]
 	}
-	t.Cleanup(func() { _ = exec.Command(bin, "rm", "-f", id).Run() })
+	t.Cleanup(func() { _ = exec.Command(bin, "rm", "-f", "-v", id).Run() })
 	pout, err := exec.Command(bin, "port", id, "9000/tcp").CombinedOutput()
 	require.NoError(t, err, string(pout))
 	line := strings.TrimSpace(strings.Split(string(pout), "\n")[0])
