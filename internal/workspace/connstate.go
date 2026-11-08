@@ -40,6 +40,10 @@ type ConnectionState struct {
 	// SignInHint is set on needs-credentials that is because the person must
 	// sign in with an AWS SSO profile (the profile name and why; no secret).
 	SignInHint *secrets.SignInHint
+	// BlockedBy names the connection this one waits on (a catalog or lake that
+	// reads with a storage connection's secret) when that one is not ready; the
+	// sign-in to do is that connection's.
+	BlockedBy string
 	// Extension names the extension an extension-missing connection needs.
 	Extension string
 	// Remote connections dial on first use; Catalogless ones (s3, gcs, r2)
@@ -82,6 +86,7 @@ func ConnectionStates(ws Workspace, sess session.Session, issues []SessionIssue)
 		s, registered := status[c.Name]
 		if registered {
 			st.Status, st.Detail, st.LockedByPID, st.EffectiveReadOnly = s.Kind, s.Message, s.LockedByPID, s.ReadOnly
+			st.BlockedBy = s.BlockedBy
 		}
 		if msg, ok := issue[c.Name]; ok {
 			if !registered {

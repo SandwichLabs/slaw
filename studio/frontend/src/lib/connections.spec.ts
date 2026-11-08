@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { detailLine, statusKey, statusLabel, oneLine, selectFrom, scopeLabel, typeCode, NAME_RE, STATUS_META } from './connections'
+import { fieldVisible, connectionChoices, detailLine, statusKey, statusLabel, oneLine, selectFrom, scopeLabel, typeCode, NAME_RE, STATUS_META } from './connections'
 
 const base = { name: 'prod_pg', type: 'postgres', scope: 'local', readOnly: true, default: false, remote: true } as const
 
@@ -68,5 +68,42 @@ describe('catalogInStorage', () => {
     expect(catalogInStorage({ type: 'ducklake', path: 'data/lake.ducklake' })).toBe(false)
     expect(catalogInStorage({ type: 'iceberg', path: 's3://b/t/' })).toBe(false)
     expect(catalogInStorage(null)).toBe(false)
+  })
+})
+
+describe('field visibility and connection pickers (iceberg_catalog form)', () => {
+  const f = (o: Partial<ConnField>): ConnField => ({ name: 'x', label: 'X', kind: 'text', required: false, secret: false, perPerson: false, ...o })
+  const fields = [f({ name: 'endpoint_type' }), f({ name: 'auth', default: 'oauth2' })]
+  const bearer = f({ name: 'token', visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }, { field: 'auth', in: ['bearer'] }] })
+  const oauth = f({ name: 'secret', visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }, { field: 'auth', in: ['oauth2'] }] })
+
+  it('shows a field with no conditions always, and one with conditions only while all hold', () => {
+    expect(fieldVisible(f({}), fields, {})).toBe(true)
+    expect(fieldVisible(bearer, fields, { endpoint_type: 'rest', auth: 'bearer' })).toBe(true)
+    expect(fieldVisible(bearer, fields, { endpoint_type: 's3_tables', auth: 'bearer' })).toBe(false)
+    expect(fieldVisible(bearer, fields, { endpoint_type: 'rest', auth: 'none' })).toBe(false)
+  })
+  it("counts a blank value as the field's default", () => {
+    expect(fieldVisible(oauth, fields, { endpoint_type: 'rest' })).toBe(true)
+    expect(fieldVisible(oauth, fields, { endpoint_type: 'rest', auth: '  ' })).toBe(true)
+    expect(fieldVisible(bearer, fields, { endpoint_type: 'rest' })).toBe(false)
+    expect(fieldVisible(oauth, fields, {})).toBe(false) // no kind chosen yet
+  })
+  it('lists the names of connections of one type, sorted', () => {
+    const list = [{ name: 'b_lake', type: 's3' }, { name: 'pg', type: 'postgres' }, { name: 'a_lake', type: 's3' }]
+    expect(connectionChoices(list, 's3')).toEqual(['a_lake', 'b_lake'])
+    expect(connectionChoices(list, undefined)).toEqual(['a_lake', 'b_lake', 'pg'])
+    expect(connectionChoices([], 's3')).toEqual([])
+  })
+})
+
+describe('a connection that waits on another one', () => {
+  const cat = { name: 's3t', type: 'iceberg_catalog', scope: 'local', readOnly: true, default: false, remote: true, status: 'needs-credentials', blockedBy: 'aws_lake' } as const
+  it('names the connection to sign in to, in the rail note and its action', () => {
+    expect(detailLine({ ...cat })).toEqual({ text: 'Needs aws_lake: it needs credentials.', action: 'signin', actionLabel: 'Sign in' })
+  })
+  it('an error is still an error, and blockedBy alone changes nothing else', () => {
+    expect(detailLine({ ...cat, status: 'error', detail: 'boom' })!.action).toBe('fix')
+    expect(detailLine({ ...cat, blockedBy: undefined })!.text).toBe('Needs credentials.')
   })
 })

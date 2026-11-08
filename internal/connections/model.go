@@ -3,6 +3,7 @@ package connections
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,7 +68,17 @@ const (
 	KindEnum   FieldKind = "enum"
 	KindPath   FieldKind = "path"
 	KindURL    FieldKind = "url"
+	// KindConnection is the name of another connection of the workspace; the
+	// form offers a picker over the connections of Field.ConnectionType.
+	KindConnection FieldKind = "connection"
 )
+
+// Condition holds when the option Field has one of the values in In. A blank
+// value counts as the field's own Default (so "auth" unset is "oauth2").
+type Condition struct {
+	Field string   `json:"field"`
+	In    []string `json:"in"`
+}
 
 // Field describes one input of a connection type.
 type Field struct {
@@ -77,6 +88,9 @@ type Field struct {
 	Help    string    `json:"help,omitempty"`
 	Default string    `json:"default,omitempty"`
 	Choices []string  `json:"choices,omitempty"`
+	// ChoiceLabels are the words a form shows for a choice ("S3 Tables" for
+	// s3_tables); a choice without one is shown as it is stored.
+	ChoiceLabels map[string]string `json:"choiceLabels,omitempty"`
 	// Required means the type cannot connect without it.
 	Required bool `json:"required"`
 	// Secret fields are write-only: never read back across a boundary.
@@ -90,6 +104,79 @@ type Field struct {
 	// Prominent asks the form to open the Advanced section on a new
 	// connection, for an option most people must look at (Azure's sign-in).
 	Prominent bool `json:"prominent,omitempty"`
+	// ConnectionType filters a KindConnection picker to connections of this
+	// type (an s3_tables catalog signs with an "s3" connection).
+	ConnectionType string `json:"connectionType,omitempty"`
+	// VisibleWhen shows the field only while every condition holds (an
+	// iceberg_catalog's rest-only and s3_tables-only fields). A field that is
+	// not visible is neither shown, validated nor saved by the form.
+	VisibleWhen []Condition `json:"visibleWhen,omitempty"`
+}
+
+// VisibleFor reports whether f applies to a definition whose options are opts,
+// looking up the conditions' fields (and their defaults) in fields.
+func (f Field) VisibleFor(fields []Field, opts map[string]string) bool {
+	for _, c := range f.VisibleWhen {
+		v := ""
+		for k, ov := range opts {
+			if strings.EqualFold(k, c.Field) {
+				v = ov
+			}
+		}
+		if v == "" {
+			for _, o := range fields {
+				if o.Name == c.Field {
+					v = o.Default
+				}
+			}
+		}
+		if !slices.Contains(c.In, v) {
+			return false
+		}
+	}
+	return true
+}
+
+// NarrowedCredentialFields names the credential fields a definition signs in
+// with when its type narrows them by VisibleWhen (an iceberg_catalog: a token, or
+// a client id and secret); nil for a type whose credentials are always all of its
+// fields, and for a definition that signs in with none.
+func NarrowedCredentialFields(d Def) []string {
+	info, err := TypeInfoFor(d.Type)
+	if err != nil {
+		return nil
+	}
+	narrows := false
+	for _, f := range info.Credentials {
+		narrows = narrows || len(f.VisibleWhen) > 0
+	}
+	if !narrows {
+		return nil
+	}
+	var out []string
+	for _, f := range CredentialFieldsFor(d) {
+		out = append(out, f.Name)
+	}
+	return out
+}
+
+// CredentialFieldsFor is the credential fields this definition signs in with:
+// the type's list narrowed by each field's VisibleWhen (an iceberg_catalog
+// with auth bearer takes a token, with oauth2 a client id and secret, with
+// s3_tables or auth none nothing). For a type with no conditions it is the
+// whole list.
+func CredentialFieldsFor(d Def) []Field {
+	info, err := TypeInfoFor(d.Type)
+	if err != nil || !NeedsCredentialFor(d) {
+		return nil
+	}
+	var out []Field
+	for _, f := range info.Credentials {
+		if f.VisibleFor(info.Fields, d.Options) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // Capabilities says what a type can do.

@@ -36,6 +36,29 @@ type CatalogListing struct {
 	Schema    string        `json:"schema"`
 	Flattened bool          `json:"flattened"`
 	Nodes     []CatalogNode `json:"nodes"`
+	// More counts the namespaces left out of a schemas listing because the
+	// connection has more than MaxCatalogNamespaces (an Iceberg catalog); 0
+	// when nothing was cut. The rail says so with a "more" line.
+	More int `json:"more,omitempty"`
+}
+
+// IcebergCatalogType is the connection type whose listings are names only.
+const IcebergCatalogType = "iceberg_catalog"
+
+// MaxCatalogNamespaces bounds the namespaces listed for one iceberg_catalog, so
+// a large S3 Tables bucket cannot stall the rail.
+const MaxCatalogNamespaces = 200
+
+// namesOnly reports whether the connection's tree is listed by names only:
+// an iceberg_catalog, whose tables cost a LoadTable each to describe (S0 item
+// 10: duckdb_tables() and information_schema make no fetch, DESCRIBE does).
+func namesOnly(sess session.Session, conn string) bool {
+	for _, i := range sess.ConnectionInfos() {
+		if i.Name == conn {
+			return i.Type == IcebergCatalogType
+		}
+	}
+	return false
 }
 
 // UnknownConnectionError says the request named no valid connection. Its text is
@@ -62,10 +85,16 @@ func ListCatalog(ctx context.Context, sess session.Session, req CatalogRequest) 
 		if err != nil {
 			return nil, err
 		}
+		// The cap bounds the listing, not what the catalog has: the rest stay
+		// queryable by name, and More tells the rail to say so.
+		more := 0
+		if namesOnly(sess, req.Connection) && len(schemas) > MaxCatalogNamespaces {
+			more, schemas = len(schemas)-MaxCatalogNamespaces, schemas[:MaxCatalogNamespaces]
+		}
 		// The schema level is hidden only while a connection has just `main`
 		// (SPEC 05): a Postgres database with only `public` still shows it.
 		if len(schemas) != 1 || schemas[0] != "main" {
-			out := &CatalogListing{Kind: "schemas", Nodes: []CatalogNode{}}
+			out := &CatalogListing{Kind: "schemas", Nodes: []CatalogNode{}, More: more}
 			for _, s := range schemas {
 				out.Nodes = append(out.Nodes, CatalogNode{Kind: "schema", Name: s, Rows: -1})
 			}
@@ -117,7 +146,10 @@ func catalogTables(ctx context.Context, sess session.Session, req CatalogRequest
 	if err != nil {
 		return nil, err
 	}
-	est := session.EstimatedRows(ctx, sess.DB(), req.Connection)
+	est := map[session.TableKey]int64{}
+	if !namesOnly(sess, req.Connection) {
+		est = session.EstimatedRows(ctx, sess.DB(), req.Connection)
+	}
 	out := &CatalogListing{Kind: "tables", Schema: req.Schema, Flattened: flattened, Nodes: []CatalogNode{}}
 	for _, t := range tabs {
 		kind := RelationKind(t.Type)

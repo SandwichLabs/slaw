@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SandwichLabs/slaw/internal/connections"
 	"github.com/SandwichLabs/slaw/internal/secrets"
 	"github.com/SandwichLabs/slaw/internal/workspace"
 	"github.com/spf13/cobra"
@@ -65,13 +66,13 @@ func runConnCredsSet(cmd *cobra.Command, args []string) error {
 	}
 	out := cmd.OutOrStdout()
 	if kind, prefix, _ := secrets.ParseMethod(c.SignIn); kind == "env" {
-		fmt.Fprintf(out, "%s signs in from the environment: %s. Nothing is stored.\n", c.Name, strings.Join(secrets.EnvVarNames(prefix), ", "))
+		fmt.Fprintf(out, "%s signs in from the environment: %s. Nothing is stored.\n", c.Name, strings.Join(secrets.EnvVarNamesFor(prefix, connections.NarrowedCredentialFields(connections.Def{Type: c.Type, Options: c.Options})), ", "))
 		return nil
 	} else if kind == secrets.MethodAWSSSO {
 		printSSONote(out, c.Name, prefix)
 		return nil
 	}
-	cred, err := promptCredentials(cmd.InOrStdin(), cmd.ErrOrStderr(), c.Type, secrets.Credential{})
+	cred, err := promptCredentials(cmd.InOrStdin(), cmd.ErrOrStderr(), c.Type, c.Options)
 	if err != nil {
 		return err
 	}

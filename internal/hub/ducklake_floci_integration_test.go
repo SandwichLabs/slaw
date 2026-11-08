@@ -191,7 +191,7 @@ func TestFlociLakeEndToEnd(t *testing.T) {
 	err = o2.Sess.Connect(ctx, "lake")
 	require.Error(t, err)
 	st := statusLine(o2.Sess, "lake")
-	assert.Equal(t, session.StatusError, st.Kind)
+	assert.Equal(t, session.StatusNeedsCredentials, st.Kind)
 	assert.Equal(t, `needs the "floci" connection: it needs credentials`, st.Message)
 	seen = append(seen, err.Error())
 	_, err = o2.Eng.Execute(ctx, "SELECT count(*) FROM lake.warehouse.dim_students", nil)

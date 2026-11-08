@@ -3,12 +3,12 @@
 // never shows the file-level scope words (shared / local / user).
 
 const TYPE_CODE: Record<string, string> = {
-  duckdb: 'DK', postgres: 'PG', motherduck: 'MD', sqlite: 'SQ', s3: 'S3', gcs: 'GC', r2: 'R2', mysql: 'MY', ducklake: 'DL', azure: 'AZ', iceberg: 'IC', delta: 'DT',
+  duckdb: 'DK', postgres: 'PG', motherduck: 'MD', sqlite: 'SQ', s3: 'S3', gcs: 'GC', r2: 'R2', mysql: 'MY', ducklake: 'DL', azure: 'AZ', iceberg: 'IC', iceberg_catalog: 'IR', delta: 'DT',
 }
 const TYPE_LABEL: Record<string, string> = {
   duckdb: 'DuckDB file', postgres: 'Postgres', motherduck: 'MotherDuck', sqlite: 'SQLite file',
   s3: 'Amazon S3', gcs: 'Google Cloud Storage', r2: 'Cloudflare R2', mysql: 'MySQL', ducklake: 'DuckLake',
-  azure: 'Azure Blob / Data Lake', iceberg: 'Iceberg table', delta: 'Delta Lake table',
+  azure: 'Azure Blob / Data Lake', iceberg: 'Iceberg table', iceberg_catalog: 'Iceberg catalog', delta: 'Delta Lake table',
 }
 export const typeCode = (t: string) => TYPE_CODE[t] ?? t.slice(0, 2).toUpperCase()
 export const typeLabel = (t: string) => TYPE_LABEL[t] ?? t
@@ -83,6 +83,10 @@ export function detailLine(c: ConnectionInfo): DetailLine | null {
     case 'err':
       return { text: `Can’t connect: ${oneLine(c.detail)}.`, action: 'fix', actionLabel: 'Fix' }
     case 'creds':
+      if (c.blockedBy) {
+        // It waits on another connection's sign-in: name it, and the action opens that one.
+        return { text: `Needs ${c.blockedBy}: it needs credentials.`, action: 'signin', actionLabel: 'Sign in' }
+      }
       if (c.serverChanged) {
         return { text: `The server changed since you signed in (${c.serverChanged.old} to ${c.serverChanged.new}).`, action: 'signin', actionLabel: 'Sign in again' }
       }
@@ -129,3 +133,22 @@ export const NAME_RE = /^[a-z_][a-z0-9_]{0,62}$/
 // prefix (SLAW_PASSWORD). One map for the editor form and the sign-in prompt.
 export const CRED_KEY: Record<string, keyof CredentialInput> = { user: 'username', key_id: 'keyId', password: 'password', token: 'token', secret: 'secret' }
 export const CRED_ENV_SUFFIX: Record<string, string> = { user: 'USER', key_id: 'KEY_ID', password: 'PASSWORD', token: 'TOKEN', secret: 'SECRET' }
+
+// fieldVisible says whether a type's field applies to the definition being
+// edited: every visibleWhen condition names an option and the values it must
+// have, and a blank value counts as that option's default (so an unset "auth"
+// is "oauth2"). A field with no conditions is always visible.
+export function fieldVisible(fd: Pick<ConnField, 'visibleWhen'>, fields: ConnField[], options: Record<string, string>): boolean {
+  for (const c of fd.visibleWhen ?? []) {
+    let v = (options[c.field] ?? '').trim()
+    if (v === '') v = fields.find((x) => x.name === c.field)?.default ?? ''
+    if (!c.in.includes(v)) return false
+  }
+  return true
+}
+
+// connectionChoices lists the names of the workspace's connections of a type, for
+// a field of kind 'connection' (an s3_tables catalog is signed by an s3 one).
+export function connectionChoices(list: Pick<ConnectionInfo, 'name' | 'type'>[], type: string | undefined): string[] {
+  return list.filter((c) => !type || c.type === type).map((c) => c.name).sort()
+}

@@ -13,7 +13,7 @@ vi.mock('vue-router', () => ({
 vi.mock('../wailsjs/runtime/runtime', () => ({ EventsOn: () => () => {}, EventsOff: () => {} }))
 
 import ConnectionEditorView from './ConnectionEditorView.vue'
-import { _resetConnectionsForTests, extensionFor } from '../composables/useConnections'
+import { _resetConnectionsForTests, extensionFor, connectionList } from '../composables/useConnections'
 import { _resetForTests as resetWorkspace, workspaceInfo } from '../composables/useWorkspace'
 import { confirmVisible, resolveConfirmChoice } from '../composables/useConfirm'
 import { stashDraft, currentDraft, clearDraft } from '../composables/useConnectionDraft'
@@ -78,6 +78,22 @@ const TYPES: ConnTypeSpec[] = [
     fields: [field({ name: 'path', label: 'Catalog (file or storage URL)', kind: 'path', required: true }), field({ name: 'data_path', label: 'Data folder', required: true, option: true })],
     credentials: [], requiresExtension: ['ducklake'], capabilities: { catalog: true, writable: true, readOnlyAttach: true, remote: true, test: true }, fingerprintFields: ['type', 'path', 'option:data_path'], signInMethods: [], soon: false,
     metadataDriven: true, warning: 'Table metadata in this lake decides which files DuckDB reads. Anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover.',
+  },
+  {
+    id: 'iceberg_catalog', label: 'Iceberg catalog', description: 'A catalog.', metadataDriven: true, warning: 'Table metadata in this lake decides which files DuckDB reads.',
+    fields: [
+      field({ name: 'endpoint_type', label: 'Catalog kind', kind: 'enum', choices: ['s3_tables', 'rest'], choiceLabels: { s3_tables: 'Amazon S3 Tables', rest: 'Iceberg REST catalog' }, required: true, option: true, prominent: true }),
+      field({ name: 'warehouse', label: 'Warehouse', required: true, option: true }),
+      field({ name: 'storage', label: 'Signs with', kind: 'connection', connectionType: 's3', required: true, option: true, visibleWhen: [{ field: 'endpoint_type', in: ['s3_tables'] }] }),
+      field({ name: 'uri', label: 'Catalog URL', kind: 'url', required: true, option: true, visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }] }),
+      field({ name: 'auth', label: 'Authentication', kind: 'enum', choices: ['oauth2', 'bearer', 'none'], choiceLabels: { oauth2: 'OAuth2', bearer: 'Bearer token', none: 'None' }, default: 'oauth2', option: true, visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }] }),
+    ],
+    credentials: [
+      field({ name: 'token', label: 'Bearer token', secret: true, perPerson: true, visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }, { field: 'auth', in: ['bearer'] }] }),
+      field({ name: 'key_id', label: 'OAuth2 client id', perPerson: true, visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }, { field: 'auth', in: ['oauth2'] }] }),
+      field({ name: 'secret', label: 'OAuth2 client secret', secret: true, perPerson: true, visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }, { field: 'auth', in: ['oauth2'] }] }),
+    ],
+    requiresExtension: ['iceberg'], capabilities: { catalog: true, writable: false, readOnlyAttach: true, remote: true, test: true }, fingerprintFields: [], signInMethods: ['keychain', 'env', 'prompt'], soon: false,
   },
 ]
 
@@ -181,6 +197,103 @@ describe('ConnectionEditorView', () => {
     expect((await submit()).options).toEqual({ use_ssl: 'false' })
     await sel.setValue('')
     expect((await submit()).options).toBeUndefined()
+  })
+
+  it('iceberg_catalog: the kind select decides which fields, credentials and sign-in show, and a hidden field is neither validated nor saved', async () => {
+    const app = makeApp()
+    connectionList.value = [
+      { name: 'aws_lake', type: 's3', scope: 'local', readOnly: true, default: false, remote: true, status: 'ok' },
+      { name: 'pg', type: 'postgres', scope: 'local', readOnly: true, default: false, remote: true, status: 'ok' },
+    ] as ConnectionInfo[]
+    const w = mountView()
+    await flushPromises()
+    await chooseType(w, 'iceberg_catalog')
+    const has = (id: string) => w.find(`[data-testid="${id}"]`).exists()
+    const signIn = () => w.find('[role="radiogroup"][aria-label="How you sign in"]').exists()
+    expect(w.find('[data-testid="trust-note"]').text()).toContain('Table metadata in this lake decides')
+    // no kind chosen yet: only the kind and the warehouse, and nothing to sign in with
+    expect([has('f-endpoint_type'), has('f-warehouse'), has('f-storage'), has('f-uri'), has('f-auth')]).toEqual([true, true, false, false, false])
+    expect(signIn()).toBe(false)
+
+    await w.find('[data-testid="f-endpoint_type"]').setValue('s3_tables')
+    expect([has('f-storage'), has('f-uri'), has('f-auth')]).toEqual([true, false, false])
+    // the picker offers s3 connections only
+    expect(w.findAll('[data-testid="f-storage"] option').map((o) => o.text())).toEqual(['Choose…', 'aws_lake'])
+    expect(signIn()).toBe(false)
+    await w.find('[data-testid="f-name"]').setValue('s3t')
+    await w.find('[data-testid="f-warehouse"]').setValue('arn:aws:s3tables:us-east-1:111122223333:bucket/sales')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(app.SaveConnection).not.toHaveBeenCalled()
+    expect(w.find('[data-testid="save-error"]').text()).toContain('Signs with is needed')
+    await w.find('[data-testid="f-storage"]').setValue('aws_lake')
+
+    // switching to rest hides the storage field, and what it held is not saved
+    await w.find('[data-testid="f-endpoint_type"]').setValue('rest')
+    expect([has('f-storage'), has('f-uri'), has('f-auth')]).toEqual([false, true, true])
+    expect(signIn()).toBe(true)
+    expect([has('f-c-key_id'), w.find('#f-c-secret-in').exists(), w.find('#f-c-token-in').exists()]).toEqual([true, true, false]) // oauth2 is the default
+    await w.find('[data-testid="f-auth"]').setValue('bearer')
+    expect([has('f-c-key_id'), w.find('#f-c-secret-in').exists(), w.find('#f-c-token-in').exists()]).toEqual([false, false, true])
+    await w.find('[data-testid="f-auth"]').setValue('none')
+    expect(signIn()).toBe(false)
+    await w.find('[data-testid="f-uri"]').setValue('http://localhost:8181')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    const req = app.SaveConnection.mock.calls.at(-1)![0]
+    expect(req.def.options).toEqual({ endpoint_type: 'rest', warehouse: 'arn:aws:s3tables:us-east-1:111122223333:bucket/sales', uri: 'http://localhost:8181', auth: 'none' })
+    expect(req.signIn).toBe('')
+  })
+
+  it('iceberg_catalog: human labels without a duplicate default, a typed token is not sent after switching to OAuth2, and a missing field is marked until it is filled', async () => {
+    const app = makeApp()
+    connectionList.value = [{ name: 'aws_lake', type: 's3', scope: 'local', readOnly: true, default: false, remote: true, status: 'ok' }] as ConnectionInfo[]
+    const w = mountView()
+    await flushPromises()
+    await chooseType(w, 'iceberg_catalog')
+    expect(w.findAll('[data-testid="f-endpoint_type"] option').map((o) => o.text())).toEqual(['Choose…', 'Amazon S3 Tables', 'Iceberg REST catalog'])
+
+    // missing storage: the field is marked, the message clears once it is filled
+    await w.find('[data-testid="f-endpoint_type"]').setValue('s3_tables')
+    await w.find('[data-testid="f-name"]').setValue('s3t')
+    await w.find('[data-testid="f-warehouse"]').setValue('arn:aws:s3tables:us-east-1:111122223333:bucket/sales')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(w.find('[data-testid="save-error"]').exists()).toBe(true)
+    expect(w.find('[data-testid="f-storage"]').attributes('aria-invalid')).toBe('true')
+    await w.find('[data-testid="f-storage"]').setValue('aws_lake')
+    await flushPromises()
+    expect(w.find('[data-testid="save-error"]').exists()).toBe(false)
+    expect(w.find('[data-testid="f-storage"]').attributes('aria-invalid')).toBeUndefined()
+
+    // auth: no "oauth2" entry beside "Default (OAuth2)"
+    await w.find('[data-testid="f-endpoint_type"]').setValue('rest')
+    expect(w.findAll('[data-testid="f-auth"] option').map((o) => o.text())).toEqual(['Default (OAuth2)', 'Bearer token', 'None'])
+    expect(w.find('[data-testid="f-storage"]').exists()).toBe(false)
+
+    // a token typed under bearer is not sent once OAuth2 is chosen
+    await w.find('[data-testid="f-auth"]').setValue('bearer')
+    await w.find('#f-c-token-in').setValue('tok-typed-earlier')
+    await w.find('[data-testid="f-auth"]').setValue('')
+    await w.find('[data-testid="f-c-key_id"]').setValue('cid')
+    await w.find('[data-testid="test-btn"]').trigger('click')
+    await flushPromises()
+    const sent = app.TestConnection.mock.calls.at(-1)![0].credentials
+    expect(sent.token).toBe('')
+    expect(sent.keyId).toBe('cid')
+  })
+
+  it('an explicit default (auth: oauth2 in the saved file) shows as the Default option and is kept until another is chosen', async () => {
+    route.path = '/connections/cat'; route.params = { name: 'cat' }
+    const def = { name: 'cat', type: 'iceberg_catalog', read_only: true, options: { endpoint_type: 'rest', uri: 'https://c.example.com', warehouse: 'w', auth: 'oauth2' } }
+    const app = makeApp({ GetConnectionInScope: vi.fn(async () => detail({ name: 'cat', def, info: { name: 'cat', type: 'iceberg_catalog', scope: 'shared', readOnly: true, default: false, status: 'ok', remote: true } })) })
+    const w = mountView()
+    await flushPromises()
+    const sel = w.find('[data-testid="f-auth"]')
+    expect((sel.element as HTMLSelectElement).selectedOptions[0].text).toBe('Default (OAuth2)')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(app.SaveConnection.mock.calls.at(-1)![0].def.options.auth).toBe('oauth2')
   })
 
   it('Azure opens Advanced on a new connection (its sign-in is prominent) and writes no default', async () => {

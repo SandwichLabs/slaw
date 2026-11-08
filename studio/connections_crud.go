@@ -54,18 +54,19 @@ type TypeSpec struct {
 }
 
 var typeDescriptions = map[string]string{
-	"duckdb":     "A DuckDB database file on this computer.",
-	"postgres":   "A PostgreSQL server. Read it in place; nothing is copied.",
-	"motherduck": "A MotherDuck cloud database.",
-	"sqlite":     "A SQLite database file on this computer.",
-	"s3":         "Files in an Amazon S3 bucket.",
-	"gcs":        "Files in a Google Cloud Storage bucket.",
-	"r2":         "Files in a Cloudflare R2 bucket.",
-	"mysql":      "A MySQL or MariaDB server. Read it in place; nothing is copied.",
-	"azure":      "Files in Azure Blob Storage or Data Lake (az://, azure://, abfss://).",
-	"ducklake":   "A DuckLake: tables in Parquet files with their catalog in a DuckDB or SQLite file, here or in object storage.",
-	"iceberg":    "An Iceberg table, read with iceberg_scan('<location>').",
-	"delta":      "A Delta Lake table, read with delta_scan('<location>').",
+	"duckdb":          "A DuckDB database file on this computer.",
+	"postgres":        "A PostgreSQL server. Read it in place; nothing is copied.",
+	"motherduck":      "A MotherDuck cloud database.",
+	"sqlite":          "A SQLite database file on this computer.",
+	"s3":              "Files in an Amazon S3 bucket.",
+	"gcs":             "Files in a Google Cloud Storage bucket.",
+	"r2":              "Files in a Cloudflare R2 bucket.",
+	"mysql":           "A MySQL or MariaDB server. Read it in place; nothing is copied.",
+	"azure":           "Files in Azure Blob Storage or Data Lake (az://, azure://, abfss://).",
+	"ducklake":        "A DuckLake: tables in Parquet files with their catalog in a DuckDB or SQLite file, here or in object storage.",
+	"iceberg":         "An Iceberg table, read with iceberg_scan('<location>').",
+	"delta":           "A Delta Lake table, read with delta_scan('<location>').",
+	"iceberg_catalog": "An Iceberg catalog (Amazon S3 Tables or a REST catalog): its tables are listed and read through the catalog, like a database.",
 }
 
 // ListConnectionTypes returns the connection types, in the order the picker
@@ -75,7 +76,7 @@ func (a *App) ListConnectionTypes() []TypeSpec {
 	for _, i := range connections.ListConnectionTypes() {
 		infos[i.Name] = i
 	}
-	order := []string{"duckdb", "postgres", "mysql", "motherduck", "sqlite", "ducklake", "s3", "gcs", "r2", "azure", "iceberg", "delta"}
+	order := []string{"duckdb", "postgres", "mysql", "motherduck", "sqlite", "ducklake", "iceberg_catalog", "s3", "gcs", "r2", "azure", "iceberg", "delta"}
 	out := make([]TypeSpec, 0, len(order))
 	for _, id := range order {
 		i, ok := infos[id]

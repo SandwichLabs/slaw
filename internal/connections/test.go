@@ -118,7 +118,11 @@ func Test(ctx context.Context, def Def, cred secrets.Credential, opts ...TestOpt
 	res := runClassified(def, func() TestResult { return test(ctx, def, cred, opts...) })
 	if def.Type == "iceberg_catalog" && !res.OK && res.Error != "" && !strings.Contains(res.Error, MetadataWarning) {
 		// A failed Test still says what attaching such a catalog means.
-		res.Error += " " + MetadataWarning
+		sep := " "
+		if t := strings.TrimRight(res.Error, " "); !strings.HasSuffix(t, ".") && !strings.HasSuffix(t, "!") && !strings.HasSuffix(t, "?") {
+			sep = ". " // DuckDB's message does not end a sentence: do not run the warning into it
+		}
+		res.Error += sep + MetadataWarning
 	}
 	return res
 }

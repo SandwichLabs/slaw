@@ -11,7 +11,7 @@ import { useRoute } from 'vue-router'
 import { App } from '../lib/bindings'
 import { workspaceInfo } from './useWorkspace'
 import { errorText } from '../lib/errors'
-import { NAME_RE, CRED_ENV_SUFFIX } from '../lib/connections'
+import { NAME_RE, CRED_ENV_SUFFIX, CRED_KEY, fieldVisible } from '../lib/connections'
 import { presetFill, endpointProblem, followRegion, REGION_PLACEHOLDER, type FilledTemplate } from '../lib/storagePresets'
 import { useStorageDetect, type DetectKey } from './useStorageDetect'
 import { parseStoragePrefill, type StoragePrefill } from '../lib/storagePrefill'
@@ -63,8 +63,11 @@ export function useConnectionForm() {
   const remote = computed(() => !!spec.value?.capabilities.remote)
   // A required option (a DuckLake's data folder, R2's account id) is not an
   // advanced setting: it sits with the main fields, with its asterisk.
-  const mainFields = computed(() => (spec.value?.fields ?? []).filter((x) => (!x.option || x.required) && x.name !== 'port'))
-  const advFields = computed(() => (spec.value?.fields ?? []).filter((x) => x.option && !x.required))
+  // A field with a visibleWhen rule (an iceberg_catalog's rest-only URL) is shown,
+  // validated and saved only while its rule holds for the options now set.
+  const visible = (fd: ConnField) => fieldVisible(fd, spec.value?.fields ?? [], f.options)
+  const mainFields = computed(() => (spec.value?.fields ?? []).filter((x) => (!x.option || x.required) && x.name !== 'port' && visible(x)))
+  const advFields = computed(() => (spec.value?.fields ?? []).filter((x) => x.option && !x.required && visible(x)))
   // These sources trust their own metadata (it decides which files are read): any
   // scope may define one, and the form warns. Go says which types (and the
   // warning text); nothing here lists them.
@@ -90,11 +93,22 @@ export function useConnectionForm() {
     }
   })
   const portField = computed(() => (spec.value?.fields ?? []).find((x) => x.name === 'port'))
-  const credFields = computed(() => spec.value?.credentials ?? [])
+  // Only the credentials the definition signs in with: a bearer catalog a token, an OAuth2 one a client id and secret, an s3_tables or auth-none one nothing.
+  const credFields = computed(() => (spec.value?.credentials ?? []).filter(visible))
   const readableCreds = computed(() => credFields.value.filter((c) => !c.secret))
   const secretCreds = computed(() => credFields.value.filter((c) => c.secret))
   const primarySecret = computed(() => secretCreds.value[0]?.name ?? '')
   const needsSignIn = computed(() => credFields.value.length > 0)
+  // What was typed for the credentials this definition signs in with: a token typed
+  // before switching to OAuth2 is not sent, so it is never stored.
+  function visibleCreds(): CredentialInput {
+    const out = emptyCreds()
+    for (const c of credFields.value) {
+      const k = CRED_KEY[c.name]
+      if (k) out[k] = typed[k]
+    }
+    return out
+  }
 
   const methodString = computed(() => (method.value === 'env' ? `env:${envPrefix.value.trim() || 'SLAW'}` : method.value === 'aws-sso' ? `aws-sso:${ssoProfile.value}` : method.value))
   const envVars = computed(() => {
@@ -121,13 +135,13 @@ export function useConnectionForm() {
     const d: ConnectionDef = { name: f.name.trim(), type: typeId.value }
     const set = (k: keyof ConnectionDef, v: string) => { if (v.trim() !== '') (d as any)[k] = v.trim() }
     for (const fd of spec.value?.fields ?? []) {
-      if (fd.option) continue
+      if (fd.option || !visible(fd)) continue
       const v = val(fd)
       if (fd.name === 'port') { if (v.trim() !== '') d.port = parseInt(v, 10) || 0 }
       else set(fd.name as keyof ConnectionDef, v)
     }
     const opts: Record<string, string> = {}
-    for (const fd of (spec.value?.fields ?? []).filter((x) => x.option)) { // required options too
+    for (const fd of (spec.value?.fields ?? []).filter((x) => x.option && visible(x))) { // required options too
       const v = (f.options[fd.name] ?? '').trim()
       if (v) opts[fd.name] = v
     }
@@ -362,15 +376,26 @@ export function useConnectionForm() {
     }
   }
 
-  // validate returns what is wrong with the form, or '' when it can be saved.
+  // validate returns what is wrong with the form, or '' when it can be saved. A
+  // missing required field is marked (invalidField) until it is filled, and its
+  // message in saveError goes away with it.
+  const invalidField = ref('')
+  let lastProblem = ''
+  const missing = (fd: ConnField): string => { invalidField.value = fd.name; lastProblem = `${fd.label} is needed.`; return lastProblem }
+  watch(() => { const fd = spec.value?.fields.find((x) => x.name === invalidField.value); return fd ? val(fd).trim() : null }, (v) => {
+    if (!v) return
+    invalidField.value = ''
+    if (saveError.value === lastProblem) saveError.value = ''
+  })
   function validate(): string {
+    invalidField.value = ''
     if (!spec.value) return 'Choose a connection type first.'
     if (isNew.value && !NAME_RE.test(f.name.trim())) return 'Give it a name with lowercase letters, numbers and underscores, like prod_pg.'
-    for (const fd of spec.value.fields) {
-      if (fd.required && !fd.option && val(fd).trim() === '') return `${fd.label} is needed.`
+    for (const fd of spec.value.fields.filter(visible)) {
+      if (fd.required && !fd.option && val(fd).trim() === '') return missing(fd)
     }
-    for (const fd of (spec.value.fields ?? []).filter((x) => x.option)) {
-      if (fd.required && !(f.options[fd.name] ?? '').trim()) return `${fd.label} is needed.`
+    for (const fd of (spec.value.fields ?? []).filter((x) => x.option && visible(x))) {
+      if (fd.required && !(f.options[fd.name] ?? '').trim()) return missing(fd)
     }
     const ep = endpointProblem((f.options['endpoint'] ?? '').trim())
     if (ep) return ep
@@ -381,7 +406,7 @@ export function useConnectionForm() {
     types, loading, loadError, isNew, editName, typeId, spec, f, readOnly, connScope, origScope, method, envPrefix, ssoProfile,
     typed, status, detail, advancedOpen, origMethod, hadKeychainSecret, saved, saveError, result, isMD, remote,
     mainFields, advFields, metadataDriven, metadataWarning, insideWorkspace, exampleTail, portField, credFields, readableCreds,
-    secretCreds, needsSignIn, methodString, envVars, val, setVal, buildDef, refreshDraftFingerprint,
+    secretCreds, needsSignIn, visibleCreds, invalidField, visible, methodString, envVars, val, setVal, buildDef, refreshDraftFingerprint,
     fingerprintChanged, bindingChanged, dirty, fingerprintHelp, secretIsSet, serverChangedHelp, privateCopy,
     shadowedBy, failedTest, title, chooseType, loadForm, validate, presets, applyPreset, storageLine, storageSlot, storageFailed, prefilled, changedWhileAway,
   }

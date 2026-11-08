@@ -82,7 +82,7 @@ var connAddCmd = &cobra.Command{
 	Use:   "add <name> --type <type>",
 	Short: "Add a connection (credentials are prompted for and kept in the keychain)",
 	Long: `Add a connection definition and, on a terminal, prompt for its credentials
-(no echo) and store them in the keychain. Types: ` + "duckdb, sqlite, postgres, mysql, motherduck, ducklake, s3, gcs, r2, azure, iceberg, delta" + `.
+(no echo) and store them in the keychain. Types: ` + "duckdb, sqlite, postgres, mysql, motherduck, ducklake, iceberg_catalog, s3, gcs, r2, azure, iceberg, delta" + `.
 
   slaw conn add pg --type postgres --host db.internal --database analytics
   slaw conn add lake --type s3 --prefix s3://acme-lake/raw/ --region us-east-1
@@ -94,6 +94,21 @@ var connAddCmd = &cobra.Command{
   slaw conn add events --type azure --prefix az://events/2024/ --option sign_in=account_key --option account_name=acmelake
   slaw conn add wh --type ducklake --path data/wh.ducklake --option data_path=data/wh_files --read-only=false
   slaw conn add sales --type delta --path data/sales
+  slaw conn add aws_lake --type s3 --prefix s3://acme-lake/ --region us-east-1 --sign-in aws-sso:dev
+  slaw conn add s3t --type iceberg_catalog --option endpoint_type=s3_tables \
+      --option warehouse=arn:aws:s3tables:us-east-1:111122223333:bucket/sales --option storage=aws_lake
+  slaw conn add polaris --type iceberg_catalog --option endpoint_type=rest \
+      --option uri=https://polaris.example.com/api/catalog --option warehouse=analytics   # OAuth2: credentials set asks client id and secret
+  slaw conn add nessie --type iceberg_catalog --option endpoint_type=rest --option auth=bearer \
+      --option uri=https://nessie.example.com/iceberg --option warehouse=main            # credentials set asks the token
+  slaw conn add local_cat --type iceberg_catalog --option endpoint_type=rest --option auth=none \
+      --option uri=http://localhost:8181 --option warehouse=warehouse                    # http only for localhost
+
+An iceberg_catalog is read through its catalog (tables appear like a database's:
+s3t.sales.orders). endpoint_type s3_tables is signed by the s3 connection named in
+--option storage, so its credentials live once, there; rest takes a bearer token,
+OAuth2 client credentials or none (--option auth=...). Table metadata decides which
+files DuckDB reads, so only add a catalog whose writers you trust.
 
 Connections are read-only unless --read-only=false (MotherDuck is always
 writable: it has no read-only attach). Without a terminal no
@@ -178,7 +193,7 @@ func runConnAdd(cmd *cobra.Command, args []string) error {
 	}
 	method := c.SignIn
 	if kind, _, _ := secrets.ParseMethod(method); kind == "env" {
-		names := secrets.EnvVarNames(strings.TrimPrefix(method, "env:"))
+		names := secrets.EnvVarNamesFor(strings.TrimPrefix(method, "env:"), connections.NarrowedCredentialFields(connections.Def{Type: typ, Options: def.Options}))
 		if typ == "motherduck" {
 			names = []string{strings.TrimPrefix(method, "env:") + "_TOKEN"} // a token is all MotherDuck takes
 		}
@@ -192,7 +207,7 @@ func runConnAdd(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(out, "No terminal, so no credentials were asked for. Run: slaw conn credentials set %s\n", def.Name)
 		return nil
 	}
-	cred, err := promptCredentials(cmd.InOrStdin(), cmd.ErrOrStderr(), typ, secrets.Credential{})
+	cred, err := promptCredentials(cmd.InOrStdin(), cmd.ErrOrStderr(), typ, def.Options)
 	if err != nil {
 		return err
 	}
@@ -266,6 +281,9 @@ type connRow struct {
 	Message      string `json:"message,omitempty"`
 	// Warning is set on a shared lake or table definition (not an error).
 	Warning string `json:"warning,omitempty"`
+	// BlockedBy names the connection this one waits on when it is not ready:
+	// sign in there ("slaw conn credentials set <blocked_by>").
+	BlockedBy string `json:"blocked_by,omitempty"`
 }
 
 // showsSignIn reports whether a connection's list row names its sign-in: only
@@ -287,7 +305,7 @@ func runConnList(cmd *cobra.Command, _ []string) error {
 	defer o.Close()
 	var rows []connRow
 	for _, st := range o.States() {
-		r := connRow{Name: st.Name, Type: st.Type, Scope: string(st.Scope), Default: st.Default, ReadOnly: st.ReadOnly, Status: string(st.Status), Message: st.Detail, Warning: st.Warning}
+		r := connRow{Name: st.Name, Type: st.Type, Scope: string(st.Scope), Default: st.Default, ReadOnly: st.ReadOnly, Status: string(st.Status), Message: st.Detail, Warning: st.Warning, BlockedBy: st.BlockedBy}
 		for _, s := range st.Shadows {
 			r.Shadows = append(r.Shadows, string(s))
 		}

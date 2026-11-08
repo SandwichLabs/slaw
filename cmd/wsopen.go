@@ -48,9 +48,17 @@ func isSlawTableArg(arg string) bool {
 // environment as it was when the command started, secrets scrubbed through
 // the CLI redactor.
 func cliResolver(extra ...workspace.ResolverOption) *secrets.Resolver {
-	opts := append([]workspace.ResolverOption{workspace.WithSecretsOptions(secrets.WithRedactor(cliRedactor), secrets.WithResolverLogger(logger))}, extra...)
+	sopts := []secrets.ResolverOption{secrets.WithRedactor(cliRedactor), secrets.WithResolverLogger(logger)}
+	if k := newCLIKeychain(); k != nil {
+		sopts = append(sopts, secrets.WithKeychain(k))
+	}
+	opts := append([]workspace.ResolverOption{workspace.WithSecretsOptions(sopts...)}, extra...)
 	return workspace.NewResolver(opts...)
 }
+
+// newCLIKeychain is the CLI's keychain store; nil means the OS keychain. Tests
+// replace it so a `credentials set` never reaches the person's real keychain.
+var newCLIKeychain = func() secrets.Store { return nil }
 
 // addWorkspaceFlag registers the shared --workspace flag.
 func addWorkspaceFlag(c *cobra.Command) {

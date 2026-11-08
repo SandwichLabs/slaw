@@ -680,3 +680,29 @@ describe('TableBrowserView ?table= pre-select', () => {
     expect((wrapper.find('[data-testid="add-row"]').element as HTMLButtonElement).disabled).toBe(false)
   })
 })
+
+describe('TableBrowserView when the rows cannot be read', () => {
+  beforeEach(() => {
+    vi.useRealTimers()
+    ;(globalThis as any).__mockRoute.query = {}
+    resetWorkspace()
+    workspaceInfo.value = { isGit: true, root: '/w', name: 'A', sessionId: 's' } as unknown as WorkspaceInfo
+  })
+
+  it('shows the error Go sent in the grid, not an empty table, and clears it when a load works', async () => {
+    const { app } = makeApp()
+    const msg = "data at s3://other/ is outside every storage connection's scope: add one whose scope contains it"
+    app.GetTableData.mockRejectedValueOnce(new Error(msg))
+    const wrapper = mountView()
+    await openTable(wrapper)
+    const alert = wrapper.find('[data-testid="table-load-error"]')
+    expect(alert.exists()).toBe(true)
+    expect(alert.text()).toContain(msg)
+    expect(wrapper.find('table.brutal-table').exists()).toBe(false)
+    // the next load that works replaces it with the rows
+    dataChangedHandler?.()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="table-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('table.brutal-table').exists()).toBe(true)
+  })
+})

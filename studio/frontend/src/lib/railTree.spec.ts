@@ -82,3 +82,19 @@ describe('formatters', () => {
     expect(domId('t:a/main/my table')).toBe('rail-t_a_main_my_table')
   })
 })
+
+describe('a catalog with more namespaces than the rail lists', () => {
+  it('ends the schema level with a "more" note naming the count', () => {
+    const top = {
+      kind: 'schemas', schema: '', flattened: false, more: 3,
+      nodes: [{ kind: 'schema', name: 'ns1', rows: -1 }, { kind: 'schema', name: 'ns2', rows: -1 }],
+    } as unknown as CatalogListing
+    const c = conn('cat', { type: 'iceberg_catalog', remote: true })
+    const rows = buildRows([c], new Set([connKey('cat')]), { [connKey('cat')]: top }, '')
+    expect(rows.map((r) => r.kind)).toEqual(['conn', 'schema', 'schema', 'note'])
+    expect(rows[3].noteText).toContain('3 more namespaces not listed')
+    expect(rows[3].key).not.toBe('n:c:cat')
+    const none = buildRows([c], new Set([connKey('cat')]), { [connKey('cat')]: { ...top, more: 0 } }, '')
+    expect(none.map((r) => r.kind)).toEqual(['conn', 'schema', 'schema'])
+  })
+})

@@ -27,6 +27,10 @@ type Binding struct {
 	// Type is the connection type, used only to word the missing-credential
 	// hint (MotherDuck takes a token, not a user and password).
 	Type string
+	// EnvFields, when set, are the credential fields this definition uses (an
+	// Iceberg REST catalog with a bearer token: "token"), so an env sign-in's
+	// hints name only their variables. Empty means every credential variable.
+	EnvFields []string
 }
 
 // ErrFingerprintChanged means the connection now points at a different server
@@ -171,8 +175,8 @@ func (r *Resolver) WithEnvLayer(layer func(string) (string, bool), hint func(pre
 	return &cp
 }
 
-func (r *Resolver) noEnvReason(prefix string) string {
-	reason := "none of " + strings.Join(EnvVarNames(prefix), ", ") + " is set"
+func (r *Resolver) noEnvReason(prefix string, fields []string) string {
+	reason := "none of " + strings.Join(EnvVarNamesFor(prefix, fields), ", ") + " is set"
 	if r.envHint != nil {
 		if h := r.envHint(prefix); h != "" {
 			reason += ". " + h
@@ -200,7 +204,7 @@ func (r *Resolver) Resolve(ctx context.Context, ref Ref, method string, b Bindin
 	case "env":
 		c, ok := r.env(prefix).Load()
 		if !ok {
-			return Credential{}, &ErrNeedsCredentials{Method: method, Reason: r.noEnvReason(prefix), Ref: ref, Type: b.Type}
+			return Credential{}, &ErrNeedsCredentials{Method: method, Reason: r.noEnvReason(prefix, b.EnvFields), Ref: ref, Type: b.Type}
 		}
 		r.redactor.AddCredential(c)
 		return c, nil

@@ -91,7 +91,7 @@ func Page(ctx context.Context, db *sql.DB, ref session.TableRef, req PageRequest
 	var total int
 	if !req.SkipCount {
 		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+ref.SQL()+where, args...).Scan(&total); err != nil {
-			return nil, fmt.Errorf("failed to count rows: %w", err)
+			return nil, session.MapStorageDenyError(fmt.Errorf("failed to count rows: %w", err))
 		}
 	}
 
@@ -99,7 +99,7 @@ func Page(ctx context.Context, db *sql.DB, ref session.TableRef, req PageRequest
 	queryArgs := append(append([]any{}, args...), pageSize, (page-1)*pageSize)
 	rows, err := db.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query table: %w", err)
+		return nil, session.MapStorageDenyError(fmt.Errorf("failed to query table: %w", err))
 	}
 	defer rows.Close() //nolint:errcheck
 

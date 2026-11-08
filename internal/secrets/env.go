@@ -29,6 +29,21 @@ func EnvVarNames(prefix string) []string {
 	return out
 }
 
+// EnvVarNamesFor lists the variables an env:PREFIX sign-in reads for a
+// definition that uses only some credential fields (an Iceberg REST catalog
+// with a bearer token reads PREFIX_TOKEN and nothing else). fields are the
+// credential field names ("token", "key_id", ...); none means all of them.
+func EnvVarNamesFor(prefix string, fields []string) []string {
+	if len(fields) == 0 {
+		return EnvVarNames(prefix)
+	}
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, prefix+"_"+strings.ToUpper(f))
+	}
+	return out
+}
+
 // EnvStore reads a credential from environment variables. It is read-only
 // and has no fingerprint: choosing env:PREFIX is the person's explicit say-so.
 type EnvStore struct {

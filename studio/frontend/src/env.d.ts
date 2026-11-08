@@ -279,6 +279,9 @@ interface ConnectionInfo {
   // Set on needs-credentials that is because an AWS profile must sign in
   // (#131): the profile and why. No account, role or start URL.
   signInNeeded?: SignInHint
+  // Set on needs-credentials of a connection that waits on another one (an s3_tables
+  // catalog and its storage connection): the sign-in to do is that connection's.
+  blockedBy?: string
 }
 // What the window may know about an AWS sign-in: the profile and the reason.
 interface SignInHint { kind: string; subject: string; reason: string }
@@ -291,15 +294,21 @@ interface SignInPrompt { connection: string; profile: string; url: string; code:
 interface ConnField {
   name: string
   label: string
-  kind: 'text' | 'number' | 'enum' | 'path' | 'url'
+  kind: 'text' | 'number' | 'enum' | 'path' | 'url' | 'connection'
   help?: string
   default?: string
   choices?: string[]
+  // The words shown for a choice; one without a label is shown as stored.
+  choiceLabels?: Record<string, string>
   required: boolean
   secret: boolean
   perPerson: boolean
   option?: boolean
   prominent?: boolean
+  // kind 'connection': the picker lists the workspace's connections of this type.
+  connectionType?: string
+  // Shown only while every condition holds (a blank value counts as the field's default).
+  visibleWhen?: { field: string; in: string[] }[]
 }
 interface ConnTypeSpec {
   id: string
@@ -405,7 +414,7 @@ interface TestResultView {
   requirement?: string
 }
 interface CatalogNode { kind: 'schema' | 'table' | 'view' | 'column'; name: string; qualified?: string; rows: number; dataType?: string; pk?: boolean; fk?: boolean }
-interface CatalogListing { kind: 'schemas' | 'tables' | 'columns'; schema: string; flattened: boolean; nodes: CatalogNode[] }
+interface CatalogListing { kind: 'schemas' | 'tables' | 'columns'; schema: string; flattened: boolean; nodes: CatalogNode[]; more?: number }
 interface TableCapabilities { connection: string; editable: boolean; reason: string; text: string }
 interface ExtensionInfo { name: string; purpose: string; neededBy: string[]; installed: boolean }
 

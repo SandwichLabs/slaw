@@ -119,7 +119,7 @@ func TestRequiresDependentErrorClearsWhenStorageIsReady(t *testing.T) {
 	require.NoError(t, s.Register(Spec{Name: "store", Type: "stub", Credential: cred.fn}))
 	require.NoError(t, s.Register(Spec{Name: "lake", Type: "lakey", Requires: []string{"store"}}))
 	require.Error(t, s.Connect(ctx, "lake"))
-	assert.Equal(t, StatusError, status(t, s, "lake").Kind)
+	assert.Equal(t, StatusNeedsCredentials, status(t, s, "lake").Kind, "waiting on a sign-in is a sign-in to do, not an error")
 	cred.have.Store(true)
 	s.Preflight(ctx, "store")
 	assert.Equal(t, StatusNotConnected, status(t, s, "lake").Kind)
@@ -231,21 +231,24 @@ func TestRequiresReferencedByQueryConnectsStorage(t *testing.T) {
 	assert.True(t, saw.Load())
 }
 
-func TestRequiresNotReadyIsAStatusErrorWithAPhrase(t *testing.T) {
+// A requirement that needs the person to sign in leaves the dependent needing
+// credentials too (the same state, the same hint); any other reason is an error.
+func TestRequiresNotReadyIsAStatusWithAPhrase(t *testing.T) {
 	ctx := context.Background()
 	tests := map[string]struct {
 		ext  string
 		cred CredentialFunc
 		want string
+		kind StatusKind
 	}{
 		"needs credentials": {"json", func(context.Context) (secrets.Credential, error) {
 			return secrets.Credential{}, &secrets.ErrNeedsCredentials{Method: "keychain", Reason: "not set"}
-		}, `needs the "store" connection: it needs credentials`},
-		"no credential func": {"json", nil, `needs the "store" connection: it needs credentials`},
-		"extension missing":  {"no_such_extension", credOK("tok"), `needs the "store" connection: its DuckDB extension is not installed`},
+		}, `needs the "store" connection: it needs credentials`, StatusNeedsCredentials},
+		"no credential func": {"json", nil, `needs the "store" connection: it needs credentials`, StatusNeedsCredentials},
+		"extension missing":  {"no_such_extension", credOK("tok"), `needs the "store" connection: its DuckDB extension is not installed`, StatusError},
 		"error": {"json", func(context.Context) (secrets.Credential, error) {
 			return secrets.Credential{}, errors.New("boom tok_secret_needle")
-		}, `needs the "store" connection: it could not connect`},
+		}, `needs the "store" connection: it could not connect`, StatusError},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -255,7 +258,7 @@ func TestRequiresNotReadyIsAStatusErrorWithAPhrase(t *testing.T) {
 			err := s.Connect(ctx, "lake")
 			require.Error(t, err)
 			st := status(t, s, "lake")
-			assert.Equal(t, StatusError, st.Kind, "no new status kind")
+			assert.Equal(t, tc.kind, st.Kind)
 			assert.Equal(t, tc.want, st.Message)
 			assert.NotContains(t, st.Message+err.Error(), "tok_secret_needle")
 		})
@@ -385,4 +388,67 @@ func TestRequiresRegisterWaitsForAConnectInProgress(t *testing.T) {
 	s.Preflight(ctx, "store")
 	assert.Zero(t, secretCount(t, s))
 	assert.Zero(t, attachedCatalogs(t, s, "lake"), "no lake catalog outlives the storage secret")
+}
+
+// A dependent waiting on a signed-out connection says which one (BlockedBy) and
+// carries no sign-in hint of its own: the prompt and the banner are the
+// requirement's, and the revive pass (which re-reads hinted statuses) never
+// touches the dependent.
+func TestRequiresDependentNamesTheBlockerAndCarriesNoSignInHint(t *testing.T) {
+	ctx := context.Background()
+	s, _ := requiresSession(t, "json")
+	hint := &secrets.SignInHint{Kind: "aws-sso", Subject: "dev", Reason: "missing"}
+	require.NoError(t, s.Register(Spec{Name: "store", Type: "stub", Credential: func(context.Context) (secrets.Credential, error) {
+		return secrets.Credential{}, &secrets.ErrNeedsCredentials{Method: "aws-sso:dev", SignIn: hint}
+	}}))
+	require.NoError(t, s.Register(Spec{Name: "lake", Type: "lakey", Requires: []string{"store"}}))
+	require.Error(t, s.Connect(ctx, "lake"))
+
+	lake := status(t, s, "lake")
+	assert.Equal(t, StatusNeedsCredentials, lake.Kind)
+	assert.Equal(t, "store", lake.BlockedBy)
+	assert.Nil(t, lake.SignIn, "the sign-in is the blocker's, not the dependent's")
+	store := status(t, s, "store")
+	require.NotNil(t, store.SignIn)
+	assert.Equal(t, "dev", store.SignIn.Subject)
+	assert.Empty(t, store.BlockedBy)
+
+	// reviveSignedOut picks up the blocker only.
+	h, isHub := s.(*hub)
+	require.True(t, isHub)
+	h.mu.Lock()
+	var hinted []string
+	for n, e := range h.conns {
+		if e.status.Kind == StatusNeedsCredentials && e.status.SignIn != nil {
+			hinted = append(hinted, n)
+		}
+	}
+	h.mu.Unlock()
+	assert.Equal(t, []string{"store"}, hinted)
+
+	// Once the requirement is ready the dependent forgets it.
+	s2, _ := requiresSession(t, "json")
+	cred := &switchable{}
+	require.NoError(t, s2.Register(Spec{Name: "store", Type: "stub", Credential: cred.fn}))
+	require.NoError(t, s2.Register(Spec{Name: "lake", Type: "lakey", Requires: []string{"store"}}))
+	require.Error(t, s2.Connect(ctx, "lake"))
+	assert.Equal(t, "store", status(t, s2, "lake").BlockedBy)
+	cred.have.Store(true)
+	s2.Preflight(ctx, "store")
+	assert.Empty(t, status(t, s2, "lake").BlockedBy)
+}
+
+// A dependent's own status (here its own credential failing) replaces a stale
+// BlockedBy, so the prompt goes to the dependent, not to its old blocker.
+func TestOwnStatusClearsAStaleBlockedBy(t *testing.T) {
+	s, _ := requiresSession(t, "json")
+	require.NoError(t, s.Register(Spec{Name: "store", Type: "stub"}))
+	require.NoError(t, s.Register(Spec{Name: "lake", Type: "lakey", Requires: []string{"store"}}))
+	h, isHub := s.(*hub)
+	require.True(t, isHub)
+	h.mu.Lock()
+	h.conns["lake"].status.BlockedBy = "store"
+	h.mu.Unlock()
+	h.setStatusFull("lake", StatusNeedsCredentials, "needs its own password", 0, statusExtras{})
+	assert.Empty(t, status(t, s, "lake").BlockedBy)
 }

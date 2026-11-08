@@ -52,6 +52,12 @@ type Status struct {
 	// must sign in with an AWS SSO profile (missing or expired session). It
 	// carries the profile name and a reason, never an account, role or key.
 	SignIn *secrets.SignInHint `json:"sign_in,omitempty"`
+	// BlockedBy names the connection this one waits on: it reads with that
+	// connection's secret (Spec.Requires) and that connection is not ready. A
+	// needs-credentials status with BlockedBy set is the other connection's
+	// sign-in to do, never this one's: the prompt, the sign-in banner and the
+	// CLI hint all point at BlockedBy, and this connection carries no SignIn.
+	BlockedBy string `json:"blocked_by,omitempty"`
 }
 
 // ServerChange names the server a saved sign-in was made for (Old) and the one

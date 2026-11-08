@@ -220,3 +220,9 @@ p.help { font-size: 13px; line-height: 1.5; color: var(--sh-graphite); }
 .md-db.on { border-color: var(--slaw-accent); box-shadow: var(--sh-shadow-teal); }
 .md-db .md-share { font-family: var(--sh-font-body); font-size: 11px; color: var(--sh-graphite); }
 .storage-slot { min-height: 30px; }
+
+/* An unbroken value in a help line (a table bucket ARN, a URL) wraps instead of
+   pushing the form wider than a narrow window. */
+.form-sec .field { min-width: 0; }
+.form-sec .field .help { overflow-wrap: anywhere; }
+.field-input[aria-invalid="true"] { border-color: var(--sh-error); }

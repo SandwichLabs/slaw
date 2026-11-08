@@ -90,7 +90,10 @@ func storageServer(d ConnectionDef) string {
 
 // BindingFor is the fingerprint binding of an environment-resolved definition.
 func BindingFor(d ConnectionDef) secrets.Binding {
-	return secrets.Binding{Fingerprint: Fingerprint(d), Server: ServerDescription(d), Type: d.Type}
+	return secrets.Binding{
+		Fingerprint: Fingerprint(d), Server: ServerDescription(d), Type: d.Type,
+		EnvFields: connections.NarrowedCredentialFields(toConnDef(d, true, d.Path)),
+	}
 }
 
 // toConnDef converts a resolved definition into the type registry's shape.
@@ -189,7 +192,11 @@ func ResolveConnection(ws Workspace, c Connection, lookup LookupFunc) (ResolvedC
 	if err != nil {
 		return ResolvedConnection{}, fmt.Errorf("connection %q: %w", c.Name, err)
 	}
-	out.Requires = requires
+	cat, err := catalogStorage(ws, out.Resolved, lookup)
+	if err != nil {
+		return ResolvedConnection{}, fmt.Errorf("connection %q: %w", c.Name, err)
+	}
+	out.Requires = mergeRequires(requires, cat)
 	return out, nil
 }
 

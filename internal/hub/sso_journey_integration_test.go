@@ -80,7 +80,7 @@ func TestSSOJourneyFromSignedOutToRevivedAfterAnExternalLogin(t *testing.T) {
 	assert.Equal(t, "slaw-deny-s3", r.secretNamed(obj), "no storage secret: the catch-all deny secret answers")
 	_, err = r.readObject(obj)
 	require.Error(t, err, "a signed-out connection reads nothing")
-	assert.Contains(t, err.Error(), "deny.invalid", "refused by the deny endpoint, not answered by any store")
+	requireDenied(t, err, miniotest.Bucket) // refused by the deny endpoint, not answered by any store
 	note(err.Error())
 	assert.NotEqual(t, session.StatusOK, statusLine(o.Sess, "lake").Kind)
 	resp := agentCall(h, "SELECT count(*) FROM read_parquet('s3://"+miniotest.Bucket+"/journey/a.csv')")
@@ -191,7 +191,7 @@ func TestSSOJourneyFromSignedOutToRevivedAfterAnExternalLogin(t *testing.T) {
 	assert.Equal(t, "slaw-deny-s3", r.secretNamed(obj2), "the SSO secret is gone and the deny secret answers")
 	got, err = r.readObject(obj2)
 	require.Error(t, err, "an expired session never falls back to anonymous (got %q)", got)
-	assert.Contains(t, err.Error(), "deny.invalid")
+	requireDenied(t, err, miniotest.Bucket)
 	note(err.Error())
 	resp = agentCall(h, "SELECT count(*) FROM read_parquet('s3://"+miniotest.Bucket+"/journey/b.csv')")
 	require.NotNil(t, resp.Error)

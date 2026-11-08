@@ -308,6 +308,9 @@ SELECT table_schema, table_name, table_type, column_name, data_type
 func buildConnection(ctx context.Context, sess session.Session, st session.Status, caps Caps) (Connection, error) {
 	caps = caps.orDefault()
 	conn := Connection{Name: st.Name, Type: st.Type, Updated: time.Now().UTC()}
+	if st.Type == engine.IcebergCatalogType {
+		return buildNamesOnly(ctx, sess, conn, caps)
+	}
 	if ds, err := sess.DefaultSchema(ctx, st.Name); err == nil {
 		conn.DefaultSchema = ds
 	}
@@ -472,4 +475,64 @@ func (s *Source) Catalog() *Catalog {
 	}
 	s.cat, s.mtime, s.size = c, fi.ModTime(), fi.Size()
 	return s.cat
+}
+
+// buildNamesOnly lists an iceberg_catalog's namespaces (at most
+// engine.MaxCatalogNamespaces) and table names, with no columns: describing a
+// table is a LoadTable (a metadata.json fetch) each, so completion knows the
+// tables and a table's columns are fetched only when a person opens it. Both
+// reads are duckdb_schemas()/duckdb_tables(), which make no fetch.
+func buildNamesOnly(ctx context.Context, sess session.Session, conn Connection, caps Caps) (Connection, error) {
+	db := sess.DB()
+	rows, err := db.QueryContext(ctx, `SELECT schema_name FROM duckdb_schemas() WHERE database_name = $1 AND schema_name <> 'information_schema' ORDER BY schema_name LIMIT $2`,
+		conn.Name, engine.MaxCatalogNamespaces+1)
+	if err != nil {
+		return conn, fmt.Errorf("failed to list namespaces: %w", err)
+	}
+	keep := map[string]int{}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			_ = rows.Close()
+			return conn, fmt.Errorf("failed to read namespaces: %w", err)
+		}
+		if len(keep) >= engine.MaxCatalogNamespaces {
+			conn.Truncated = true
+			break
+		}
+		keep[n] = len(conn.Schemas)
+		conn.Schemas = append(conn.Schemas, Schema{Name: n})
+	}
+	err = rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return conn, fmt.Errorf("failed to list namespaces: %w", err)
+	}
+	trows, err := db.QueryContext(ctx, `SELECT schema_name, table_name FROM duckdb_tables() WHERE database_name = $1 ORDER BY schema_name, table_name LIMIT $2`,
+		conn.Name, caps.Rows+1)
+	if err != nil {
+		return conn, fmt.Errorf("failed to list tables: %w", err)
+	}
+	defer trows.Close() //nolint:errcheck
+	n := 0
+	for trows.Next() {
+		var schema, table string
+		if err := trows.Scan(&schema, &table); err != nil {
+			return conn, fmt.Errorf("failed to read tables: %w", err)
+		}
+		if n++; n > caps.Rows {
+			conn.Truncated = true
+			break
+		}
+		i, ok := keep[schema]
+		if !ok {
+			continue
+		}
+		if len(conn.Schemas[i].Tables) >= caps.RelationsPerSchema {
+			conn.Truncated = true
+			continue
+		}
+		conn.Schemas[i].Tables = append(conn.Schemas[i].Tables, Relation{Name: table, Kind: "table"})
+	}
+	return conn, trows.Err()
 }

@@ -73,6 +73,28 @@ describe('connection prompts', () => {
     expect((w.find('[data-testid="signin-remember"]').element as HTMLInputElement).checked).toBe(false)
   })
 
+  it('an iceberg_catalog prompt asks only for the credentials its auth signs in with', async () => {
+    const cond = (auth: string) => [{ field: 'endpoint_type', in: ['rest'] }, { field: 'auth', in: [auth] }]
+    const ICE: ConnTypeSpec = {
+      ...PG, id: 'iceberg_catalog', requiresExtension: [],
+      fields: [
+        { name: 'endpoint_type', label: 'Catalog kind', kind: 'enum', required: true, secret: false, perPerson: false, option: true },
+        { name: 'auth', label: 'Authentication', kind: 'enum', default: 'oauth2', required: false, secret: false, perPerson: false, option: true },
+      ],
+      credentials: [
+        { name: 'token', label: 'Bearer token', kind: 'text', required: false, secret: true, perPerson: true, visibleWhen: cond('bearer') },
+        { name: 'key_id', label: 'OAuth2 client id', kind: 'text', required: false, secret: false, perPerson: true, visibleWhen: cond('oauth2') },
+        { name: 'secret', label: 'OAuth2 client secret', kind: 'text', required: false, secret: true, perPerson: true, visibleWhen: cond('oauth2') },
+      ],
+    }
+    const app = setup(detail({ def: { name: 'cat', type: 'iceberg_catalog', options: { endpoint_type: 'rest', auth: 'bearer' } }, info: { ...detail().info, serverChanged: undefined } }))
+    app.ListConnectionTypes.mockResolvedValue([ICE])
+    const w = mountD()
+    signInFor.value = 'cat'
+    await flushPromises()
+    expect([w.find('[data-testid="signin-token"]').exists(), w.find('[data-testid="signin-key_id"]').exists(), w.find('[data-testid="signin-secret"]').exists()]).toEqual([true, false, false])
+  })
+
   it('a keychain that does not answer gets the "Can\'t reach your keychain" dialog', async () => {
     setup(detail({ credential: { method: 'keychain', secretSet: false, fingerprintMatches: true, available: false, detail: 'x' }, info: { ...detail().info, serverChanged: undefined } }))
     const w = mountD()

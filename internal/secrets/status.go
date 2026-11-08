@@ -55,7 +55,8 @@ func (r *Resolver) Status(ctx context.Context, ref Ref, method string, b Binding
 	if kind == "env" {
 		e := r.env(prefix)
 		set := e.SetVars()
-		for _, n := range EnvVarNames(prefix) {
+		names := EnvVarNamesFor(prefix, b.EnvFields)
+		for _, n := range names {
 			st.Env = append(st.Env, EnvVarStatus{Name: n, Set: set[n]})
 		}
 		if c, ok := e.Load(); ok {
@@ -63,6 +64,9 @@ func (r *Resolver) Status(ctx context.Context, ref Ref, method string, b Binding
 		}
 		if !st.SecretSet {
 			st.Detail = "None of " + prefix + "_PASSWORD, " + prefix + "_TOKEN or " + prefix + "_SECRET is set."
+			if len(b.EnvFields) > 0 {
+				st.Detail = "None of " + strings.Join(names, ", ") + " is set."
+			}
 			if r.envHint != nil {
 				if h := r.envHint(prefix); h != "" {
 					st.Detail += " " + h

@@ -54,14 +54,15 @@ func (l *lineReader) line(errW io.Writer, prompt string, secret bool) (string, e
 
 // promptCredentials asks for each credential field of the type. A blank answer
 // keeps what is already stored (empty fields mean "keep" in SetCredentials).
-func promptCredentials(in io.Reader, errW io.Writer, typ string, _ secrets.Credential) (secrets.Credential, error) {
-	info, err := connections.TypeInfoFor(typ)
-	if err != nil {
+// Only the fields the definition signs in with are asked for: an Iceberg REST
+// catalog with a bearer token takes a token, with OAuth2 a client id and secret.
+func promptCredentials(in io.Reader, errW io.Writer, typ string, options map[string]string) (secrets.Credential, error) {
+	if _, err := connections.TypeInfoFor(typ); err != nil {
 		return secrets.Credential{}, err
 	}
 	lr := newLineReader(in)
 	var c secrets.Credential
-	for _, f := range info.Credentials {
+	for _, f := range connections.CredentialFieldsFor(connections.Def{Type: typ, Options: options}) {
 		label := f.Label
 		if !f.Required {
 			label += " (optional)"

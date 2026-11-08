@@ -99,6 +99,8 @@ func (h *hub) setStatusFull(name string, kind StatusKind, msg string, pid int, x
 	if e := h.conns[name]; e != nil {
 		e.status.Kind, e.status.Message, e.status.LockedByPID, e.status.ServerChanged, e.status.Extension = kind, msg, pid, x.serverChanged, x.extension
 		e.status.SignIn = x.signIn
+		// Its own status: whatever it waited on before no longer decides it.
+		e.status.BlockedBy = ""
 	}
 }
 

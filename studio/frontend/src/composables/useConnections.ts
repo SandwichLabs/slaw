@@ -87,10 +87,19 @@ export async function connect(name: string): Promise<ConnectResult> {
   }
 }
 
-// openPromptFor raises the prompt a status asks for, if any.
-export function openPromptFor(c: ConnectionInfo): boolean {
+// openPromptFor raises the prompt a status asks for, if any. seen guards a
+// requirement chain against a loop.
+export function openPromptFor(c: ConnectionInfo, seen: string[] = []): boolean {
   switch (c.status) {
     case 'needs-credentials':
+      // A connection waiting on another's sign-in (a catalog and its storage
+      // connection) has nothing to enter itself: the prompt, the AWS banner and
+      // the Add it action are the blocker's.
+      if (c.blockedBy) {
+        if (seen.includes(c.blockedBy)) return false
+        const b = connectionByName(c.blockedBy)
+        return b ? openPromptFor(b, [...seen, c.name]) : false
+      }
       // A changed server is confirmed in the editor, which the prompt links to (Edit
       // connection) without leaving the page that raised it; a new sign-in cannot fix it.
       if (ssoProfileOf(c) && !c.serverChanged && revealAwsSignIn) { revealAwsSignIn(ssoProfileOf(c)); return true }

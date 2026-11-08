@@ -127,6 +127,28 @@ describe('useSignIn', () => {
     expect(signInFor.value).toBe('pg')
   })
 
+  it('a catalog waiting on its storage connection sends the prompt and the banner to that connection, never to itself', async () => {
+    const app = makeApp()
+    startSignInTracking()
+    const store = conn({ name: 'aws_lake' })
+    const cat = conn({ name: 's3t', type: 'iceberg_catalog', catalogless: false, signIn: undefined, signInNeeded: undefined, blockedBy: 'aws_lake', detail: 'needs the "aws_lake" connection: it needs credentials' })
+    connectionList.value = [store, cat]
+    // the banner lists the storage connection's profile once, with the storage connection only
+    expect(signInItems.value.map((i) => [i.profile, i.names])).toEqual([['dev', ['aws_lake']]])
+    // Add it / Fix / a failed Run / a tree expand on the catalog reveal the storage connection's banner
+    expect(openPromptFor(cat)).toBe(true)
+    expect(signInFor.value).toBeNull()
+    expect(app.StartSignIn).not.toHaveBeenCalled()
+    // a password-style blocker gets its own prompt, not the catalog's
+    connectionList.value = [conn({ name: 'pg', type: 'postgres', signIn: 'keychain', signInNeeded: undefined, catalogless: false }), { ...cat, blockedBy: 'pg' }]
+    expect(openPromptFor(connectionList.value[1])).toBe(true)
+    expect(signInFor.value).toBe('pg')
+    // a blocker that is gone, or a loop, opens nothing
+    expect(openPromptFor({ ...cat, blockedBy: 'nope' })).toBe(false)
+    connectionList.value = [{ ...cat, name: 'a', blockedBy: 'b' }, { ...cat, name: 'b', blockedBy: 'a' }]
+    expect(openPromptFor(connectionList.value[0])).toBe(false)
+  })
+
   it('a server change opens the prompt that links to the editor, without navigating away or starting a sign-in', () => {
     const app = makeApp()
     startSignInTracking()
