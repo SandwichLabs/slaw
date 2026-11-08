@@ -21,7 +21,7 @@ var extensionSizeHint = map[string]string{"excel": "about 2 MB"}
 // the first use downloads it once. A failure is returned with a message fit
 // for the UI, never swallowed, so callers cannot silently degrade.
 func EnsureExtension(ctx context.Context, db storageQuerier, name, feature string) error {
-	return ensureExtension(ctx, db, name, feature, limitsFor(db))
+	return ensureExtension(ctx, db, name, feature, defaultHTTPLimits())
 }
 
 // ensureExtension is EnsureExtension with the HTTP limits the session was configured with.

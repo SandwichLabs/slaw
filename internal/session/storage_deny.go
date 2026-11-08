@@ -89,24 +89,6 @@ func defaultHTTPLimits() httpLimits {
 	return httpLimits{timeout: DefaultHTTPTimeoutSeconds, retries: DefaultHTTPRetries}
 }
 
-// hubLimits holds the limits each hub was configured with, keyed by its
-// database, so a load path that only has the *sql.DB (EnsureExtension,
-// DenyUncoveredStorage from Studio) re-sets the same values the hub opened with
-// instead of different ones. The entry is removed when the hub closes. A path
-// holding only a *sql.Conn (the importer) uses the defaults.
-var hubLimits sync.Map // *sql.DB -> httpLimits
-
-func limitsFor(q storageQuerier) httpLimits {
-	if db, ok := q.(*sql.DB); ok {
-		if l, ok := hubLimits.Load(db); ok {
-			if lim, ok := l.(httpLimits); ok {
-				return lim
-			}
-		}
-	}
-	return defaultHTTPLimits()
-}
-
 // lazyAllowedConfigs is the list lock_configuration lets through before httpfs loads.
 func lazyAllowedConfigs() []string {
 	return []string{urlParamSetting, httpTimeoutSetting, httpRetriesSetting}
@@ -153,7 +135,7 @@ var denyMu sync.Mutex
 // session being protected, because settings and secrets belong to the DuckDB
 // instance.
 func DenyUncoveredStorage(ctx context.Context, q storageQuerier) error {
-	return protectStorage(ctx, q, true, limitsFor(q))
+	return protectStorage(ctx, q, true, defaultHTTPLimits())
 }
 
 // protectStorage is DenyUncoveredStorage; sealParams false leaves URL

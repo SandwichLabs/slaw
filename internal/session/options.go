@@ -63,8 +63,10 @@ func (c *config) httpLimits() httpLimits {
 }
 
 // WithHTTPLimits sets httpfs's http_timeout (seconds) and http_retries for a
-// session (0 keeps a default). The hub remembers them, and every later check of
-// its storage settings (an extension load, Studio's re-check) sets the same values.
+// session (0 keeps a default). They apply where the hub has its own config: at
+// open, when a connection connects and in Session.InstallExtension. The
+// package-level EnsureExtension and DenyUncoveredStorage know no config and set
+// the defaults (30 and 1), which are what production uses.
 func WithHTTPLimits(timeoutSeconds, retries int) Option {
 	return func(c *config) { c.httpTimeout, c.httpRetries = timeoutSeconds, retries }
 }
