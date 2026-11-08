@@ -70,7 +70,7 @@ type sqlVerdict struct {
 	Reason  string // set whenever Class is sqlClassOther, and for gate refusals
 	Targets []sqlTarget
 
-	readers int // file/URL readers vetted in the statement (for a nested query())
+	readers readerCount // file/URL readers vetted in the statement (for a nested query())
 
 	// Statements is how many statements the script held, and discardedReads how
 	// many of those, before the last, are reads: run_query returns only the last
