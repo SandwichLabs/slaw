@@ -437,3 +437,18 @@ func TestRequiresDependentNamesTheBlockerAndCarriesNoSignInHint(t *testing.T) {
 	s2.Preflight(ctx, "store")
 	assert.Empty(t, status(t, s2, "lake").BlockedBy)
 }
+
+// A dependent's own status (here its own credential failing) replaces a stale
+// BlockedBy, so the prompt goes to the dependent, not to its old blocker.
+func TestOwnStatusClearsAStaleBlockedBy(t *testing.T) {
+	s, _ := requiresSession(t, "json")
+	require.NoError(t, s.Register(Spec{Name: "store", Type: "stub"}))
+	require.NoError(t, s.Register(Spec{Name: "lake", Type: "lakey", Requires: []string{"store"}}))
+	h, isHub := s.(*hub)
+	require.True(t, isHub)
+	h.mu.Lock()
+	h.conns["lake"].status.BlockedBy = "store"
+	h.mu.Unlock()
+	h.setStatusFull("lake", StatusNeedsCredentials, "needs its own password", 0, statusExtras{})
+	assert.Empty(t, status(t, s, "lake").BlockedBy)
+}
