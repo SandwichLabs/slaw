@@ -4,6 +4,10 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- **`run_query` takes an optional `connection`** (#352): the catalog unqualified names resolve against, so the agent can call `metric()` on a saved query pinned to a non-default connection (an `iceberg_catalog`, for one). The same tier, read-only, writable-connection and approval gates apply; an unknown name is refused.
+
 ## [0.8.0] - 2026-11-08
 
 Iceberg catalogs (S3 Tables and Iceberg REST) as connections, read by you and the agent like any other catalog, and lake types you can share (#20, lakehouse phase 1).

@@ -2,7 +2,6 @@ package agents
 
 import (
 	"context"
-	"database/sql"
 	"sort"
 	"strconv"
 	"strings"
@@ -220,7 +219,7 @@ func (t probeTable) quoted() string {
 // resolve finds the one table the predicate's column belongs to, among the
 // statement's own sources. It returns ok=false when the column is ambiguous or
 // cannot be found: better to say nothing than to describe the wrong table.
-func (s *emptyShape) resolve(ctx context.Context, db *sql.DB, p literalPredicate) (probeTable, bool) {
+func (s *emptyShape) resolve(ctx context.Context, db sqlQueryer, p literalPredicate) (probeTable, bool) {
 	var candidates []tableSource
 	if p.qualifier != "" {
 		for _, src := range s.sources {
@@ -265,7 +264,7 @@ func sourceName(src tableSource) string {
 // lookupColumnIn is lookupColumn with the policy's rule for a two-part name: if
 // the first part is not a schema of the default catalog but names an attached
 // catalog, it is that catalog (archive.races is archive's default schema).
-func lookupColumnIn(ctx context.Context, db *sql.DB, src tableSource, column string) (probeTable, bool, error) {
+func lookupColumnIn(ctx context.Context, db sqlQueryer, src tableSource, column string) (probeTable, bool, error) {
 	tbl, ok, err := lookupColumn(ctx, db, src, column)
 	if ok || err != nil || src.catalog != "" || src.schema == "" {
 		return tbl, ok, err
@@ -277,7 +276,7 @@ func lookupColumnIn(ctx context.Context, db *sql.DB, src tableSource, column str
 // unqualified name means the default catalog and schema; a catalog without a
 // schema matches that catalog's tables of the name, and counts only when there
 // is exactly one.
-func lookupColumn(ctx context.Context, db *sql.DB, src tableSource, column string) (probeTable, bool, error) {
+func lookupColumn(ctx context.Context, db sqlQueryer, src tableSource, column string) (probeTable, bool, error) {
 	q := "SELECT table_catalog, table_schema, table_name, column_name FROM information_schema.columns WHERE lower(column_name) = lower($1) AND lower(table_name) = lower($2)"
 	args := []any{column, src.table}
 	if src.catalog == "" {
@@ -322,7 +321,7 @@ func location(n map[string]any) float64 {
 // only kind the value probes read: a remote connection (Postgres, MySQL,
 // MotherDuck, a lake) is not scanned for a hint the person did not ask for. An
 // unknown catalog counts as remote.
-func localCatalog(ctx context.Context, db *sql.DB, name string) bool {
+func localCatalog(ctx context.Context, db sqlQueryer, name string) bool {
 	var typ string
 	err := db.QueryRowContext(ctx, "SELECT type FROM duckdb_databases() WHERE lower(database_name) = lower($1) LIMIT 1", name).Scan(&typ)
 	return err == nil && (typ == "duckdb" || typ == "sqlite")

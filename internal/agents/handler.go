@@ -385,7 +385,7 @@ func (h *Handler) Handle(ctx context.Context, req *Request) *Response {
 			}
 		}
 		if (sb.RequireApproval && !approvalExempt(req.Method)) || len(nonLocal) > 0 {
-			if r := h.awaitApproval(ctx, req, sb, "", "", nil, sqlClassWrite, nonLocal); r != nil {
+			if r := h.awaitApproval(ctx, req, sb, "", "", "", nil, sqlClassWrite, nonLocal); r != nil {
 				return r
 			}
 		}
@@ -414,7 +414,7 @@ func approvalExempt(method string) bool { return method == "propose_definition" 
 // person's "Ask before changes" setting is (the third write gate, #116).
 // runSQL is the text that will actually run (wildcards expanded): the re-check after
 // the wait vets exactly it, not a fresh expansion.
-func (h *Handler) awaitApproval(ctx context.Context, req *Request, sb *SandboxConfig, sqlText, runSQL string, params map[string]any, class sqlClass, nonLocal []string) *Response {
+func (h *Handler) awaitApproval(ctx context.Context, req *Request, sb *SandboxConfig, sqlText, runSQL, conn string, params map[string]any, class sqlClass, nonLocal []string) *Response {
 	if h.approver == nil {
 		if tool := GetTool(req.Method); tool.DryRunSafe && len(nonLocal) == 0 {
 			// Validate first: an invalid request gets its own error, and a valid
@@ -444,6 +444,10 @@ func (h *Handler) awaitApproval(ctx context.Context, req *Request, sb *SandboxCo
 		ar.Connections = nonLocal
 		ar.Summary = fmt.Sprintf("%s (on %s, not a local file)", ar.Summary, strings.Join(nonLocal, ", "))
 	}
+	if req.Method == "run_query" && conn != "" {
+		// The statement's unqualified names mean this connection's tables.
+		ar.Summary = fmt.Sprintf("%s (names resolve on %s)", ar.Summary, conn)
+	}
 	ar.Mode = string(sb.Mode)
 	ar.ID = uuid.New().String()
 
@@ -465,7 +469,12 @@ func (h *Handler) awaitApproval(ctx context.Context, req *Request, sb *SandboxCo
 				"the agent's access changed while this was waiting for approval: %s", err.Error()))
 		}
 		if req.Method == "run_query" {
-			v := h.classify(ctx, userDB, runSQL, params)
+			// Re-classified on the connection the statement runs on, so its
+			// unqualified names resolve as they did for the card.
+			v, err := h.classifyIn(ctx, conn, runSQL, params)
+			if err != nil {
+				return NewErrorResponse(req.ID, ErrInternal, err.Error())
+			}
 			if err := fresh.checkSQLClass(v.Class, v.gateReason()); err != nil {
 				return NewErrorResponse(req.ID, ErrPermission, fmt.Sprintf(
 					"the agent's access changed while this was waiting for approval: %s", err.Error()))

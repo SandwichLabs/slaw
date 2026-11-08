@@ -179,9 +179,10 @@ DuckDB.
 When you check data, read a column (`SELECT max(id) ...`, `sum(amount)`),
 not `count(*)`: DuckDB answers `count(*)` from the table's metadata without
 opening a data file, so it proves nothing about the data. A metric over a
-catalog runs only on the connection its saved query names, and `run_query`
-has no connection argument, so save the query on the default connection with
-three-part names if you want to call `metric()` from `run_query`. Listing a
+catalog runs only on the connection its saved query names, so call `metric()`
+from `run_query` with its `connection` argument (`connection: "cat"`,
+a name from `list_connections`; the same gates apply). The alternative is a saved
+query on the default connection with three-part names, which needs no argument. Listing a
 catalog (`introspect_schema`) shows table names only; `describe_table` on one
 table fetches its columns, and a slow catalog fails after the hub's HTTP
 timeout instead of hanging.
