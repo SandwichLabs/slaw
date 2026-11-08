@@ -201,7 +201,7 @@ func (h *hub) DefaultSchema(ctx context.Context, catalog string) (string, error)
 			return "", fmt.Errorf("failed to read default schema: %w", err)
 		}
 	} else {
-		conn, err := h.pin(ctx, catalog)
+		conn, err := h.pin(ctx, catalog, nil)
 		if err != nil {
 			return "", err
 		}

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -349,7 +350,7 @@ func (h *hub) QueryWith(ctx context.Context, query string, args []any, opts ...Q
 	cc := h.callCfg(opts)
 	ctx, cancel := withTimeout(ctx, cc)
 	if cc.catalog != "" {
-		conn, err := h.pin(ctx, cc.catalog)
+		conn, err := h.pin(ctx, cc.catalog, opts)
 		if err != nil {
 			cancel()
 			return nil, err
@@ -406,7 +407,7 @@ func (h *hub) ExecWith(ctx context.Context, query string, args []any, opts ...Qu
 	)
 	if cc.catalog != "" {
 		var conn *Conn
-		conn, err = h.pin(ctx, cc.catalog)
+		conn, err = h.pin(ctx, cc.catalog, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -434,17 +435,20 @@ func (h *hub) ExecWith(ctx context.Context, query string, args []any, opts ...Qu
 func (h *hub) Conn(ctx context.Context, opts ...QueryOption) (*Conn, error) {
 	cc := h.callCfg(opts)
 	if cc.catalog != "" {
-		return h.pin(ctx, cc.catalog)
+		return h.pin(ctx, cc.catalog, opts)
 	}
 	conn, err := h.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
 	conn.cfg = cc
+	conn.opts = slices.Clone(opts)
 	return conn, nil
 }
 
-func (h *hub) pin(ctx context.Context, catalog string) (*Conn, error) {
+// pin acquires a connection and moves it to catalog. opts are the caller's own
+// per-call options; the conn keeps them across every later Use/Follow.
+func (h *hub) pin(ctx context.Context, catalog string, opts []QueryOption) (*Conn, error) {
 	if err := h.checkPinnable(catalog); err != nil {
 		return nil, err
 	}
@@ -452,6 +456,7 @@ func (h *hub) pin(ctx context.Context, catalog string) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.opts = slices.Clone(opts)
 	if err := c.Use(ctx, catalog); err != nil {
 		_ = c.c.Close()
 		return nil, err
@@ -487,7 +492,7 @@ func (c *Conn) Use(ctx context.Context, catalog string) error {
 		return fmt.Errorf("failed to switch to connection %q: %w", catalog, err)
 	}
 	c.catalog = catalog
-	c.cfg = c.h.callCfg([]QueryOption{WithCatalog(catalog)})
+	c.cfg = c.cfgFor(catalog)
 	return nil
 }
 
@@ -562,6 +567,7 @@ type Conn struct {
 	h       *hub
 	catalog string
 	cfg     callConfig
+	opts    []QueryOption // the caller's per-call options, re-applied on Use/Follow
 	closed  bool
 }
 
@@ -605,11 +611,22 @@ func (c *Conn) Exec(ctx context.Context, query string, args ...any) (sql.Result,
 func (c *Conn) Follow(catalog string) {
 	if catalog == c.h.defCat() {
 		c.catalog = ""
-		c.cfg = c.h.callCfg(nil)
+		c.cfg = c.cfgFor("")
 		return
 	}
 	c.catalog = catalog
-	c.cfg = c.h.callCfg([]QueryOption{WithCatalog(catalog)})
+	c.cfg = c.cfgFor(catalog)
+}
+
+// cfgFor rebuilds the call config for catalog from the caller's own options
+// (a row cap, a timeout) with the catalog applied last, so a WithCatalog the
+// caller passed never beats the catalog the conn now works in. The caller's
+// explicit options win over the catalog's Spec defaults.
+func (c *Conn) cfgFor(catalog string) callConfig {
+	opts := make([]QueryOption, 0, len(c.opts)+1)
+	opts = append(opts, c.opts...)
+	opts = append(opts, WithCatalog(catalog))
+	return c.h.callCfg(opts)
 }
 
 // Close verifies the connection is back on the session's default catalog and
