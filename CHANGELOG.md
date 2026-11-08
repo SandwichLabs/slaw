@@ -4,6 +4,32 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-08
+
+Iceberg catalogs (S3 Tables and Iceberg REST) as connections, read by you and the agent like any other catalog, and lake types you can share (#20, lakehouse phase 1).
+
+**Opening in an older Slaw:** a `slaw.yaml` or `.slaw` bundle that defines an `iceberg_catalog`, `ducklake`, `iceberg` or `delta` connection is refused by Slaw 0.7.0 and older (an unknown type, or "only you can add"). Leave those connections out of the export to share with an older Slaw.
+
+### Added
+
+- **Iceberg catalog connections (`iceberg_catalog`).**
+  - `endpoint_type: s3_tables` (an S3 Tables bucket ARN as `warehouse`, read through the `s3` connection named in `storage`) or `rest` (any Iceberg REST catalog: `uri`, `warehouse`, `auth: oauth2 | bearer | none`). Glue is not supported yet.
+  - Read-only by default. With `read_only: false`, writes pass the usual gates: the agent's tier, a writable connection and your approval.
+  - Catalog-issued (vended) credentials are off: every attach sets `ACCESS_DELEGATION_MODE 'none'`, so data is read through your storage connections. A read from a bucket no storage connection covers fails with a message naming what to add.
+  - `default_namespace` decides where unqualified table names resolve on a pinned catalog. With several namespaces and no default, an unqualified name fails rather than picking one.
+  - If the storage connection is signed out, the catalog shows "needs <storage>" (`blocked_by` in `slaw conn list --json`), and Sign in, Fix and a failed run go to the storage connection. This applies to every connection that depends on another.
+  - An S3 Tables catalog refuses a storage connection with a custom `endpoint`, since S3 Tables signs with AWS.
+- **Studio's connection form** shows only the fields the chosen kind uses, picks the storage connection from a list of `s3` connections, and shows the metadata warning. The rail lists namespaces and tables by name without loading every table (at most 200 namespaces, then a "more" line); columns load when you open a table.
+- **The agent reads Iceberg catalogs** on the main hub, joins with other connections included: `run_query`, `describe_table`, `introspect_schema` and `metric()` in the read-only tier, in the in-app agent and over `slaw mcp serve`. The `semantic-layer` skill has a section on tables in Iceberg catalogs.
+- **The agent may call `iceberg_scan`, `iceberg_metadata`, `iceberg_snapshots` and `delta_scan`** under the same rules as `read_parquet` (`data/` and storage scopes, literal paths, the safe-option list). It never reads table metadata it could have written: a local reader path must be a table folder, and `COPY ... TO` refuses `metadata/`, `_delta_log/` and metadata file names.
+- `slaw conn add` has examples for each catalog kind, and `credentials set` and the env hints name only the fields that kind signs in with.
+
+### Changed
+
+- **DuckLake, Iceberg and Delta connections may be defined in a committed `slaw.yaml` or a `.slaw` bundle** (they were limited to your own scopes). They carry a warning everywhere they appear: table metadata decides which files DuckDB reads, so anyone who can write it can make a query read local files, fetch any web or local-network URL, or read other storage your connections cover. Bundle import now runs each type's own validation.
+- Every session that loads httpfs sets `http_timeout = 30` and `http_retries = 1` and locks them, so a hung catalog or storage request errors out instead of freezing a query or a watch check. The editor, console and REPL refuse `SET`, `RESET` and `PRAGMA` on them.
+- The table browser shows a read error instead of "0 records".
+
 ### Changed
 
 - **Lake and table connections are no longer own-scope only.** `ducklake`, `iceberg` and `delta` may be defined in a committed `slaw.yaml` and arrive in a `.slaw` bundle; a warning ("Table metadata in this lake decides which files DuckDB reads...") shows on the connection form, in `slaw conn add|move|list` and in bundle import notes. Credential rules are unchanged.
@@ -461,7 +487,8 @@ The first public release. Vibe is an agentic desktop workspace for working with 
 - Older data-holding `.vibe` (SQLCipher) files are not opened.
 - Linux builds target glibc 2.35 or newer and WebKitGTK 4.1; musl and older distributions are unsupported.
 
-[Unreleased]: https://github.com/SandwichLabs/slaw/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/SandwichLabs/slaw/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/SandwichLabs/slaw/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/SandwichLabs/slaw/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/SandwichLabs/slaw/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/SandwichLabs/slaw/compare/v0.6.2...v0.6.3
