@@ -451,7 +451,7 @@ func TestDuckLakeConnectsItsStorageFirstOnMinIO(t *testing.T) {
 	err = sess.Connect(ctx, "lake")
 	require.Error(t, err)
 	st, _ := sess.Status("lake")
-	assert.Equal(t, session.StatusError, st.Kind)
+	assert.Equal(t, session.StatusNeedsCredentials, st.Kind)
 	assert.Equal(t, `needs the "store" connection: it needs credentials`, st.Message)
 	assert.NotContains(t, err.Error(), minioSecret)
 

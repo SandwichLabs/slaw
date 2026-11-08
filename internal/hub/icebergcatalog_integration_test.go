@@ -226,7 +226,7 @@ func TestS3TablesCatalogNamesItsSignedOutStorageConnection(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `needs the "aws_lake" connection`)
 	st := statusLine(o.Sess, "s3t")
-	assert.Equal(t, session.StatusError, st.Kind)
+	assert.Equal(t, session.StatusNeedsCredentials, st.Kind, "waiting on a sign-in is a sign-in to do")
 	assert.Contains(t, st.Message, `needs the "aws_lake" connection`)
 	assert.NotContains(t, fmt.Sprint(st), "111122223333", "the status names the requirement, not the catalog's ARN")
 }
@@ -247,4 +247,25 @@ func (s *syncWriter) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.w.String()
+}
+
+// A real catalog table whose data sits in a bucket no storage connection covers
+// fails closed at the deny secret, and the engine says so in plain words: this
+// proves the mapping matches DuckDB's own message, not a hand-written one.
+func TestIcebergTableInAnUncoveredBucketIsExplained(t *testing.T) {
+	w := newCatalogWorld(t)
+	tbl := w.f.Craft(t, "remote", icebergtest.Hostile{DataDir: "s3://" + icebergtest.Other + "/"})
+	w.f.WriteSentinelS3(t, tbl.DataPaths[0], tbl.DataSizes[0])
+	ctx := context.Background()
+	o, err := Open(ctx, w.root, OpenOptions{App: "test", Logger: quietLogger()})
+	require.NoError(t, err)
+	defer o.Close()
+
+	_, err = o.Eng.Execute(ctx, "SELECT max(id) FROM cat.ns.remote", nil)
+	require.Error(t, err)
+	var denied *session.StorageDenyError
+	require.ErrorAs(t, err, &denied, err.Error())
+	assert.Equal(t, icebergtest.Other, denied.Bucket)
+	assert.Equal(t, "data at s3://other/ is outside every storage connection's scope: add one whose scope contains it", err.Error())
+	assert.NotContains(t, err.Error(), "deny.invalid")
 }

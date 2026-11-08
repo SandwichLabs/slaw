@@ -10,7 +10,7 @@ import Icon from './Icon.vue'
 import { useModalKeys } from '../composables/useModal'
 import { signInFor, refreshConnections } from '../composables/useConnections'
 import { errorText } from '../lib/errors'
-import { CRED_KEY } from '../lib/connections'
+import { CRED_KEY, fieldVisible } from '../lib/connections'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -34,7 +34,8 @@ const isSso = computed(() => (detail.value?.signIn ?? '').startsWith('aws-sso:')
 const ssoProfile = computed(() => (detail.value?.signIn ?? '').slice(8))
 // The status text marks commands with backticks: show them as code.
 const ssoParts = computed(() => (cred.value?.detail || `Sign in to AWS with profile ${ssoProfile.value}.`).split('`').map((t, i) => ({ t, code: i % 2 === 1 })))
-const fields = computed(() => spec.value?.credentials ?? [])
+// Only the credentials this definition signs in with (an iceberg_catalog's depend on its kind and auth).
+const fields = computed(() => (spec.value?.credentials ?? []).filter((c) => fieldVisible(c, spec.value?.fields ?? [], detail.value?.def.options ?? {})))
 
 watch(signInFor, async (n) => {
   error.value = ''

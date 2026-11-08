@@ -85,6 +85,8 @@ func ListCatalog(ctx context.Context, sess session.Session, req CatalogRequest) 
 		if err != nil {
 			return nil, err
 		}
+		// The cap bounds the listing, not what the catalog has: the rest stay
+		// queryable by name, and More tells the rail to say so.
 		more := 0
 		if namesOnly(sess, req.Connection) && len(schemas) > MaxCatalogNamespaces {
 			more, schemas = len(schemas)-MaxCatalogNamespaces, schemas[:MaxCatalogNamespaces]

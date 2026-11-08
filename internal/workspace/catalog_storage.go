@@ -28,8 +28,14 @@ func catalogStorage(ws Workspace, d ConnectionDef, lookup LookupFunc) ([]string,
 	if c.Type != "s3" {
 		return nil, fmt.Errorf("the storage connection %q is a %s connection; an s3_tables catalog is signed by an s3 connection", name, c.Type)
 	}
-	if _, err := c.ConnectionDef.Resolve(lookup, c.Scope); err != nil {
+	sd, err := c.ConnectionDef.Resolve(lookup, c.Scope)
+	if err != nil {
 		return nil, fmt.Errorf("the storage connection %q does not resolve: %w", name, err)
+	}
+	// S3 Tables is an AWS service: a connection to another S3-compatible store
+	// (MinIO, R2 through s3) would sign a request that still goes to AWS.
+	if sd.Options["endpoint"] != "" {
+		return nil, fmt.Errorf("S3 Tables signs with AWS: %s has a custom endpoint, so it is not an AWS connection; use an s3 connection for AWS itself", name)
 	}
 	return []string{name}, nil
 }

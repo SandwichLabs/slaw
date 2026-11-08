@@ -82,11 +82,11 @@ const TYPES: ConnTypeSpec[] = [
   {
     id: 'iceberg_catalog', label: 'Iceberg catalog', description: 'A catalog.', metadataDriven: true, warning: 'Table metadata in this lake decides which files DuckDB reads.',
     fields: [
-      field({ name: 'endpoint_type', label: 'Catalog kind', kind: 'enum', choices: ['s3_tables', 'rest'], required: true, option: true, prominent: true }),
+      field({ name: 'endpoint_type', label: 'Catalog kind', kind: 'enum', choices: ['s3_tables', 'rest'], choiceLabels: { s3_tables: 'Amazon S3 Tables', rest: 'Iceberg REST catalog' }, required: true, option: true, prominent: true }),
       field({ name: 'warehouse', label: 'Warehouse', required: true, option: true }),
       field({ name: 'storage', label: 'Signs with', kind: 'connection', connectionType: 's3', required: true, option: true, visibleWhen: [{ field: 'endpoint_type', in: ['s3_tables'] }] }),
       field({ name: 'uri', label: 'Catalog URL', kind: 'url', required: true, option: true, visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }] }),
-      field({ name: 'auth', label: 'Authentication', kind: 'enum', choices: ['oauth2', 'bearer', 'none'], default: 'oauth2', option: true, visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }] }),
+      field({ name: 'auth', label: 'Authentication', kind: 'enum', choices: ['oauth2', 'bearer', 'none'], choiceLabels: { oauth2: 'OAuth2', bearer: 'Bearer token', none: 'None' }, default: 'oauth2', option: true, visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }] }),
     ],
     credentials: [
       field({ name: 'token', label: 'Bearer token', secret: true, perPerson: true, visibleWhen: [{ field: 'endpoint_type', in: ['rest'] }, { field: 'auth', in: ['bearer'] }] }),
@@ -243,6 +243,44 @@ describe('ConnectionEditorView', () => {
     const req = app.SaveConnection.mock.calls.at(-1)![0]
     expect(req.def.options).toEqual({ endpoint_type: 'rest', warehouse: 'arn:aws:s3tables:us-east-1:111122223333:bucket/sales', uri: 'http://localhost:8181', auth: 'none' })
     expect(req.signIn).toBe('')
+  })
+
+  it('iceberg_catalog: human labels without a duplicate default, a typed token is not sent after switching to OAuth2, and a missing field is marked until it is filled', async () => {
+    const app = makeApp()
+    connectionList.value = [{ name: 'aws_lake', type: 's3', scope: 'local', readOnly: true, default: false, remote: true, status: 'ok' }] as ConnectionInfo[]
+    const w = mountView()
+    await flushPromises()
+    await chooseType(w, 'iceberg_catalog')
+    expect(w.findAll('[data-testid="f-endpoint_type"] option').map((o) => o.text())).toEqual(['Choose…', 'Amazon S3 Tables', 'Iceberg REST catalog'])
+
+    // missing storage: the field is marked, the message clears once it is filled
+    await w.find('[data-testid="f-endpoint_type"]').setValue('s3_tables')
+    await w.find('[data-testid="f-name"]').setValue('s3t')
+    await w.find('[data-testid="f-warehouse"]').setValue('arn:aws:s3tables:us-east-1:111122223333:bucket/sales')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(w.find('[data-testid="save-error"]').exists()).toBe(true)
+    expect(w.find('[data-testid="f-storage"]').attributes('aria-invalid')).toBe('true')
+    await w.find('[data-testid="f-storage"]').setValue('aws_lake')
+    await flushPromises()
+    expect(w.find('[data-testid="save-error"]').exists()).toBe(false)
+    expect(w.find('[data-testid="f-storage"]').attributes('aria-invalid')).toBeUndefined()
+
+    // auth: no "oauth2" entry beside "Default (OAuth2)"
+    await w.find('[data-testid="f-endpoint_type"]').setValue('rest')
+    expect(w.findAll('[data-testid="f-auth"] option').map((o) => o.text())).toEqual(['Default (OAuth2)', 'Bearer token', 'None'])
+    expect(w.find('[data-testid="f-storage"]').exists()).toBe(false)
+
+    // a token typed under bearer is not sent once OAuth2 is chosen
+    await w.find('[data-testid="f-auth"]').setValue('bearer')
+    await w.find('#f-c-token-in').setValue('tok-typed-earlier')
+    await w.find('[data-testid="f-auth"]').setValue('')
+    await w.find('[data-testid="f-c-key_id"]').setValue('cid')
+    await w.find('[data-testid="test-btn"]').trigger('click')
+    await flushPromises()
+    const sent = app.TestConnection.mock.calls.at(-1)![0].credentials
+    expect(sent.token).toBe('')
+    expect(sent.keyId).toBe('cid')
   })
 
   it('Azure opens Advanced on a new connection (its sign-in is prominent) and writes no default', async () => {

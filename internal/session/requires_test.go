@@ -119,7 +119,7 @@ func TestRequiresDependentErrorClearsWhenStorageIsReady(t *testing.T) {
 	require.NoError(t, s.Register(Spec{Name: "store", Type: "stub", Credential: cred.fn}))
 	require.NoError(t, s.Register(Spec{Name: "lake", Type: "lakey", Requires: []string{"store"}}))
 	require.Error(t, s.Connect(ctx, "lake"))
-	assert.Equal(t, StatusError, status(t, s, "lake").Kind)
+	assert.Equal(t, StatusNeedsCredentials, status(t, s, "lake").Kind, "waiting on a sign-in is a sign-in to do, not an error")
 	cred.have.Store(true)
 	s.Preflight(ctx, "store")
 	assert.Equal(t, StatusNotConnected, status(t, s, "lake").Kind)
@@ -231,21 +231,24 @@ func TestRequiresReferencedByQueryConnectsStorage(t *testing.T) {
 	assert.True(t, saw.Load())
 }
 
-func TestRequiresNotReadyIsAStatusErrorWithAPhrase(t *testing.T) {
+// A requirement that needs the person to sign in leaves the dependent needing
+// credentials too (the same state, the same hint); any other reason is an error.
+func TestRequiresNotReadyIsAStatusWithAPhrase(t *testing.T) {
 	ctx := context.Background()
 	tests := map[string]struct {
 		ext  string
 		cred CredentialFunc
 		want string
+		kind StatusKind
 	}{
 		"needs credentials": {"json", func(context.Context) (secrets.Credential, error) {
 			return secrets.Credential{}, &secrets.ErrNeedsCredentials{Method: "keychain", Reason: "not set"}
-		}, `needs the "store" connection: it needs credentials`},
-		"no credential func": {"json", nil, `needs the "store" connection: it needs credentials`},
-		"extension missing":  {"no_such_extension", credOK("tok"), `needs the "store" connection: its DuckDB extension is not installed`},
+		}, `needs the "store" connection: it needs credentials`, StatusNeedsCredentials},
+		"no credential func": {"json", nil, `needs the "store" connection: it needs credentials`, StatusNeedsCredentials},
+		"extension missing":  {"no_such_extension", credOK("tok"), `needs the "store" connection: its DuckDB extension is not installed`, StatusError},
 		"error": {"json", func(context.Context) (secrets.Credential, error) {
 			return secrets.Credential{}, errors.New("boom tok_secret_needle")
-		}, `needs the "store" connection: it could not connect`},
+		}, `needs the "store" connection: it could not connect`, StatusError},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -255,7 +258,7 @@ func TestRequiresNotReadyIsAStatusErrorWithAPhrase(t *testing.T) {
 			err := s.Connect(ctx, "lake")
 			require.Error(t, err)
 			st := status(t, s, "lake")
-			assert.Equal(t, StatusError, st.Kind, "no new status kind")
+			assert.Equal(t, tc.kind, st.Kind)
 			assert.Equal(t, tc.want, st.Message)
 			assert.NotContains(t, st.Message+err.Error(), "tok_secret_needle")
 		})

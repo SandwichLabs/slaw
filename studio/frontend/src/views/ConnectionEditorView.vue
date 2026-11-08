@@ -30,7 +30,7 @@ const {
   status, detail, advancedOpen, saveError, result, isMD, remote, mainFields, advFields, metadataDriven, metadataWarning,
   insideWorkspace, exampleTail, portField, readableCreds, secretCreds, needsSignIn, envVars, credFields, val, setVal,
   bindingChanged, fingerprintHelp, secretIsSet, serverChangedHelp, privateCopy, shadowedBy, failedTest, title,
-  chooseType, presets, applyPreset, storageLine, storageSlot, storageFailed, prefilled, changedWhileAway,
+  chooseType, invalidField, presets, applyPreset, storageLine, storageSlot, storageFailed, prefilled, changedWhileAway,
 } = form
 const md = useMotherDuckPicker(form)
 const { mdDbs, mdLoading, mdLoaded, mdError, mdInstall, mdTokenReady, loadDatabases, pickDatabase } = md
@@ -103,8 +103,8 @@ const {
           <div class="field">
             <label class="field-label" :for="`f-${fd.name}`">{{ fd.label }}<span v-if="fd.required" aria-hidden="true"> *</span></label>
             <div style="display: flex; gap: 8px;">
-              <FieldControl v-if="fd.kind === 'enum' || fd.kind === 'connection'" :field="fd" :model-value="val(fd)" style="flex: 1;" @update:model-value="setVal(fd, $event)" />
-              <input v-else :id="`f-${fd.name}`" :value="val(fd)" class="field-input" style="flex: 1;" :type="fd.kind === 'number' ? 'number' : 'text'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" :aria-describedby="fd.help || fd.name === 'database' ? `f-${fd.name}-h` : undefined" :data-testid="`f-${fd.name}`" @input="setVal(fd, ($event.target as HTMLInputElement).value)" />
+              <FieldControl v-if="fd.kind === 'enum' || fd.kind === 'connection'" :field="fd" :model-value="val(fd)" :invalid="invalidField === fd.name" style="flex: 1;" :aria-describedby="fd.help ? `f-${fd.name}-h` : undefined" @update:model-value="setVal(fd, $event)" />
+              <input v-else :id="`f-${fd.name}`" :value="val(fd)" class="field-input" style="flex: 1;" :type="fd.kind === 'number' ? 'number' : 'text'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" :aria-invalid="invalidField === fd.name || undefined" :aria-describedby="fd.help || fd.name === 'database' ? `f-${fd.name}-h` : undefined" :data-testid="`f-${fd.name}`" @input="setVal(fd, ($event.target as HTMLInputElement).value)" />
             </div>
             <div v-if="fd.help || fd.name === 'database'" :id="`f-${fd.name}-h`" class="help">{{ fd.help }}<template v-if="fd.name === 'database' && remote && fingerprintHelp">{{ ' ' + fingerprintHelp }}</template></div>
             <div v-if="fd.name === 'scope' && handoff.wholeBucket.value" class="help">
@@ -149,8 +149,8 @@ const {
           <div style="display: flex; flex-direction: column; gap: 14px; margin-top: 12px;">
             <div v-for="fd in advFields" :key="fd.name" class="field">
               <label class="field-label" :for="`f-${fd.name}`">{{ fd.label }}</label>
-              <FieldControl :field="fd" :model-value="val(fd)" @update:model-value="setVal(fd, $event)" />
-              <div v-if="fd.help" class="help">{{ fd.help }}</div>
+              <FieldControl :field="fd" :model-value="val(fd)" :aria-describedby="fd.help ? `f-${fd.name}-h` : undefined" @update:model-value="setVal(fd, $event)" />
+              <div v-if="fd.help" :id="`f-${fd.name}-h`" class="help">{{ fd.help }}</div>
             </div>
           </div>
         </details>

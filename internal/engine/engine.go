@@ -147,7 +147,7 @@ func (m *Manager) run(ctx context.Context, connection, query string, exec func()
 		// A read that reached a deny secret (data outside every storage
 		// connection's scope) is explained, not echoed.
 		if mapped := session.MapStorageDenyError(err); mapped != err {
-			return nil, 0, mapped
+			return nil, 0, session.ExplainStorageDeny(mapped, m.sess, query)
 		}
 		return nil, 0, fmt.Errorf("failed to execute query on duckdb: %w", err)
 	}

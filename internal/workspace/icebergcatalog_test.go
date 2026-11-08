@@ -173,6 +173,14 @@ func TestS3TablesCatalogRequiresItsStorageConnection(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not resolve")
 
+	// A storage connection with a custom endpoint is not AWS: S3 Tables is refused.
+	require.NoError(t, ws.RemoveConnection(context.Background(), ScopeLocal, "aws_lake"))
+	require.NoError(t, ws.AddConnection(ScopeLocal, ConnectionDef{Name: "aws_lake", Type: "s3", Scope: "s3://lake/", Region: "us-east-1",
+		Options: map[string]string{"endpoint": "127.0.0.1:9000", "url_style": "path"}}))
+	_, err = SessionSpec(ws, "s3t")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "S3 Tables signs with AWS: aws_lake has a custom endpoint")
+
 	// A REST catalog requires nothing.
 	require.NoError(t, ws.AddConnection(ScopeLocal, icebergRest("rest_cat", "none", nil)))
 	spec, err = SessionSpec(ws, "rest_cat")

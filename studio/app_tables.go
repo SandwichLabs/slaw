@@ -191,7 +191,8 @@ func (a *App) pageTable(name string, spec FilterSpec, page, pageSize int, sortCo
 		Filter: spec, Page: page, PageSize: pageSize, SortCol: sortCol, SortDir: sortDir,
 	})
 	if err != nil {
-		return nil, err
+		// A table whose files sit outside every storage scope is explained, not echoed.
+		return nil, session.ExplainStorageDeny(err, a.sess, "")
 	}
 	result := &TableData{
 		Columns:    res.Columns,

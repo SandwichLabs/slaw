@@ -295,6 +295,8 @@ interface ConnField {
   help?: string
   default?: string
   choices?: string[]
+  // The words shown for a choice; one without a label is shown as stored.
+  choiceLabels?: Record<string, string>
   required: boolean
   secret: boolean
   perPerson: boolean

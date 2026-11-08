@@ -4,6 +4,7 @@ package connections_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -70,7 +71,11 @@ func TestHostAWSEnvDoesNotReadAnUncoveredURL(t *testing.T) {
 	require.Equal(t, "slaw-deny-s3", matched)
 	_, err = count("other/b")
 	require.Error(t, err, "an uncovered URL must not be read with the host's keys")
-	assert.Contains(t, err.Error(), "deny.invalid")
+	var denied *session.StorageDenyError
+	if !errors.As(err, &denied) {
+		require.ErrorAs(t, session.MapStorageDenyError(err), &denied, "not a read refused by a deny secret: %v", err)
+	}
+	assert.Equal(t, "lake", denied.Bucket)
 	assert.NotContains(t, err.Error(), minioSecret)
 
 	// The covered one is unaffected.

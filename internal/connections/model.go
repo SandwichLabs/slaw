@@ -88,6 +88,9 @@ type Field struct {
 	Help    string    `json:"help,omitempty"`
 	Default string    `json:"default,omitempty"`
 	Choices []string  `json:"choices,omitempty"`
+	// ChoiceLabels are the words a form shows for a choice ("S3 Tables" for
+	// s3_tables); a choice without one is shown as it is stored.
+	ChoiceLabels map[string]string `json:"choiceLabels,omitempty"`
 	// Required means the type cannot connect without it.
 	Required bool `json:"required"`
 	// Secret fields are write-only: never read back across a boundary.

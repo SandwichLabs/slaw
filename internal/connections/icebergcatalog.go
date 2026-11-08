@@ -424,7 +424,7 @@ func (icebergCatalogType) Info() TypeInfo {
 	return TypeInfo{
 		Name: "iceberg_catalog", Label: "Iceberg catalog (S3 Tables, REST)",
 		Fields: []Field{
-			{Name: "endpoint_type", Label: "Catalog kind", Kind: KindEnum, Choices: append([]string(nil), icebergEndpointKinds...), Required: true, Option: true, Prominent: true,
+			{Name: "endpoint_type", Label: "Catalog kind", Kind: KindEnum, Choices: append([]string(nil), icebergEndpointKinds...), ChoiceLabels: map[string]string{endpointS3Tables: "Amazon S3 Tables", endpointREST: "Iceberg REST catalog"}, Required: true, Option: true, Prominent: true,
 				Help: "s3_tables is Amazon S3 Tables; rest is an Iceberg REST catalog (Polaris, Nessie, Lakekeeper, Unity, ...). Glue is not supported yet. " + MetadataWarning},
 			{Name: "warehouse", Label: "Warehouse", Kind: KindText, Required: true, Option: true,
 				Help: "s3_tables: the table bucket's ARN (arn:aws:s3tables:REGION:ACCOUNT:bucket/NAME). rest: the catalog's warehouse name."},
@@ -432,7 +432,7 @@ func (icebergCatalogType) Info() TypeInfo {
 				Help: "s3_tables only: the name of the s3 connection whose identity signs the catalog. Its scope should cover the table bucket's data."},
 			{Name: "uri", Label: "Catalog URL", Kind: KindURL, Required: true, Option: true, VisibleWhen: whenKind(endpointREST),
 				Help: "rest only: the catalog's base URL. https, or http for localhost only; no user name, query or fragment."},
-			{Name: "auth", Label: "Authentication", Kind: KindEnum, Choices: append([]string(nil), icebergAuths...), Default: authOAuth2, Option: true, VisibleWhen: whenKind(endpointREST),
+			{Name: "auth", Label: "Authentication", Kind: KindEnum, Choices: append([]string(nil), icebergAuths...), ChoiceLabels: map[string]string{authOAuth2: "OAuth2", authBearer: "Bearer token", authNone: "None"}, Default: authOAuth2, Option: true, VisibleWhen: whenKind(endpointREST),
 				Help: "rest only: oauth2 (client id and secret), bearer (a token) or none."},
 			{Name: "oauth2_server_uri", Label: "OAuth2 token URL", Kind: KindURL, Option: true,
 				VisibleWhen: []Condition{{Field: "endpoint_type", In: []string{endpointREST}}, {Field: "auth", In: []string{authOAuth2}}},

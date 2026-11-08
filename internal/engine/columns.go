@@ -68,7 +68,7 @@ func TableColumns(db RowQuerier, ref session.TableRef) ([]ColumnInfo, error) {
 		return nil, fmt.Errorf("failed to iterate columns: %w", err)
 	}
 
-	if len(cols) == 1 && cols[0].Name == "__" && strings.EqualFold(cols[0].Type, "UNKNOWN") && ref.Catalog != "" && ref.Schema != "" {
+	if len(cols) == 1 && session.UnresolvedColumn(cols[0].Name, cols[0].Type) && ref.Catalog != "" && ref.Schema != "" {
 		// A lazily resolved table (an Iceberg catalog's): bind it for its real columns.
 		dr, err := db.Query(session.DescribeSQL(ref))
 		if err != nil {

@@ -51,7 +51,7 @@ export function useConnectionEditor(form: ConnectionForm, md: MotherDuckPicker) 
         scope: connScope.value,
         def: { ...form.buildDef(), name: f.name.trim() || 'test' },
         signIn: methodString.value,
-        credentials: { ...typed },
+        credentials: form.visibleCreds(),
       })
     } catch (e: unknown) {
       result.value = { ok: false, status: 'error', ms: 0, count: 0, error: { code: 'error', message: errorText(e), details: '' } }
@@ -102,8 +102,10 @@ export function useConnectionEditor(form: ConnectionForm, md: MotherDuckPicker) 
       if (!(await askRebind(name))) return
       confirmRebind = true
     }
-    const wantsSecret = method.value !== 'env' && method.value !== 'aws-sso' && !!(typed.password || typed.token || typed.secret)
-    const credsChanged = method.value !== 'env' && method.value !== 'aws-sso' && (wantsSecret || typed.username !== (status.value?.username ?? '') || typed.keyId !== (status.value?.keyId ?? ''))
+    // Only what was typed for the credentials this definition signs in with.
+    const creds = form.visibleCreds()
+    const wantsSecret = method.value !== 'env' && method.value !== 'aws-sso' && !!(creds.password || creds.token || creds.secret)
+    const credsChanged = method.value !== 'env' && method.value !== 'aws-sso' && (wantsSecret || creds.username !== (status.value?.username ?? '') || creds.keyId !== (status.value?.keyId ?? ''))
     if (method.value === 'keychain' && wantsSecret) {
       const probe = await App.ProbeKeychain()
       if (!probe.available) { keychainDetail.value = probe.detail ?? ''; keychainBlocked.value = true; return }
@@ -124,8 +126,8 @@ export function useConnectionEditor(form: ConnectionForm, md: MotherDuckPicker) 
         confirmRebind = true
         d = await App.SaveConnection({ ...saveReq, confirmRebind })
       }
-      if (needsSignIn.value && credsChanged && (typed.username || typed.keyId || wantsSecret)) {
-        await App.SetConnectionCredentials({ name, method: methodString.value, ...typed, remember: false, confirmRebind })
+      if (needsSignIn.value && credsChanged && (creds.username || creds.keyId || wantsSecret)) {
+        await App.SetConnectionCredentials({ name, method: methodString.value, ...creds, remember: false, confirmRebind })
       }
       Object.assign(typed, { password: '', token: '', secret: '' })
       // Switching away from the keychain leaves its saved sign-in unused: offer to

@@ -54,7 +54,12 @@ const unresolvedColumn = "__"
 // UnresolvedColumns reports that cols is the placeholder of a lazily resolved
 // table rather than its columns.
 func UnresolvedColumns(cols []ColumnInfo) bool {
-	return len(cols) == 1 && cols[0].Name == unresolvedColumn && strings.EqualFold(cols[0].DataType, "UNKNOWN")
+	return len(cols) == 1 && UnresolvedColumn(cols[0].Name, cols[0].DataType)
+}
+
+// UnresolvedColumn reports that one column (name, type) is that placeholder.
+func UnresolvedColumn(name, typ string) bool {
+	return name == unresolvedColumn && strings.EqualFold(typ, "UNKNOWN")
 }
 
 // DescribeSQL is the statement that binds a table and lists its columns

@@ -249,7 +249,7 @@ func TestSSORotationFailureFailsClosedNeverAnonymous(t *testing.T) {
 
 	got, err = r.readObject(fresh)
 	require.Error(t, err, "an object never read before is not read anonymously (got %q)", got)
-	assert.Contains(t, err.Error(), "deny.invalid")
+	requireDenied(t, err, miniotest.Bucket)
 	noNeedles(t, "logs", r.logs.String(), r.w.needles())
 
 	// Signing in again brings it back.

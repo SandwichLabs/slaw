@@ -11,7 +11,7 @@ import { useRoute } from 'vue-router'
 import { App } from '../lib/bindings'
 import { workspaceInfo } from './useWorkspace'
 import { errorText } from '../lib/errors'
-import { NAME_RE, CRED_ENV_SUFFIX, fieldVisible } from '../lib/connections'
+import { NAME_RE, CRED_ENV_SUFFIX, CRED_KEY, fieldVisible } from '../lib/connections'
 import { presetFill, endpointProblem, followRegion, REGION_PLACEHOLDER, type FilledTemplate } from '../lib/storagePresets'
 import { useStorageDetect, type DetectKey } from './useStorageDetect'
 import { parseStoragePrefill, type StoragePrefill } from '../lib/storagePrefill'
@@ -99,6 +99,16 @@ export function useConnectionForm() {
   const secretCreds = computed(() => credFields.value.filter((c) => c.secret))
   const primarySecret = computed(() => secretCreds.value[0]?.name ?? '')
   const needsSignIn = computed(() => credFields.value.length > 0)
+  // What was typed for the credentials this definition signs in with: a token typed
+  // before switching to OAuth2 is not sent, so it is never stored.
+  function visibleCreds(): CredentialInput {
+    const out = emptyCreds()
+    for (const c of credFields.value) {
+      const k = CRED_KEY[c.name]
+      if (k) out[k] = typed[k]
+    }
+    return out
+  }
 
   const methodString = computed(() => (method.value === 'env' ? `env:${envPrefix.value.trim() || 'SLAW'}` : method.value === 'aws-sso' ? `aws-sso:${ssoProfile.value}` : method.value))
   const envVars = computed(() => {
@@ -366,15 +376,26 @@ export function useConnectionForm() {
     }
   }
 
-  // validate returns what is wrong with the form, or '' when it can be saved.
+  // validate returns what is wrong with the form, or '' when it can be saved. A
+  // missing required field is marked (invalidField) until it is filled, and its
+  // message in saveError goes away with it.
+  const invalidField = ref('')
+  let lastProblem = ''
+  const missing = (fd: ConnField): string => { invalidField.value = fd.name; lastProblem = `${fd.label} is needed.`; return lastProblem }
+  watch(() => { const fd = spec.value?.fields.find((x) => x.name === invalidField.value); return fd ? val(fd).trim() : null }, (v) => {
+    if (!v) return
+    invalidField.value = ''
+    if (saveError.value === lastProblem) saveError.value = ''
+  })
   function validate(): string {
+    invalidField.value = ''
     if (!spec.value) return 'Choose a connection type first.'
     if (isNew.value && !NAME_RE.test(f.name.trim())) return 'Give it a name with lowercase letters, numbers and underscores, like prod_pg.'
     for (const fd of spec.value.fields.filter(visible)) {
-      if (fd.required && !fd.option && val(fd).trim() === '') return `${fd.label} is needed.`
+      if (fd.required && !fd.option && val(fd).trim() === '') return missing(fd)
     }
     for (const fd of (spec.value.fields ?? []).filter((x) => x.option && visible(x))) {
-      if (fd.required && !(f.options[fd.name] ?? '').trim()) return `${fd.label} is needed.`
+      if (fd.required && !(f.options[fd.name] ?? '').trim()) return missing(fd)
     }
     const ep = endpointProblem((f.options['endpoint'] ?? '').trim())
     if (ep) return ep
@@ -385,7 +406,7 @@ export function useConnectionForm() {
     types, loading, loadError, isNew, editName, typeId, spec, f, readOnly, connScope, origScope, method, envPrefix, ssoProfile,
     typed, status, detail, advancedOpen, origMethod, hadKeychainSecret, saved, saveError, result, isMD, remote,
     mainFields, advFields, metadataDriven, metadataWarning, insideWorkspace, exampleTail, portField, credFields, readableCreds,
-    secretCreds, needsSignIn, visible, methodString, envVars, val, setVal, buildDef, refreshDraftFingerprint,
+    secretCreds, needsSignIn, visibleCreds, invalidField, visible, methodString, envVars, val, setVal, buildDef, refreshDraftFingerprint,
     fingerprintChanged, bindingChanged, dirty, fingerprintHelp, secretIsSet, serverChangedHelp, privateCopy,
     shadowedBy, failedTest, title, chooseType, loadForm, validate, presets, applyPreset, storageLine, storageSlot, storageFailed, prefilled, changedWhileAway,
   }
