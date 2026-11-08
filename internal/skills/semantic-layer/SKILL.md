@@ -170,7 +170,7 @@ cannot check a watch: the person checks it in Studio's Watches view or with
 An `iceberg_catalog` connection is an ordinary catalog (`list_connections`
 shows it with `catalog: true`). Name its tables with **three parts**,
 `catalog.namespace.table` (`cat.ns.orders`), so a saved query and the metric
-over it run wherever the connection is the default or not. A connection
+over it do not depend on which connection is the default. A connection
 pinned to a catalog may set `default_namespace`, which lets a saved query on
 that connection say `orders` (without it, `orders` resolves only when the
 catalog has a single namespace). Joins with other connections' tables are fine: it is one

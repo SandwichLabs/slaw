@@ -52,6 +52,7 @@ func TestAHungCatalogFailsWithinTheHTTPTimeout(t *testing.T) {
 	resp := sqlCall(h, "SELECT max(id) FROM cat.ns.orders")
 	require.NotNil(t, resp.Error, "the hung LoadTable is an error, not a hang")
 	assert.Less(t, time.Since(start), 30*time.Second)
+	assert.Contains(t, resp.Error.Message, "Timeout", "it is the HTTP timeout that ended it")
 	t.Logf("hung read failed after %s: %s", time.Since(start).Round(time.Millisecond), resp.Error.Message)
 
 	// A watch check canceled while the catalog hangs returns once the timeout fires.

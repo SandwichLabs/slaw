@@ -176,9 +176,14 @@ func protectStorage(ctx context.Context, q storageQuerier, sealParams bool, lim 
 // session that cannot prove them fails closed (a hung endpoint would hang it).
 func setHTTPLimits(ctx context.Context, q storageQuerier, lim httpLimits) error {
 	for _, st := range []struct {
-		name string
-		want int
-	}{{httpTimeoutSetting, lim.timeout}, {httpRetriesSetting, lim.retries}} {
+		name      string
+		min, want int
+	}{
+		// A timeout of 0 means no timeout at all, so it is never "within the
+		// bound"; 0 retries just means no retry.
+		{httpTimeoutSetting, 1, lim.timeout},
+		{httpRetriesSetting, 0, lim.retries},
+	} {
 		want := strconv.Itoa(st.want)
 		read := func() (string, error) {
 			var got string
@@ -189,12 +194,17 @@ func setHTTPLimits(ctx context.Context, q storageQuerier, lim httpLimits) error 
 		if err != nil {
 			return fmt.Errorf("failed to read %s: %w", st.name, err)
 		}
-		if n, convErr := strconv.Atoi(got); lim.atMost && convErr == nil && n <= st.want {
+		if n, convErr := strconv.Atoi(got); lim.atMost && convErr == nil && n >= st.min && n <= st.want {
+			// Within the bound: keep it, and pin this connection's own value so a
+			// session-level override cannot shadow it (best effort, as for the URL setting).
+			_, _ = q.ExecContext(ctx, "SET SESSION "+st.name+" = "+got)
 			continue
 		}
 		if got != want {
-			if _, err := q.ExecContext(ctx, "SET GLOBAL "+st.name+" = "+want); err != nil {
-				return fmt.Errorf("failed to set %s: %w", st.name, err)
+			for _, scope := range []string{"GLOBAL ", "SESSION "} {
+				if _, err := q.ExecContext(ctx, "SET "+scope+st.name+" = "+want); err != nil {
+					return fmt.Errorf("failed to set %s: %w", st.name, err)
+				}
 			}
 			if got, err = read(); err != nil {
 				return fmt.Errorf("failed to read back %s: %w", st.name, err)

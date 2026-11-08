@@ -125,7 +125,7 @@ func TestIcebergCatalogOverMCPServe(t *testing.T) {
 	}
 	text, isErr = run.tool("run_query", map[string]any{"sql": "SELECT count(*) AS n FROM cat.ns.events"})
 	require.False(t, isErr, text)
-	assert.Contains(t, text, "10", "the refused writes did not run")
+	assert.JSONEq(t, `{"columns":["n"],"rows":[[10]],"types":["BIGINT"]}`, text, "the refused writes did not run")
 
 	for _, s := range append(all, run.stderr.String()) {
 		assert.False(t, strings.Contains(s, f.Secret), "the storage secret reached the MCP client or stderr")
