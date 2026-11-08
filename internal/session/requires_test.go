@@ -389,3 +389,51 @@ func TestRequiresRegisterWaitsForAConnectInProgress(t *testing.T) {
 	assert.Zero(t, secretCount(t, s))
 	assert.Zero(t, attachedCatalogs(t, s, "lake"), "no lake catalog outlives the storage secret")
 }
+
+// A dependent waiting on a signed-out connection says which one (BlockedBy) and
+// carries no sign-in hint of its own: the prompt and the banner are the
+// requirement's, and the revive pass (which re-reads hinted statuses) never
+// touches the dependent.
+func TestRequiresDependentNamesTheBlockerAndCarriesNoSignInHint(t *testing.T) {
+	ctx := context.Background()
+	s, _ := requiresSession(t, "json")
+	hint := &secrets.SignInHint{Kind: "aws-sso", Subject: "dev", Reason: "missing"}
+	require.NoError(t, s.Register(Spec{Name: "store", Type: "stub", Credential: func(context.Context) (secrets.Credential, error) {
+		return secrets.Credential{}, &secrets.ErrNeedsCredentials{Method: "aws-sso:dev", SignIn: hint}
+	}}))
+	require.NoError(t, s.Register(Spec{Name: "lake", Type: "lakey", Requires: []string{"store"}}))
+	require.Error(t, s.Connect(ctx, "lake"))
+
+	lake := status(t, s, "lake")
+	assert.Equal(t, StatusNeedsCredentials, lake.Kind)
+	assert.Equal(t, "store", lake.BlockedBy)
+	assert.Nil(t, lake.SignIn, "the sign-in is the blocker's, not the dependent's")
+	store := status(t, s, "store")
+	require.NotNil(t, store.SignIn)
+	assert.Equal(t, "dev", store.SignIn.Subject)
+	assert.Empty(t, store.BlockedBy)
+
+	// reviveSignedOut picks up the blocker only.
+	h, isHub := s.(*hub)
+	require.True(t, isHub)
+	h.mu.Lock()
+	var hinted []string
+	for n, e := range h.conns {
+		if e.status.Kind == StatusNeedsCredentials && e.status.SignIn != nil {
+			hinted = append(hinted, n)
+		}
+	}
+	h.mu.Unlock()
+	assert.Equal(t, []string{"store"}, hinted)
+
+	// Once the requirement is ready the dependent forgets it.
+	s2, _ := requiresSession(t, "json")
+	cred := &switchable{}
+	require.NoError(t, s2.Register(Spec{Name: "store", Type: "stub", Credential: cred.fn}))
+	require.NoError(t, s2.Register(Spec{Name: "lake", Type: "lakey", Requires: []string{"store"}}))
+	require.Error(t, s2.Connect(ctx, "lake"))
+	assert.Equal(t, "store", status(t, s2, "lake").BlockedBy)
+	cred.have.Store(true)
+	s2.Preflight(ctx, "store")
+	assert.Empty(t, status(t, s2, "lake").BlockedBy)
+}

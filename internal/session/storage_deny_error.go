@@ -14,7 +14,7 @@ import (
 // read, and only the bucket is captured. Bucket names allow the characters of
 // S3, GCS (which also has "_") and R2 buckets.
 var denyURLRE = regexp.MustCompile(`HTTP (?:GET|HEAD|POST|PUT|DELETE) to 'https?://(?:([a-z0-9][a-z0-9._-]*?)\.)?` +
-	regexp.QuoteMeta(denyEndpoint) + `(?::\d+)?/?([^/'"\s?]*)`)
+	regexp.QuoteMeta(denyEndpoint) + `(?::\d+)?(/[^'"\s?]*)?`)
 
 // storageSchemes are the URL schemes the deny secrets cover (s3 also stands for
 // s3a and s3n), in the form the message names them.
@@ -33,7 +33,14 @@ type StorageDenyError struct {
 	// ready, and CoverWhy says why ("it needs credentials"): the fix is to
 	// sign it in, not to add another connection.
 	Cover, CoverWhy string
-	err             error
+	// CoverExact says Cover's scope contains the file that was read; false when
+	// the connection is only for the same bucket (its scope is a prefix of
+	// another folder), so the message does not claim more than that.
+	CoverExact bool
+	// key is the object path of the refused request: used to compare scopes,
+	// never shown.
+	key string
+	err error
 }
 
 func (e *StorageDenyError) Error() string {
@@ -45,8 +52,11 @@ func (e *StorageDenyError) Error() string {
 		}
 		where = "data at " + scheme + "://" + e.Bucket + "/"
 	}
-	if e.Cover != "" {
+	if e.Cover != "" && e.CoverExact {
 		return where + " is covered by the \"" + e.Cover + "\" connection, but " + e.CoverWhy + ": fix that connection first"
+	}
+	if e.Cover != "" {
+		return where + " is outside every storage connection's scope (the \"" + e.Cover + "\" connection is for this bucket, and " + e.CoverWhy + "): add a connection whose scope contains it"
 	}
 	return where + " is outside every storage connection's scope: add one whose scope contains it"
 }
@@ -63,11 +73,11 @@ func MapStorageDenyError(err error) error {
 	if m == nil {
 		return err
 	}
-	bucket := m[1]
-	if bucket == "" {
-		bucket = m[2] // path style: the first path segment
+	bucket, path := m[1], strings.TrimPrefix(m[2], "/")
+	if bucket == "" { // path style: the first path segment is the bucket
+		bucket, path, _ = strings.Cut(path, "/")
 	}
-	return &StorageDenyError{Scheme: "s3", Bucket: bucket, err: err}
+	return &StorageDenyError{Scheme: "s3", Bucket: bucket, key: path, err: err}
 }
 
 // ExplainStorageDeny adds to a *StorageDenyError what the session knows: the
@@ -91,12 +101,18 @@ func ExplainStorageDeny(err error, sess Session, sqlText string) error {
 		if !info.Catalogless || info.Kind == StatusOK {
 			continue
 		}
-		if scope, scheme := strings.ToLower(info.Scope), ""; covers(scope, de.Bucket, &scheme) {
-			out.Cover, out.CoverWhy = info.Name, requirementPhrase(info.Kind)
-			if sqlText == "" {
-				out.Scheme = scheme
-			}
-			break
+		scheme, exact, ok := covers(info.Scope, de.Bucket, de.key)
+		if !ok {
+			continue
+		}
+		// A connection whose scope holds the file is the better answer than one
+		// that is only for the bucket.
+		if out.Cover != "" && (out.CoverExact || !exact) {
+			continue
+		}
+		out.Cover, out.CoverWhy, out.CoverExact = info.Name, requirementPhrase(info.Kind), exact
+		if sqlText == "" {
+			out.Scheme = scheme
 		}
 	}
 	return &out
@@ -124,15 +140,19 @@ func foldScheme(s string) string {
 	return s
 }
 
-// covers reports whether a connection scope lies in the bucket (any scheme), and
-// sets scheme to the one the scope is written with.
-func covers(scope, bucket string, scheme *string) bool {
+// covers reports whether a connection scope is in the bucket (any scheme) and
+// the scheme it is written with; exact is true when the scope also contains the
+// object key (scope "s3://b/raw/" holds "raw/a.parquet", not "other/a.parquet").
+func covers(scope, bucket, key string) (scheme string, exact, ok bool) {
+	scope = strings.ToLower(scope)
 	for _, s := range storageSchemes {
 		p := s + "://" + bucket
-		if scope == p || strings.HasPrefix(scope, p+"/") {
-			*scheme = foldScheme(s)
-			return true
+		if scope != p && !strings.HasPrefix(scope, p+"/") {
+			continue
 		}
+		folder := strings.TrimSuffix(scope, "/") + "/"
+		full := p + "/" + key
+		return foldScheme(s), key != "" && strings.HasPrefix(full, folder), true
 	}
-	return false
+	return "", false, false
 }

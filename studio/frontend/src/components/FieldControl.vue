@@ -13,6 +13,8 @@ const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 const id = computed(() => `f-${props.field.name}`)
 const label = (c: string) => props.field.choiceLabels?.[c] ?? c
 // A blank value is the field's default, so that choice is not listed twice.
+// A stored value equal to the default (auth: oauth2 written out) shows as the blank "Default (...)" option; the stored value itself is untouched until the person picks another.
+const shown = computed(() => (props.field.default && props.modelValue === props.field.default ? '' : props.modelValue))
 const choiceList = computed(() => (props.field.choices ?? []).filter((c) => c !== props.field.default))
 const choices = computed(() => connectionChoices(connectionList.value, props.field.connectionType))
 // A value that names no connection of the type is still shown, marked, so it is not silently dropped.
@@ -22,7 +24,7 @@ function onInput(e: Event) { emit('update:modelValue', (e.target as HTMLInputEle
 </script>
 
 <template>
-  <select v-if="field.kind === 'enum'" :id="id" class="field-input" :value="modelValue" :aria-invalid="invalid || undefined" :data-testid="id" @change="onInput">
+  <select v-if="field.kind === 'enum'" :id="id" class="field-input" :value="shown" :aria-invalid="invalid || undefined" :data-testid="id" @change="onInput">
     <option value="">{{ field.default ? `Default (${label(field.default)})` : field.required ? 'Choose…' : 'Default' }}</option>
     <option v-for="c in choiceList" :key="c" :value="c">{{ label(c) }}</option>
   </select>

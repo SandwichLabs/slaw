@@ -83,6 +83,10 @@ export function detailLine(c: ConnectionInfo): DetailLine | null {
     case 'err':
       return { text: `Can’t connect: ${oneLine(c.detail)}.`, action: 'fix', actionLabel: 'Fix' }
     case 'creds':
+      if (c.blockedBy) {
+        // It waits on another connection's sign-in: name it, and the action opens that one.
+        return { text: `Needs ${c.blockedBy}: it needs credentials.`, action: 'signin', actionLabel: 'Sign in' }
+      }
       if (c.serverChanged) {
         return { text: `The server changed since you signed in (${c.serverChanged.old} to ${c.serverChanged.new}).`, action: 'signin', actionLabel: 'Sign in again' }
       }

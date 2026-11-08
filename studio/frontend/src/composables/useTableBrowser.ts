@@ -67,6 +67,10 @@ export function useTableBrowser() {
   const sortCol = ref('')
   const sortDir = ref('ASC')
   const errorMessage = ref('')
+  // Why the open table's rows could not be read (Go has already put it in plain words:
+  // data outside every storage scope, a connection that needs a sign-in, ...). Unlike
+  // errorMessage it stays until the next load, so the grid never reads as an empty table.
+  const loadError = ref('')
   const statusMessage = ref('')
   const showConfirmDrop = ref(false)
   const pendingDropTable = ref<string | null>(null)
@@ -194,6 +198,7 @@ export function useTableBrowser() {
   async function loadData() {
     if (!selectedTable.value) return
     dataLoading.value = true
+    loadError.value = ''
     try {
       if (activeFilter.value) {
         tableData.value = await App.GetTableDataFiltered(
@@ -205,7 +210,10 @@ export function useTableBrowser() {
           selectedTable.value, currentPage.value, pageSize.value, sortCol.value, sortDir.value,
         )
       }
-    } catch { tableData.value = null }
+    } catch (e: unknown) {
+      tableData.value = null
+      loadError.value = errorText(e)
+    }
     dataLoading.value = false
   }
 
@@ -340,7 +348,7 @@ export function useTableBrowser() {
 
   return {
     isReadOnly, readOnlyReason, caps, catalogReadOnly, locked, lockText, tables, selectedKind, unavailable, selectedTable, tableInfo,
-    tableData, loading, dataLoading, currentPage, sortCol, sortDir, errorMessage, statusMessage, showConfirmDrop,
+    tableData, loading, dataLoading, currentPage, sortCol, sortDir, errorMessage, loadError, statusMessage, showConfirmDrop,
     pendingDropTable, formattedRows, activeFilter, filteredTotal, showFbF, fbfCombinator, fbfConditions, colType,
     onSelect, loadTables, loadData, clearFilter, filterBySelection, openFbF, addFbFCondition, applyFbF,
     saveFilterAsQuery, toggleSort, prevPage, nextPage, dropTable, confirmDropTable,

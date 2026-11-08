@@ -193,7 +193,7 @@ func runConnAdd(cmd *cobra.Command, args []string) error {
 	}
 	method := c.SignIn
 	if kind, _, _ := secrets.ParseMethod(method); kind == "env" {
-		names := secrets.EnvVarNames(strings.TrimPrefix(method, "env:"))
+		names := secrets.EnvVarNamesFor(strings.TrimPrefix(method, "env:"), connections.NarrowedCredentialFields(connections.Def{Type: typ, Options: def.Options}))
 		if typ == "motherduck" {
 			names = []string{strings.TrimPrefix(method, "env:") + "_TOKEN"} // a token is all MotherDuck takes
 		}
@@ -281,6 +281,9 @@ type connRow struct {
 	Message      string `json:"message,omitempty"`
 	// Warning is set on a shared lake or table definition (not an error).
 	Warning string `json:"warning,omitempty"`
+	// BlockedBy names the connection this one waits on when it is not ready:
+	// sign in there ("slaw conn credentials set <blocked_by>").
+	BlockedBy string `json:"blocked_by,omitempty"`
 }
 
 // showsSignIn reports whether a connection's list row names its sign-in: only
@@ -302,7 +305,7 @@ func runConnList(cmd *cobra.Command, _ []string) error {
 	defer o.Close()
 	var rows []connRow
 	for _, st := range o.States() {
-		r := connRow{Name: st.Name, Type: st.Type, Scope: string(st.Scope), Default: st.Default, ReadOnly: st.ReadOnly, Status: string(st.Status), Message: st.Detail, Warning: st.Warning}
+		r := connRow{Name: st.Name, Type: st.Type, Scope: string(st.Scope), Default: st.Default, ReadOnly: st.ReadOnly, Status: string(st.Status), Message: st.Detail, Warning: st.Warning, BlockedBy: st.BlockedBy}
 		for _, s := range st.Shadows {
 			r.Shadows = append(r.Shadows, string(s))
 		}

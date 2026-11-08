@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // catalogStorage is the requirement of an s3_tables iceberg_catalog: the s3
@@ -32,12 +33,41 @@ func catalogStorage(ws Workspace, d ConnectionDef, lookup LookupFunc) ([]string,
 	if err != nil {
 		return nil, fmt.Errorf("the storage connection %q does not resolve: %w", name, err)
 	}
-	// S3 Tables is an AWS service: a connection to another S3-compatible store
-	// (MinIO, R2 through s3) would sign a request that still goes to AWS.
-	if sd.Options["endpoint"] != "" {
-		return nil, fmt.Errorf("S3 Tables signs with AWS: %s has a custom endpoint, so it is not an AWS connection; use an s3 connection for AWS itself", name)
+	if err := awsStorageProblem(name, sd); err != nil {
+		return nil, err
 	}
 	return []string{name}, nil
+}
+
+// awsStorageProblem refuses a storage connection that is not AWS for an
+// s3_tables catalog. S3 Tables is an AWS service: a connection to another
+// S3-compatible store (MinIO, R2 through s3) would sign a request that still
+// goes to AWS.
+func awsStorageProblem(name string, storage ConnectionDef) error {
+	if storage.Options["endpoint"] != "" {
+		return fmt.Errorf("S3 Tables signs with AWS: %s has a custom endpoint, so it is not an AWS connection; use an s3 connection for AWS itself", name)
+	}
+	return nil
+}
+
+// checkCatalogStorageAtSave is the save-time half of catalogStorage: an
+// s3_tables catalog is refused when the storage connection it names already
+// exists and is not AWS. A storage connection that does not exist yet (or is
+// written with ${ENV}) is checked when the workspace opens, so a catalog may
+// still be saved before its storage connection.
+func (w *workspace) checkCatalogStorageAtSave(d ConnectionDef) error {
+	if d.Type != "iceberg_catalog" || d.Options["endpoint_type"] != "s3_tables" {
+		return nil
+	}
+	name := d.Options["storage"]
+	if name == "" || strings.Contains(name, "${") {
+		return nil
+	}
+	c, ok := w.Connection(name)
+	if !ok || c.Type != "s3" || strings.Contains(c.Options["endpoint"], "${") {
+		return nil
+	}
+	return awsStorageProblem(name, c.ConnectionDef)
 }
 
 // mergeRequires returns the sorted union of two requirement lists.

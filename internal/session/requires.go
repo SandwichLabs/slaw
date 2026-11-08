@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"github.com/SandwichLabs/slaw/internal/secrets"
 )
 
 type requireChainKey struct{}
@@ -43,14 +41,16 @@ func (h *hub) requirementError(name, dep, why string) error {
 	msg := fmt.Sprintf("needs the %q connection: %s", dep, why)
 	h.mu.Lock()
 	if e := h.conns[name]; e != nil && !e.attach {
-		kind, hint := StatusError, (*secrets.SignInHint)(nil)
+		kind := StatusError
 		// A requirement that only needs the person to sign in is a sign-in to
-		// do, not a failure: the dependent shows the same state (and the same
-		// hint) as the connection it waits on.
+		// do, not a failure: the dependent shows needs-credentials, but the
+		// sign-in is the requirement's, so it names it (BlockedBy) and carries
+		// no hint of its own (the banner and the revive pass skip it).
 		if d := h.conns[dep]; d != nil && d.status.Kind == StatusNeedsCredentials {
-			kind, hint = StatusNeedsCredentials, d.status.SignIn
+			kind = StatusNeedsCredentials
 		}
-		e.status.Kind, e.status.Message, e.status.LockedByPID, e.status.ServerChanged, e.status.Extension, e.status.SignIn = kind, msg, 0, nil, "", hint
+		e.status.Kind, e.status.Message, e.status.LockedByPID, e.status.ServerChanged, e.status.Extension, e.status.SignIn = kind, msg, 0, nil, "", nil
+		e.status.BlockedBy = dep
 		e.depBlocked = dep
 	}
 	h.mu.Unlock()

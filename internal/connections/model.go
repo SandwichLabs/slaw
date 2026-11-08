@@ -137,6 +137,29 @@ func (f Field) VisibleFor(fields []Field, opts map[string]string) bool {
 	return true
 }
 
+// NarrowedCredentialFields names the credential fields a definition signs in
+// with when its type narrows them by VisibleWhen (an iceberg_catalog: a token, or
+// a client id and secret); nil for a type whose credentials are always all of its
+// fields, and for a definition that signs in with none.
+func NarrowedCredentialFields(d Def) []string {
+	info, err := TypeInfoFor(d.Type)
+	if err != nil {
+		return nil
+	}
+	narrows := false
+	for _, f := range info.Credentials {
+		narrows = narrows || len(f.VisibleWhen) > 0
+	}
+	if !narrows {
+		return nil
+	}
+	var out []string
+	for _, f := range CredentialFieldsFor(d) {
+		out = append(out, f.Name)
+	}
+	return out
+}
+
 // CredentialFieldsFor is the credential fields this definition signs in with:
 // the type's list narrowed by each field's VisibleWhen (an iceberg_catalog
 // with auth bearer takes a token, with oauth2 a client id and secret, with

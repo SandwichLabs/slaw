@@ -177,6 +177,9 @@ func (w *workspace) AddConnection(scope Scope, def ConnectionDef) error {
 	if err := validateDefFor(scope, def); err != nil {
 		return err
 	}
+	if err := w.checkCatalogStorageAtSave(def); err != nil {
+		return err
+	}
 	return w.mutateDefs(scope, func(defs []ConnectionDef) ([]ConnectionDef, error) {
 		if indexOf(defs, def.Name) >= 0 {
 			return nil, fmt.Errorf("a %s connection named %q already exists", scopeWords(scope), def.Name)
@@ -187,6 +190,9 @@ func (w *workspace) AddConnection(scope Scope, def ConnectionDef) error {
 
 func (w *workspace) UpdateConnection(scope Scope, def ConnectionDef) error {
 	if err := validateDefFor(scope, def); err != nil {
+		return err
+	}
+	if err := w.checkCatalogStorageAtSave(def); err != nil {
 		return err
 	}
 	return w.mutateDefs(scope, func(defs []ConnectionDef) ([]ConnectionDef, error) {

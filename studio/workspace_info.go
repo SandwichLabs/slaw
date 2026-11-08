@@ -43,6 +43,9 @@ type ConnectionInfo struct {
 	// person must sign in with an AWS profile (kind, profile, missing|expired):
 	// the banner and the rail's Sign in button read it. No account or role.
 	SignInNeeded *secrets.SignInHint `json:"signInNeeded,omitempty"`
+	// BlockedBy names the connection this one waits on when that one is not
+	// ready (an s3_tables catalog and its storage connection): sign in there.
+	BlockedBy string `json:"blockedBy,omitempty"`
 }
 
 // WorkspaceCounts are the live counts shown on Home.
@@ -202,7 +205,7 @@ func (a *App) connectionInfosLocked() []ConnectionInfo {
 		ci := ConnectionInfo{
 			Name: st.Name, Type: st.Type, Scope: string(st.Scope), ReadOnly: st.EffectiveReadOnly,
 			Default: st.Default, Status: string(st.Status), Detail: st.Detail, LockedByPID: st.LockedByPID, Warning: st.Warning,
-			SignIn: st.SignIn, SignInNeeded: st.SignInHint, Remote: st.Remote, Catalogless: st.Catalogless, Extension: st.Extension,
+			SignIn: st.SignIn, SignInNeeded: st.SignInHint, BlockedBy: st.BlockedBy, Remote: st.Remote, Catalogless: st.Catalogless, Extension: st.Extension,
 		}
 		for _, sc := range st.Shadows {
 			ci.Shadows = append(ci.Shadows, string(sc))

@@ -96,3 +96,14 @@ describe('field visibility and connection pickers (iceberg_catalog form)', () =>
     expect(connectionChoices([], 's3')).toEqual([])
   })
 })
+
+describe('a connection that waits on another one', () => {
+  const cat = { name: 's3t', type: 'iceberg_catalog', scope: 'local', readOnly: true, default: false, remote: true, status: 'needs-credentials', blockedBy: 'aws_lake' } as const
+  it('names the connection to sign in to, in the rail note and its action', () => {
+    expect(detailLine({ ...cat })).toEqual({ text: 'Needs aws_lake: it needs credentials.', action: 'signin', actionLabel: 'Sign in' })
+  })
+  it('an error is still an error, and blockedBy alone changes nothing else', () => {
+    expect(detailLine({ ...cat, status: 'error', detail: 'boom' })!.action).toBe('fix')
+    expect(detailLine({ ...cat, blockedBy: undefined })!.text).toBe('Needs credentials.')
+  })
+})

@@ -95,3 +95,32 @@ func TestSyncReregistersAnS3TablesCatalogWhenItsStorageConnectionChanges(t *test
 	assert.Equal(t, []string{"aws_lake"}, app.connDeps["s3t"].Requires)
 	app.connSigMu.Unlock()
 }
+
+// A catalog waiting on its signed-out storage connection says so in the rail's
+// data (blockedBy) and carries no sign-in hint of its own, so the prompt and the
+// sign-in banner point at the storage connection.
+func TestConnectionInfoNamesTheStorageConnectionAHeldCatalogWaitsOn(t *testing.T) {
+	app, _ := connApp(t)
+	t.Setenv("L3_NOPE_KEY_ID", "")
+	t.Setenv("L3_NOPE_SECRET", "")
+	require.NoError(t, app.ws.AddConnection(workspace.ScopeLocal, workspace.ConnectionDef{Name: "aws_lake", Type: "s3", Scope: "s3://lake/", Region: "us-east-1"}))
+	require.NoError(t, app.ws.SetSignIn("aws_lake", "env:L3_NOPE"))
+	require.NoError(t, app.ws.AddConnection(workspace.ScopeLocal, workspace.ConnectionDef{Name: "s3t", Type: "iceberg_catalog", ReadOnly: workspace.Bool(true),
+		Options: map[string]string{"endpoint_type": "s3_tables", "warehouse": "arn:aws:s3tables:us-east-1:111122223333:bucket/sales", "storage": "aws_lake"}}))
+	app.syncConnections()
+	_, sess, _, err := app.snapshot()
+	require.NoError(t, err)
+	require.Error(t, sess.Connect(context.Background(), "s3t"))
+
+	app.mu.RLock()
+	infos := app.connectionInfosLocked()
+	app.mu.RUnlock()
+	by := map[string]ConnectionInfo{}
+	for _, ci := range infos {
+		by[ci.Name] = ci
+	}
+	assert.Equal(t, "needs-credentials", by["s3t"].Status)
+	assert.Equal(t, "aws_lake", by["s3t"].BlockedBy)
+	assert.Nil(t, by["s3t"].SignInNeeded)
+	assert.Empty(t, by["aws_lake"].BlockedBy)
+}

@@ -283,6 +283,19 @@ describe('ConnectionEditorView', () => {
     expect(sent.keyId).toBe('cid')
   })
 
+  it('an explicit default (auth: oauth2 in the saved file) shows as the Default option and is kept until another is chosen', async () => {
+    route.path = '/connections/cat'; route.params = { name: 'cat' }
+    const def = { name: 'cat', type: 'iceberg_catalog', read_only: true, options: { endpoint_type: 'rest', uri: 'https://c.example.com', warehouse: 'w', auth: 'oauth2' } }
+    const app = makeApp({ GetConnectionInScope: vi.fn(async () => detail({ name: 'cat', def, info: { name: 'cat', type: 'iceberg_catalog', scope: 'shared', readOnly: true, default: false, status: 'ok', remote: true } })) })
+    const w = mountView()
+    await flushPromises()
+    const sel = w.find('[data-testid="f-auth"]')
+    expect((sel.element as HTMLSelectElement).selectedOptions[0].text).toBe('Default (OAuth2)')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(app.SaveConnection.mock.calls.at(-1)![0].def.options.auth).toBe('oauth2')
+  })
+
   it('Azure opens Advanced on a new connection (its sign-in is prominent) and writes no default', async () => {
     makeApp()
     const w = mountView()

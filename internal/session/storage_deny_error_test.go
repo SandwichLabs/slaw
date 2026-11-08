@@ -55,7 +55,7 @@ type fakeStorageSess struct {
 func (f fakeStorageSess) ConnectionInfos() []ConnectionInfo { return f.infos }
 
 func TestExplainStorageDenyNamesASignedOutCoveringConnection(t *testing.T) {
-	raw := errors.New("HTTP GET to 'https://lake.deny.invalid/k'")
+	raw := errors.New("HTTP GET to 'https://lake.deny.invalid/raw/part-0.parquet'")
 	mapped := MapStorageDenyError(raw)
 	sess := fakeStorageSess{infos: []ConnectionInfo{
 		{Name: "other", Catalogless: true, Scope: "s3://other/", Kind: StatusNeedsCredentials},
@@ -65,6 +65,16 @@ func TestExplainStorageDenyNamesASignedOutCoveringConnection(t *testing.T) {
 	err := ExplainStorageDeny(mapped, sess, "")
 	assert.Equal(t, `data at s3://lake/ is covered by the "aws_lake" connection, but it needs credentials: fix that connection first`, err.Error())
 	assert.ErrorIs(t, err, raw)
+
+	// A connection that is only for the same bucket (its scope is another folder) is
+	// not claimed to cover the file.
+	elsewhere := MapStorageDenyError(errors.New("HTTP GET to 'https://lake.deny.invalid/other/part-0.parquet'"))
+	got := ExplainStorageDeny(elsewhere, sess, "").Error()
+	assert.Equal(t, `data at s3://lake/ is outside every storage connection's scope (the "aws_lake" connection is for this bucket, and it needs credentials): add a connection whose scope contains it`, got)
+	assert.NotContains(t, got, "covered by")
+	// Path style reads the same bucket and key.
+	pathStyle := MapStorageDenyError(errors.New("HTTP GET to 'https://deny.invalid/lake/raw/part-0.parquet'"))
+	assert.Contains(t, ExplainStorageDeny(pathStyle, sess, "").Error(), "is covered by the \"aws_lake\"")
 
 	// A ready connection is not the reason, and a bucket nobody covers says "add one".
 	sess.infos[2].Kind = StatusOK

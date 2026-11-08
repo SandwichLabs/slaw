@@ -16,7 +16,7 @@ const router = useRouter()
 const browser = useTableBrowser()
 const {
   isReadOnly, readOnlyReason, caps, catalogReadOnly, locked, lockText, tables, selectedKind, unavailable, selectedTable, tableInfo,
-  tableData, loading, dataLoading, currentPage, sortCol, sortDir, errorMessage, statusMessage, showConfirmDrop,
+  tableData, loading, dataLoading, currentPage, sortCol, sortDir, errorMessage, loadError, statusMessage, showConfirmDrop,
   pendingDropTable, formattedRows, activeFilter, filteredTotal, showFbF, fbfCombinator, fbfConditions, colType,
   loadData, clearFilter, filterBySelection, openFbF, addFbFCondition, applyFbF, saveFilterAsQuery, toggleSort,
   prevPage, nextPage, dropTable, confirmDropTable,
@@ -138,6 +138,7 @@ const vFocus = {
 
         <!-- Table -->
         <div v-if="dataLoading" class="p-4 sh-mono text-[var(--sh-graphite)]">Loading…</div>
+        <div v-else-if="loadError" class="note attn" role="alert" style="margin: 16px;" data-testid="table-load-error"><Icon name="alert" :size="16" /><span>{{ loadError }}</span></div>
         <div v-else-if="tableData" class="flex-1 overflow-auto">
           <table class="brutal-table">
             <thead class="sticky top-0">

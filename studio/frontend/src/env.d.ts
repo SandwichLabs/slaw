@@ -279,6 +279,9 @@ interface ConnectionInfo {
   // Set on needs-credentials that is because an AWS profile must sign in
   // (#131): the profile and why. No account, role or start URL.
   signInNeeded?: SignInHint
+  // Set on needs-credentials of a connection that waits on another one (an s3_tables
+  // catalog and its storage connection): the sign-in to do is that connection's.
+  blockedBy?: string
 }
 // What the window may know about an AWS sign-in: the profile and the reason.
 interface SignInHint { kind: string; subject: string; reason: string }
