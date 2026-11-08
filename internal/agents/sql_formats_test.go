@@ -155,10 +155,10 @@ func TestPolicy_TableFormatReadersCountAsReaders(t *testing.T) {
 	for _, n := range []string{"ICEBERG_SCAN", "ICEBERG_METADATA", "ICEBERG_SNAPSHOTS", "DELTA_SCAN"} {
 		assert.True(t, readerPlanOps[n], n)
 		assert.True(t, readerFuncs[strings.ToLower(n)], n)
-		var readers int
+		var readers readerCount
 		r := planNode{Name: n + " ", ExtraInfo: map[string]any{"Function": n}}
 		assert.Empty(t, checkPlanNode(&r, &readers), n)
-		plain, scans := splitReaders(readers)
+		plain, scans := readers.plain, readers.catalog
 		if n == "ICEBERG_SCAN" {
 			assert.Equal(t, []int{0, 1}, []int{plain, scans}, "an iceberg scan has a budget of its own")
 		} else {
@@ -243,10 +243,10 @@ func TestPolicy_PlanRegexRefusesMySQLPassthroughs(t *testing.T) {
 func TestPolicy_MySQLPlanOperators(t *testing.T) {
 	// The operator names a MySQL catalog's plan carries (from DuckDB 1.4.1's
 	// mysql extension, checked against a real server in the integration test).
-	var readers int
+	var readers readerCount
 	scan := planNode{Name: "MYSQL_SCAN ", ExtraInfo: map[string]any{"Table": "people"}}
 	assert.Empty(t, checkPlanNode(&scan, &readers), "a scan of a MySQL table is a catalog scan")
-	assert.Equal(t, 0, readers)
+	assert.Equal(t, readerCount{}, readers)
 	for _, n := range []string{"MYSQL_INSERT", "MYSQL_CREATE_TABLE_AS", "MYSQL_UPDATE", "MYSQL_DELETE"} {
 		assert.True(t, isRemoteWriteOp(n) || allowedPlanOperators[n], n)
 	}
@@ -434,7 +434,7 @@ func TestPolicy_MotherDuckLocationSuffix(t *testing.T) {
 	assert.Equal(t, "HASH_GROUP_BY", planOpName("HASH_GROUP_BY"))
 	assert.Equal(t, "X(L)", planOpName("X(L)"), "only a separated marker is a location")
 
-	var readers int
+	var readers readerCount
 	plan := planNode{Name: "UNGROUPED_AGGREGATE (L)", Children: []planNode{
 		{Name: "DOWNLOAD_SOURCE (L)", Children: []planNode{
 			{Name: "DOWNLOAD_SINK (R)", Children: []planNode{
@@ -446,11 +446,11 @@ func TestPolicy_MotherDuckLocationSuffix(t *testing.T) {
 		plan.Children = append(plan.Children, planNode{Name: n})
 	}
 	assert.Empty(t, checkPlanNode(&plan, &readers), "a MotherDuck read is allowed")
-	assert.Equal(t, 0, readers)
+	assert.Equal(t, readerCount{}, readers)
 
 	r := planNode{Name: "READ_CSV (R)", ExtraInfo: map[string]any{"Function": "READ_CSV"}}
 	assert.Empty(t, checkPlanNode(&r, &readers))
-	assert.Equal(t, 1, readers, "a suffixed reader still counts, so it must be vetted")
+	assert.Equal(t, readerCount{plain: 1}, readers, "a suffixed reader still counts, so it must be vetted")
 
 	unknown := planNode{Name: "MD_SOMETHING_NEW (R)"}
 	reason := checkPlanNode(&unknown, &readers)
