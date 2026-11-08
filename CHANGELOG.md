@@ -4,6 +4,10 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- **`run_query` takes an optional `connection`** (#352): the catalog unqualified names resolve against, so the agent can call `metric()` on a saved query pinned to a non-default connection (an `iceberg_catalog`, for one). The same tier, read-only, writable-connection and approval gates apply; an unknown name is refused.
+
 ### Changed
 
 - **MCP clients see the tools they can use (#221).**

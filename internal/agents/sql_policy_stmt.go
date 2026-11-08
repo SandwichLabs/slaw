@@ -452,9 +452,9 @@ func cteNamesFromTokens(toks []lexTok) map[string]bool {
 // are applied here; otherwise (DML, DDL, COPY, view and macro bodies) it also
 // checks table functions against the allow-list and every table reference.
 // It returns how many readers were vetted.
-func (a *analyzer) screenTokens(toks []lexTok, astMode bool, depth int) (readers int, reason string) {
+func (a *analyzer) screenTokens(toks []lexTok, astMode bool, depth int) (readers readerCount, reason string) {
 	if depth > 4 {
-		return 0, "views and macros nest too deeply to verify"
+		return readerCount{}, "views and macros nest too deeply to verify"
 	}
 	var cte map[string]bool
 	for i, t := range toks {
@@ -465,33 +465,33 @@ func (a *analyzer) screenTokens(toks []lexTok, astMode bool, depth int) (readers
 					// A single literal argument is checked recursively.
 					n, rr := a.literalQuery(name, toks, i, depth)
 					if rr != "" {
-						return 0, rr
+						return readerCount{}, rr
 					}
 					if !astMode {
-						readers += n
+						readers = readers.add(n)
 					}
 					continue
 				}
-				return 0, fmt.Sprintf("%s() is not allowed: %s", name, r)
+				return readerCount{}, fmt.Sprintf("%s() is not allowed: %s", name, r)
 			}
 			switch {
 			case readerFuncs[name]:
 				if r := a.vetReaderTokens(name, toks, i+1); r != "" {
-					return 0, r
+					return readerCount{}, r
 				}
 				if !astMode {
-					readers++
+					readers.plain++
 				}
 			case !astMode:
 				fi := a.functions()
 				if def, isMacro := fi.macros[name]; isMacro {
 					n, r := a.defScreen(def, depth+1)
 					if r != "" {
-						return 0, r
+						return readerCount{}, r
 					}
-					readers += n
+					readers = readers.add(n)
 				} else if fi.table[name] && !allowedTableFunctions[name] {
-					return 0, fmt.Sprintf("table function %s() is not on the agent's allow-list", name)
+					return readerCount{}, fmt.Sprintf("table function %s() is not on the agent's allow-list", name)
 				}
 			}
 		}
@@ -512,9 +512,9 @@ func (a *analyzer) screenTokens(toks []lexTok, astMode bool, depth int) (readers
 			st := &walkState{cte: cte}
 			a.checkRef(parts, st)
 			if st.reason != "" {
-				return 0, st.reason
+				return readerCount{}, st.reason
 			}
-			readers += st.readers
+			readers = readers.add(st.readers)
 		}
 	}
 	return readers, ""
@@ -522,38 +522,38 @@ func (a *analyzer) screenTokens(toks []lexTok, astMode bool, depth int) (readers
 
 // literalQuery vets query('<sql>') / query_table('<name>') with one plain
 // literal argument by checking the SQL it carries as a read of its own.
-func (a *analyzer) literalQuery(name string, toks []lexTok, i, depth int) (int, string) {
+func (a *analyzer) literalQuery(name string, toks []lexTok, i, depth int) (readerCount, string) {
 	if i+3 >= len(toks) || toks[i+2].Kind != lkString || !toks[i+2].Plain || !toks[i+3].IsParen(")") {
-		return 0, fmt.Sprintf("%s() is not allowed unless its argument is one plain string literal", name)
+		return readerCount{}, fmt.Sprintf("%s() is not allowed unless its argument is one plain string literal", name)
 	}
 	inner := toks[i+2].Text
 	if name == "query_table" {
 		parts, next, ok := parseNameFromString(inner)
 		if !ok || next != len(inner) {
-			return 0, "query_table() needs one plain table name"
+			return readerCount{}, "query_table() needs one plain table name"
 		}
 		st := &walkState{cte: map[string]bool{}}
 		a.checkRef(parts, st)
 		return st.readers, st.reason
 	}
 	if depth >= 2 {
-		return 0, "query() nests too deeply to verify"
+		return readerCount{}, "query() nests too deeply to verify"
 	}
 	sub := *a
 	sub.src = inner
 	stmts := lexStatements(inner)
 	if len(stmts) != 1 {
-		return 0, "query() needs exactly one statement"
+		return readerCount{}, "query() needs exactly one statement"
 	}
 	if n, err := countStatements(inner); err != nil || n != 1 {
-		return 0, "query() needs exactly one statement"
+		return readerCount{}, "query() needs exactly one statement"
 	}
 	v := sub.statement(stmts[0], nil, depth+1)
 	if v.Class != sqlClassRead {
 		if v.Reason != "" {
-			return 0, v.Reason
+			return readerCount{}, v.Reason
 		}
-		return 0, "query() may only run a read statement"
+		return readerCount{}, "query() may only run a read statement"
 	}
 	a.vetted[inner] = true
 	return v.readers, ""
@@ -747,22 +747,22 @@ func tableRefAt(toks []lexTok, i int) (parts []string, next int, ok bool) {
 }
 
 // defScreen applies the token screen to a stored view or macro definition.
-func (a *analyzer) defScreen(def string, depth int) (int, string) {
+func (a *analyzer) defScreen(def string, depth int) (readerCount, string) {
 	if depth > 4 {
-		return 0, "views and macros nest too deeply to verify"
+		return readerCount{}, "views and macros nest too deeply to verify"
 	}
 	a.catalog()
 	a.functions()
 	a.databases()
 	sub := *a
 	sub.src = def
-	total := 0
+	var total readerCount
 	for _, toks := range lexStatements(def) {
 		n, r := sub.screenTokens(toks, false, depth)
 		if r != "" {
-			return 0, r
+			return readerCount{}, r
 		}
-		total += n
+		total = total.add(n)
 	}
 	return total, ""
 }
