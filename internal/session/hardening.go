@@ -9,6 +9,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 
 	duckdb "github.com/duckdb/duckdb-go/v2"
@@ -99,6 +102,14 @@ func expectedSettings(c *config) []hardeningCheck {
 	if c.secretDir != "" {
 		checks = append(checks, hardeningCheck{"secret_directory", c.secretDir})
 	}
+	if !c.lazyStorage {
+		// httpfs is loaded, so its limits exist and read back (a lazy session
+		// reads them back where httpfs loads, see setHTTPLimits).
+		l := c.httpLimits()
+		checks = append(checks,
+			hardeningCheck{httpTimeoutSetting, strconv.Itoa(l.timeout)},
+			hardeningCheck{httpRetriesSetting, strconv.Itoa(l.retries)})
+	}
 	return checks
 }
 
@@ -106,7 +117,7 @@ func expectedSettings(c *config) []hardeningCheck {
 // storage setting when httpfs was not loaded at open (see storage_deny.go).
 func allowedConfigs(c *config) string {
 	if c.lazyStorage {
-		return "[" + urlParamSetting + "]"
+		return "[" + strings.Join(lazyAllowedConfigs(), ", ") + "]"
 	}
 	return "[]"
 }
@@ -164,6 +175,9 @@ func settingMatches(option, want, got string) bool {
 	switch option {
 	case "temp_directory", "extension_directory", "secret_directory":
 		return filepath.Clean(got) == filepath.Clean(want)
+	case "allowed_configs":
+		// DuckDB keeps the list as a set: the order it reads back is not ours.
+		return sameSet(got, want)
 	}
 	return strings.EqualFold(got, want)
 }
@@ -176,4 +190,20 @@ func settingMatches(option, want, got string) bool {
 func isNoTransaction(err error) bool {
 	var de *duckdb.Error
 	return errors.As(err, &de) && de.Type == duckdb.ErrorTypeTransaction
+}
+
+// sameSet compares two "[a, b]" lists ignoring order and case.
+func sameSet(a, b string) bool {
+	norm := func(s string) []string {
+		s = strings.Trim(strings.TrimSpace(s), "[]")
+		var out []string
+		for _, p := range strings.Split(s, ",") {
+			if p = strings.ToLower(strings.TrimSpace(p)); p != "" {
+				out = append(out, p)
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+	return slices.Equal(norm(a), norm(b))
 }

@@ -4,9 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 )
+
+func quoteList(items []string) string {
+	q := make([]string, len(items))
+	for i, it := range items {
+		q[i] = QuoteLiteral(it)
+	}
+	return strings.Join(q, ", ")
+}
 
 // Why this exists (#135). When httpfs loads, DuckDB copies the host's AWS_*
 // environment (key id, secret, session token, region) into its s3_* settings,
@@ -56,6 +65,35 @@ import (
 // change it.
 const urlParamSetting = "s3_url_compatibility_mode"
 
+// Why the HTTP limits are set here (lakehouse S0 item 11). A context cancel does
+// not interrupt a hung REST catalog or object-store request during a bind or a
+// scan; only httpfs's own http_timeout (seconds) bounds it, and http_retries
+// multiplies it (DuckDB 1.5.6: http_timeout = 2 failed after about 9.5 s with the
+// default retries). Both belong to httpfs, so like the URL setting they exist
+// only once it is loaded, are let through the lock when it is not loaded yet
+// (allowed_configs), and are set and read back where httpfs is loaded.
+const (
+	httpTimeoutSetting = "http_timeout"
+	httpRetriesSetting = "http_retries"
+
+	// DefaultHTTPTimeoutSeconds is the per-request bound, in seconds.
+	DefaultHTTPTimeoutSeconds = 30
+	// DefaultHTTPRetries is how often a failed request is repeated.
+	DefaultHTTPRetries = 1
+)
+
+// httpLimits are the two values a session sets.
+type httpLimits struct{ timeout, retries int }
+
+func defaultHTTPLimits() httpLimits {
+	return httpLimits{timeout: DefaultHTTPTimeoutSeconds, retries: DefaultHTTPRetries}
+}
+
+// lazyAllowedConfigs is the list lock_configuration lets through before httpfs loads.
+func lazyAllowedConfigs() []string {
+	return []string{urlParamSetting, httpTimeoutSetting, httpRetriesSetting}
+}
+
 // denyEndpoint never resolves.
 const denyEndpoint = "deny.invalid"
 
@@ -97,12 +135,12 @@ var denyMu sync.Mutex
 // session being protected, because settings and secrets belong to the DuckDB
 // instance.
 func DenyUncoveredStorage(ctx context.Context, q storageQuerier) error {
-	return protectStorage(ctx, q, true)
+	return protectStorage(ctx, q, true, defaultHTTPLimits())
 }
 
 // protectStorage is DenyUncoveredStorage; sealParams false leaves URL
 // parameters and globs on, for the private listing session only.
-func protectStorage(ctx context.Context, q storageQuerier, sealParams bool) error {
+func protectStorage(ctx context.Context, q storageQuerier, sealParams bool, lim httpLimits) error {
 	denyMu.Lock()
 	defer denyMu.Unlock()
 	_, loaded, err := extensionState(ctx, q, "httpfs")
@@ -117,9 +155,46 @@ func protectStorage(ctx context.Context, q storageQuerier, sealParams bool) erro
 			return err
 		}
 	}
+	if err := setHTTPLimits(ctx, q, lim); err != nil {
+		return err
+	}
 	for _, stmt := range denyStatements() {
 		if _, err := q.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("failed to protect storage reads from host credentials: %w", err)
+		}
+	}
+	return nil
+}
+
+// setHTTPLimits sets http_timeout and http_retries and reads them back; a
+// session that cannot prove them fails closed (a hung endpoint would hang it).
+// Every check sets both GLOBAL and SESSION unconditionally: a value another
+// pooled connection or a lazy session's SQL changed is put back, and a
+// connection's own override cannot shadow the global one. A locked session that
+// never let the settings through refuses the SET, and then they cannot have
+// changed: the read-back decides. The read-back is this connection's value (it
+// shows the session scope), so the global value is proven by its SET not failing.
+func setHTTPLimits(ctx context.Context, q storageQuerier, lim httpLimits) error {
+	for _, st := range []struct {
+		name string
+		want int
+	}{{httpTimeoutSetting, lim.timeout}, {httpRetriesSetting, lim.retries}} {
+		want := strconv.Itoa(st.want)
+		var setErr error
+		for _, scope := range []string{"GLOBAL ", "SESSION "} {
+			if _, err := q.ExecContext(ctx, "SET "+scope+st.name+" = "+want); err != nil && setErr == nil {
+				setErr = err
+			}
+		}
+		var got string
+		if err := q.QueryRowContext(ctx, "SELECT CAST(current_setting("+QuoteLiteral(st.name)+") AS VARCHAR)").Scan(&got); err != nil {
+			return fmt.Errorf("failed to read back %s: %w", st.name, err)
+		}
+		if got != want {
+			if setErr != nil {
+				return fmt.Errorf("%s did not take (%q, want %q); refusing to read object storage: %w", st.name, got, want, setErr)
+			}
+			return fmt.Errorf("%s did not take (%q, want %q); refusing to read object storage", st.name, got, want)
 		}
 	}
 	return nil
@@ -186,11 +261,11 @@ func prepareStorage(ctx context.Context, conn *sql.Conn, c *config) error {
 		return fmt.Errorf("failed to inspect extensions: %w", err)
 	}
 	if !loaded {
-		if _, err := conn.ExecContext(ctx, "SET allowed_configs = ["+QuoteLiteral(urlParamSetting)+"]"); err != nil {
+		if _, err := conn.ExecContext(ctx, "SET allowed_configs = ["+quoteList(lazyAllowedConfigs())+"]"); err != nil {
 			return fmt.Errorf("hardening: failed to allow the storage URL setting: %w", err)
 		}
 		c.lazyStorage = true
 		return nil
 	}
-	return protectStorage(ctx, conn, !c.listing)
+	return protectStorage(ctx, conn, !c.listing, c.httpLimits())
 }
