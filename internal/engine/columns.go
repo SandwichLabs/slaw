@@ -104,6 +104,14 @@ func TableColumns(db RowQuerier, ref session.TableRef) ([]ColumnInfo, error) {
 	return cols, nil
 }
 
+// PrimaryKeyColumns returns the names of the columns in the table's PRIMARY KEY,
+// read from duckdb_constraints(). A catalog DuckDB cannot read constraints from
+// (an attached Postgres or MySQL database, say) reports none, so an empty set
+// means "no key DuckDB can see", not necessarily "no key".
+func PrimaryKeyColumns(db RowQuerier, ref session.TableRef) (map[string]bool, error) {
+	return constraintColumns(db, ref, "PRIMARY KEY")
+}
+
 // constraintColumns returns the set of column names participating in any
 // constraint of the given type on the table, using DuckDB's duckdb_constraints()
 // table function.

@@ -233,14 +233,30 @@ See "Copy Claude config" above: no passphrase and no token are needed. The older
 ## Tool list
 
 `slaw mcp serve` (owner or proxy) and Studio's SSE server all advertise exactly
-`agents.ListToolsForMode(agents.ModeMCP)`, which is every tool that is not task-mode only. Call `tools/list` for the live set. By category (the sandbox tier that allows each is in [agent-policy.md](agent-policy.md#what-each-tier-allows)):
+`agents.ListToolsForMode(agents.ModeMCP)`, which is every tool that is not task-mode only or chat-only, **shaped by the session's tier**: `tools/list` leaves out the tools the tier can never run (`agents.TierAllows`: read-only lists no data-write, content or schema tool; read-write no schema tool; `run_query` is listed at every tier, since its SQL is classified per statement). The tier is read on every `tools/list`, so Studio's list follows a changed setting, and Studio sends `notifications/tools/list_changed` when the settings are saved (the server advertises `listChanged`). Headless `slaw mcp serve` reads its policy once when it starts, so its list is fixed for the session (restart it after changing the tier); a `slaw.yaml` edited outside Studio does not reach a running Studio list until the settings are saved there. Calls are gated exactly as before whatever the list shows: a client that calls an unlisted tool gets the tier refusal with how to raise the tier, not "unknown tool". Call `tools/list` for the live set. By category (the sandbox tier that allows each is in [agent-policy.md](agent-policy.md#what-each-tier-allows)):
 
 | Category | Tools |
 |---|---|
-| introspect (every tier) | `list_connections`, `introspect_schema`, `describe_table`, `list_notebooks`, `get_notebook`, `list_queries`, `run_saved_query`, `list_skills`, `read_skill`, `list_artifacts`, `get_artifact`, `list_definitions`, `get_definition`, `list_watches`, `get_watch`, `help_search`, `propose_schema`, `present_data`, `preview_query` |
+| introspect (every tier) | `list_connections`, `introspect_schema`, `describe_table`, `list_notebooks`, `get_notebook`, `list_queries`, `run_saved_query`, `list_skills`, `read_skill`, `list_artifacts`, `get_artifact`, `list_definitions`, `get_definition`, `list_watches`, `get_watch`, `help_search`, `propose_schema`, `preview_query` |
 | data | `run_query`, `create_record`, `update_record`, `delete_record`, `bulk_insert` |
 | content | `add_query_cell`, `add_markdown_cell`, `update_cell`, `delete_cell`, `move_cell`, `create_dashboard`, `create_or_update_skill`, `write_artifact`, `save_query`, `build_query`, `propose_definition`, `write_watch` |
 | schema (`full` only) | `create_table`, `add_column`, `drop_table`, `import_csv` |
+
+**The two surfaces differ in three places, none of them in gating.** `present_data` is
+chat-only (`ToolDef.Modes: ["chat"]`): it renders a page inline in Studio's chat, so over MCP
+nothing would display it; it is not listed and a call is refused as an unknown tool. The notebook
+cell tools (`add_query_cell`, `add_markdown_cell`, `create_dashboard`) carry an MCP wording
+(`ToolDef.MCPDescription`, `ParamDef.MCPDesc`): "omit `notebook_id` to create a new notebook",
+since there is no notebook "open in Studio" for a headless client (a Studio-hosted server still
+appends to the notebook its user has open). And `tools/list` follows the tier, above. A tool's
+gate (tier, writable connection, approval) is the same on both.
+
+`list_connections` hides DuckDB's own `memory`, `system` and `temp` catalogs (unless one is the
+default). `describe_table` returns an error naming a table that does not exist (and pointing at
+`introspect_schema`), reports `pk` from DuckDB's `duckdb_constraints()` (a catalog that exposes no
+constraints, such as an attached Postgres or MySQL database, reports `false`: unknown, not
+"no key"), and answers a file path or URL with the way to describe a file:
+`run_query` with `DESCRIBE SELECT * FROM read_csv('<path>')`, under the usual file policy.
 
 Task-mode-only tools (`write_cell`, `need_more_info`) are
 never listed or dispatchable over MCP — those exist purely for the in-app

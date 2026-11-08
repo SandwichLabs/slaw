@@ -38,6 +38,7 @@ func (a *App) SetWorkspaceSettings(s WorkspaceSettings) (*WorkspaceInfo, error) 
 	a.recents.Record(a.ws.Root(), a.ws.ID(), a.ws.Name())
 	policy := a.agentPolicy()
 	a.emitEvent("agent:config", map[string]any{"sandbox": string(policy.Mode), "askBeforeWrites": policy.AskBeforeWrites})
+	a.wmcp.NotifyToolsChanged() // an MCP client lists again: the tier shapes tools/list
 	a.emitEvent("workspace:changed", map[string]any{"kind": "settings"})
 	return a.infoLocked(), nil
 }

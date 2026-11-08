@@ -69,7 +69,7 @@ func TestToolRegistration(t *testing.T) {
 	for _, td := range allTools {
 		mcpTool := toolDefToMCPTool(td)
 		assert.Equal(t, td.Name, mcpTool.Name)
-		assert.Equal(t, td.Description, mcpTool.Description)
+		assert.Equal(t, agents.ForMCP(td).Description, mcpTool.Description)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestStartAndStop(t *testing.T) {
 func TestToolSchemas_MatchRunner(t *testing.T) {
 	for _, td := range agents.ListTools() {
 		mcpTool := toolDefToMCPTool(td)
-		info := llm.ToolInfo(td)
+		info := llm.ToolInfo(agents.ForMCP(td)) // same schema builder; only the Studio-only wording differs
 
 		assert.Equal(t, td.Name, info.Name)
 		assert.Equal(t, mcpTool.Description, info.Description, "tool %s: description diverged", td.Name)

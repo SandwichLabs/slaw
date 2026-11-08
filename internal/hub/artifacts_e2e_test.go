@@ -332,7 +332,13 @@ func TestArtifactsEndToEnd_OverMCPInEveryTier(t *testing.T) {
 				m, _ := tl.(map[string]any)
 				names = append(names, toString(m["name"]))
 			}
-			assert.Contains(t, names, `"write_artifact"`)
+			// tools/list follows the tier (#221); the call below is still gated, so
+			// a client that tries the unlisted tool anyway gets the tier refusal.
+			if writable {
+				assert.Contains(t, names, `"write_artifact"`)
+			} else {
+				assert.NotContains(t, names, `"write_artifact"`)
+			}
 			assert.Contains(t, names, `"get_artifact"`)
 			for _, n := range names {
 				assert.NotContains(t, n, "run_artifact", "MCP has no way to run an artifact query")

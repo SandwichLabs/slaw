@@ -37,6 +37,14 @@ func mcpServerOptions(ws workspace.Workspace, sess session.Session, h *agents.Ha
 	if h == nil {
 		return opts
 	}
+	// tools/list follows the tier the session is at now: Studio re-reads the
+	// saved settings first, as it does for the instructions.
+	opts = append(opts, slawmcp.WithTier(func(ctx context.Context) agents.SandboxMode {
+		if refresh != nil {
+			refresh()
+		}
+		return h.Policy(ctx).Mode
+	}))
 	return append(opts, slawmcp.WithInstructions(func(ctx context.Context) string {
 		if refresh != nil {
 			// Studio re-reads the saved settings into the handler here, so a
@@ -82,7 +90,7 @@ func instructionsText(in instructionsInput) string {
 	fmt.Fprintf(&b, "Files: file readers only read inside %s (use absolute paths; relative paths are refused).\n",
 		filepath.Join(in.Root, "data")+string(filepath.Separator))
 	fmt.Fprintf(&b, "Connections (a name is the catalog in SQL): %s.\n", connectionList(in.Connections))
-	b.WriteString("Start with help_search \"\" for an index of every topic, and read_skill duckdb-sql and data-artifacts before writing SQL or artifacts, and a2ui before present_data, create_dashboard or an artifact view; read_skill semantic-layer before working on semantics/.\n")
+	b.WriteString("Start with help_search \"\" for an index of every topic, and read_skill duckdb-sql and data-artifacts before writing SQL or artifacts, and a2ui before create_dashboard or an artifact view; read_skill semantic-layer before working on semantics/.\n")
 	b.WriteString("Settings can change while you are connected; this text is from connect time.")
 	return b.String()
 }

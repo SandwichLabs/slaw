@@ -2,10 +2,12 @@ package agents
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/session"
 )
 
@@ -53,6 +55,10 @@ func (h *Handler) handleDescribeTable(ctx context.Context, req *Request) *Respon
 	if errResp != nil {
 		return errResp
 	}
+	if isPathOrURL(table) {
+		return NewErrorResponse(req.ID, ErrInvalidParams, fmt.Sprintf(
+			"describe_table takes a table (name or catalog.schema.table), not a file path or URL (%q). To see a file's columns use run_query with DESCRIBE SELECT * FROM read_csv('<path>') (read_parquet or read_json for those formats); the file policy applies, so the path must be inside the workspace data/ folder or a storage connection's scope.", table))
+	}
 
 	// table may be qualified (catalog.schema.table); an unqualified name
 	// resolves against the default catalog. A connection it names connects on
@@ -60,23 +66,79 @@ func (h *Handler) handleDescribeTable(ctx context.Context, req *Request) *Respon
 	connectErr := h.connectReferenced(ctx, "", table)
 	desc, err := sess.DescribeTable(ctx, table)
 	if err != nil {
-		// A missing table is a success with an empty column list.
+		// A missing table is an error that names it: an empty column list reads
+		// as "a table with no columns" to an agent.
 		if errors.Is(err, session.ErrNoSuchTable) && connectErr == nil {
-			return NewResponse(req.ID, map[string]any{"table": table, "columns": []map[string]any{}})
+			return NewErrorResponse(req.ID, ErrInvalidParams, fmt.Sprintf(
+				"table %q does not exist (or has no columns). Call introspect_schema (with connection for a table in another connection) for the table names, and qualify the name as catalog.schema.table.", table))
 		}
 		return NewErrorResponse(req.ID, ErrInternal, fmt.Sprintf("failed to describe table: %v", withConnectError(err, connectErr)))
 	}
 
+	pk := h.primaryKeyColumns(ctx, sess, desc.Ref)
 	columns := make([]map[string]any, 0, len(desc.Columns))
 	for _, c := range desc.Columns {
 		columns = append(columns, map[string]any{
 			"name":     c.Name,
 			"type":     c.DataType,
 			"not_null": c.NotNull,
-			"pk":       false,
+			"pk":       pk[c.Name],
 		})
 	}
 	return NewResponse(req.ID, map[string]any{"table": table, "columns": columns})
+}
+
+// primaryKeyColumns is the set of ref's primary-key columns as DuckDB's catalog
+// reports them. A catalog that exposes no constraints (an attached Postgres or
+// MySQL database) or a failed read gives an empty set: pk is then false, as
+// "unknown", never a guess.
+func (h *Handler) primaryKeyColumns(ctx context.Context, sess session.Session, ref session.TableRef) map[string]bool {
+	db := h.access.DuckDBDB()
+	if db == nil {
+		return nil
+	}
+	// An Iceberg catalog's tables resolve lazily and hold no constraints DuckDB
+	// can read: skip the lookup, as engine.TableColumns does.
+	for _, c := range sess.ConnectionInfos() {
+		if strings.EqualFold(c.Name, ref.Catalog) && c.Type == "iceberg_catalog" {
+			return nil
+		}
+	}
+	pk, err := engine.PrimaryKeyColumns(ctxQuerier{ctx, db}, ref)
+	if err != nil {
+		h.logger.Warn("describe_table: could not read primary keys", "table", ref.String(), "error", engine.ErrorForLog(err))
+		return nil
+	}
+	return pk
+}
+
+// ctxQuerier makes a *sql.DB's reads honour ctx for engine.PrimaryKeyColumns.
+type ctxQuerier struct {
+	ctx context.Context //nolint:containedctx // a one-call adapter
+	db  *sql.DB
+}
+
+func (q ctxQuerier) Query(query string, args ...any) (*sql.Rows, error) {
+	return q.db.QueryContext(q.ctx, query, args...)
+}
+
+// isPathOrURL reports whether a describe_table argument is a path or URL
+// rather than a table reference.
+func isPathOrURL(table string) bool {
+	if strings.Contains(table, `"`) {
+		return false // a quoted name may hold a slash; DescribeTable resolves it
+	}
+	return strings.ContainsAny(table, `/\`) || strings.Contains(table, "://") || strings.HasPrefix(table, "~")
+}
+
+// builtinCatalogName is DuckDB's own scratch and system catalogs, which the
+// hub keeps beside the workspace's connections: not places data lives.
+func builtinCatalogName(name string) bool {
+	switch strings.ToLower(name) {
+	case "memory", "system", "temp":
+		return true
+	}
+	return false
 }
 
 func (h *Handler) handleHelpSearch(_ context.Context, req *Request) *Response {
