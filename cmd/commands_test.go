@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/SandwichLabs/slaw/internal/secrets"
 	"io"
 	"os"
 	"os/exec"
@@ -77,6 +78,7 @@ func executeCommand(args ...string) (string, error) {
 func newWS(t *testing.T, extra ...string) string {
 	t.Helper()
 	t.Setenv("SLAW_CONFIG_DIR", t.TempDir())
+	useMemoryKeychain(t)
 	root := filepath.Join(t.TempDir(), "acme")
 	args := append([]string{"workspace", "init", root}, extra...)
 	_, _, err := runSlaw(args...)
@@ -1044,4 +1046,14 @@ func TestRootHelp_ListsSlawRepl(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, help, "--connection")
 	assert.Contains(t, help, "Console tab")
+}
+
+// useMemoryKeychain points the CLI's credential store at process memory for
+// the test, so no test ever writes the person's (or CI's) OS keychain.
+func useMemoryKeychain(t *testing.T) {
+	t.Helper()
+	m := secrets.NewMemoryStore()
+	old := newCLIKeychain
+	newCLIKeychain = func() secrets.Store { return m }
+	t.Cleanup(func() { newCLIKeychain = old })
 }
