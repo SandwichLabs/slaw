@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -47,9 +48,10 @@ func TestHTTPLimitsAreSetWhenHTTPFSLoadsAfterTheLock(t *testing.T) {
 	assert.True(t, LazyStorage(s))
 }
 
-// In a lazy session the lock lets the settings through, so a re-check
-// (DenyUncoveredStorage, run after every extension load) puts them back: 0
-// (no timeout at all) and a raised value are not "within the bound".
+// In a lazy session the lock lets the settings through, so every check
+// (DenyUncoveredStorage, run after each extension load) sets both scopes back
+// to the configured limits, whatever they were changed to and wherever: a raised
+// value, 0 (no timeout at all), a connection's own override, tighter values too.
 func TestHTTPLimitsAreResetByTheNextCheck(t *testing.T) {
 	src := hostExtensionDir(t)
 	dst := t.TempDir()
@@ -61,27 +63,42 @@ func TestHTTPLimitsAreResetByTheNextCheck(t *testing.T) {
 	require.NoError(t, EnsureExtension(ctx, s.DB(), "httpfs", "test"))
 	timeout, retries := strconv.Itoa(DefaultHTTPTimeoutSeconds), strconv.Itoa(DefaultHTTPRetries)
 
-	for _, c := range []struct{ scope, setting, value, want string }{
-		{"GLOBAL", "http_timeout", "0", timeout},
-		{"SESSION", "http_timeout", "0", timeout},
-		{"GLOBAL", "http_timeout", "600", timeout},
-		{"GLOBAL", "http_retries", "9", retries},
-		{"SESSION", "http_retries", "9", retries},
-	} {
-		_, err := s.DB().Exec("SET " + c.scope + " " + c.setting + " = " + c.value)
-		require.NoError(t, err, "the lazy session lets it through the lock")
-		require.NoError(t, DenyUncoveredStorage(ctx, s.DB()))
-		assert.Equal(t, c.want, readSetting(t, s, c.setting), c.scope+" "+c.setting+"="+c.value)
+	a, err := s.DB().Conn(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = a.Close() })
+	b, err := s.DB().Conn(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = b.Close() })
+	read := func(c *sql.Conn, name string) string {
+		var v string
+		require.NoError(t, c.QueryRowContext(ctx, "SELECT CAST(current_setting("+QuoteLiteral(name)+") AS VARCHAR)").Scan(&v))
+		return v
+	}
+	exec := func(c *sql.Conn, q string) {
+		_, err := c.ExecContext(ctx, q)
+		require.NoError(t, err, q+": the lazy session lets it through the lock")
 	}
 
-	// Tighter values, and 0 retries (no retry), are kept.
-	_, err = s.DB().Exec("SET SESSION http_timeout = 5")
-	require.NoError(t, err)
-	_, err = s.DB().Exec("SET SESSION http_retries = 0")
-	require.NoError(t, err)
+	// The first check pins connection a's own values.
+	require.NoError(t, protectStorage(ctx, a, true, defaultHTTPLimits()))
+	assert.Equal(t, timeout, read(a, "http_timeout"))
+
+	for _, st := range []string{
+		"SET GLOBAL http_timeout = 600", "SET GLOBAL http_timeout = 0", "SET GLOBAL http_retries = 9",
+		"SET SESSION http_timeout = 0", "SET SESSION http_retries = 9",
+		"SET GLOBAL http_timeout = 5", "SET GLOBAL http_retries = 0", // tighter is not kept either
+	} {
+		exec(a, st)
+		require.NoError(t, protectStorage(ctx, a, true, defaultHTTPLimits()))
+		assert.Equal(t, timeout, read(a, "http_timeout"), st)
+		assert.Equal(t, retries, read(a, "http_retries"), st)
+		assert.Equal(t, timeout, read(b, "http_timeout"), st+": a second pooled connection reads the global value")
+		assert.Equal(t, retries, read(b, "http_retries"), st+": a second pooled connection reads the global value")
+	}
+	// The path with only a *sql.DB (Studio's settleRun) does the same.
+	exec(b, "SET GLOBAL http_timeout = 0")
 	require.NoError(t, DenyUncoveredStorage(ctx, s.DB()))
-	assert.Equal(t, "5", readSetting(t, s, "http_timeout"))
-	assert.Equal(t, "0", readSetting(t, s, "http_retries"))
+	assert.Equal(t, timeout, read(b, "http_timeout"))
 }
 
 // A server that accepts and never answers: the read fails within the bound

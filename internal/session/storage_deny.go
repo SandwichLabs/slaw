@@ -83,16 +83,28 @@ const (
 )
 
 // httpLimits are the two values a session sets.
-type httpLimits struct {
-	timeout, retries int
-	// atMost accepts a value already at or below the limit: a load path that
-	// does not know the session's own limits (EnsureExtension) must not undo
-	// tighter ones, which a locked session could not change back anyway.
-	atMost bool
-}
+type httpLimits struct{ timeout, retries int }
 
 func defaultHTTPLimits() httpLimits {
-	return httpLimits{timeout: DefaultHTTPTimeoutSeconds, retries: DefaultHTTPRetries, atMost: true}
+	return httpLimits{timeout: DefaultHTTPTimeoutSeconds, retries: DefaultHTTPRetries}
+}
+
+// hubLimits holds the limits each hub was configured with, keyed by its
+// database, so a load path that only has the *sql.DB (EnsureExtension,
+// DenyUncoveredStorage from Studio) re-sets the same values the hub opened with
+// instead of different ones. The entry is removed when the hub closes. A path
+// holding only a *sql.Conn (the importer) uses the defaults.
+var hubLimits sync.Map // *sql.DB -> httpLimits
+
+func limitsFor(q storageQuerier) httpLimits {
+	if db, ok := q.(*sql.DB); ok {
+		if l, ok := hubLimits.Load(db); ok {
+			if lim, ok := l.(httpLimits); ok {
+				return lim
+			}
+		}
+	}
+	return defaultHTTPLimits()
 }
 
 // lazyAllowedConfigs is the list lock_configuration lets through before httpfs loads.
@@ -141,7 +153,7 @@ var denyMu sync.Mutex
 // session being protected, because settings and secrets belong to the DuckDB
 // instance.
 func DenyUncoveredStorage(ctx context.Context, q storageQuerier) error {
-	return protectStorage(ctx, q, true, defaultHTTPLimits())
+	return protectStorage(ctx, q, true, limitsFor(q))
 }
 
 // protectStorage is DenyUncoveredStorage; sealParams false leaves URL
@@ -174,43 +186,32 @@ func protectStorage(ctx context.Context, q storageQuerier, sealParams bool, lim 
 
 // setHTTPLimits sets http_timeout and http_retries and reads them back; a
 // session that cannot prove them fails closed (a hung endpoint would hang it).
+// Every check sets both GLOBAL and SESSION unconditionally: a value another
+// pooled connection or a lazy session's SQL changed is put back, and a
+// connection's own override cannot shadow the global one. A locked session that
+// never let the settings through refuses the SET, and then they cannot have
+// changed: the read-back decides. The read-back is this connection's value (it
+// shows the session scope), so the global value is proven by its SET not failing.
 func setHTTPLimits(ctx context.Context, q storageQuerier, lim httpLimits) error {
 	for _, st := range []struct {
-		name      string
-		min, want int
-	}{
-		// A timeout of 0 means no timeout at all, so it is never "within the
-		// bound"; 0 retries just means no retry.
-		{httpTimeoutSetting, 1, lim.timeout},
-		{httpRetriesSetting, 0, lim.retries},
-	} {
+		name string
+		want int
+	}{{httpTimeoutSetting, lim.timeout}, {httpRetriesSetting, lim.retries}} {
 		want := strconv.Itoa(st.want)
-		read := func() (string, error) {
-			var got string
-			err := q.QueryRowContext(ctx, "SELECT CAST(current_setting("+QuoteLiteral(st.name)+") AS VARCHAR)").Scan(&got)
-			return got, err
-		}
-		got, err := read()
-		if err != nil {
-			return fmt.Errorf("failed to read %s: %w", st.name, err)
-		}
-		if n, convErr := strconv.Atoi(got); lim.atMost && convErr == nil && n >= st.min && n <= st.want {
-			// Within the bound: keep it, and pin this connection's own value so a
-			// session-level override cannot shadow it (best effort, as for the URL setting).
-			_, _ = q.ExecContext(ctx, "SET SESSION "+st.name+" = "+got)
-			continue
-		}
-		if got != want {
-			for _, scope := range []string{"GLOBAL ", "SESSION "} {
-				if _, err := q.ExecContext(ctx, "SET "+scope+st.name+" = "+want); err != nil {
-					return fmt.Errorf("failed to set %s: %w", st.name, err)
-				}
-			}
-			if got, err = read(); err != nil {
-				return fmt.Errorf("failed to read back %s: %w", st.name, err)
+		var setErr error
+		for _, scope := range []string{"GLOBAL ", "SESSION "} {
+			if _, err := q.ExecContext(ctx, "SET "+scope+st.name+" = "+want); err != nil && setErr == nil {
+				setErr = err
 			}
 		}
+		var got string
+		if err := q.QueryRowContext(ctx, "SELECT CAST(current_setting("+QuoteLiteral(st.name)+") AS VARCHAR)").Scan(&got); err != nil {
+			return fmt.Errorf("failed to read back %s: %w", st.name, err)
+		}
 		if got != want {
+			if setErr != nil {
+				return fmt.Errorf("%s did not take (%q, want %q); refusing to read object storage: %w", st.name, got, want, setErr)
+			}
 			return fmt.Errorf("%s did not take (%q, want %q); refusing to read object storage", st.name, got, want)
 		}
 	}

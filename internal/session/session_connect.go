@@ -448,7 +448,7 @@ func (h *hub) InstallExtension(ctx context.Context, name string) error {
 		}
 		return nil
 	}
-	return EnsureExtension(ctx, conn, name, name+" connections")
+	return ensureExtension(ctx, conn, name, name+" connections", h.cfg.httpLimits())
 }
 
 // RefreshCatalog implements Session.

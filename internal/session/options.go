@@ -53,7 +53,6 @@ func (c *config) httpLimits() httpLimits {
 	if c == nil {
 		return l
 	}
-	l.atMost = false // this session knows its own limits: set them exactly
 	if c.httpTimeout > 0 {
 		l.timeout = c.httpTimeout
 	}
@@ -64,8 +63,8 @@ func (c *config) httpLimits() httpLimits {
 }
 
 // WithHTTPLimits sets httpfs's http_timeout (seconds) and http_retries for a
-// session whose httpfs is loaded while it opens (0 keeps a default). A session
-// whose httpfs loads later uses the defaults.
+// session (0 keeps a default). The hub remembers them, and every later check of
+// its storage settings (an extension load, Studio's re-check) sets the same values.
 func WithHTTPLimits(timeoutSeconds, retries int) Option {
 	return func(c *config) { c.httpTimeout, c.httpRetries = timeoutSeconds, retries }
 }

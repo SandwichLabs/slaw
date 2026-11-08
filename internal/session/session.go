@@ -253,6 +253,7 @@ func wrap(db *sql.DB, c *config, owns bool) (*hub, error) {
 
 // newHub builds the hub value; def is the instance's current_database().
 func newHub(db *sql.DB, c *config, def, defSchema string, owns bool) *hub {
+	hubLimits.Store(db, c.httpLimits())
 	h := &hub{
 		db: db, ownsDB: owns, cfg: c, types: NewRegistry(), redactor: c.redactor,
 		logger:  slog.New(secrets.NewRedactingHandler(c.logger.Handler(), c.redactor)),
@@ -297,6 +298,7 @@ func (h *hub) DB() *sql.DB { return h.db }
 // and removes its temp directory; a wrapped instance is left to its owner.
 func (h *hub) Close() error {
 	var first error
+	hubLimits.Delete(h.db)
 	if h.ownsDB {
 		if err := h.db.Close(); err != nil {
 			first = fmt.Errorf("failed to close hub: %w", err)
