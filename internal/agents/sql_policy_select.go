@@ -13,7 +13,7 @@ import (
 
 type walkState struct {
 	cte     map[string]bool
-	readers int
+	readers readerCount
 	reason  string
 	summary int // inside SUMMARIZE
 	// definition marks reason as about the statement itself (a table or
@@ -210,7 +210,7 @@ func (a *analyzer) tableFunc(fn map[string]any, st *walkState) {
 						st.fail("%s", r)
 						return
 					}
-					st.readers += n
+					st.readers = st.readers.add(n)
 					return
 				}
 			}
@@ -254,7 +254,7 @@ func (a *analyzer) tableFunc(fn map[string]any, st *walkState) {
 			st.fail("%s() needs a path", lname)
 			return
 		}
-		st.readers++
+		st.readers.plain++
 	case tableArgFuncs[lname]:
 		children, _ := fn["children"].([]any)
 		if len(children) != 1 {
@@ -277,7 +277,7 @@ func (a *analyzer) tableFunc(fn map[string]any, st *walkState) {
 				st.fail("%s", r)
 				return
 			}
-			st.readers += n
+			st.readers = st.readers.add(n)
 			return
 		}
 		st.fail("table function %s() is not on the agent's allow-list", lname)
@@ -312,7 +312,7 @@ func (a *analyzer) scalarFunc(v map[string]any, st *walkState) {
 			st.fail("%s", r)
 			return
 		}
-		st.readers += n
+		st.readers = st.readers.add(n)
 	}
 }
 
@@ -367,11 +367,11 @@ func (a *analyzer) resolveRef(catalogName, schema, table string, st *walkState) 
 		// An attached Iceberg catalog's table plans as ICEBERG_SCAN, the same
 		// operator a raw iceberg_scan('<path>') call plans as, and the plan cannot
 		// tell them apart. Each reference into such a catalog is one vetted
-		// ICEBERG_SCAN, in a budget of its own (catalogScanUnit): only ICEBERG_SCAN
-		// nodes may spend it, so DuckDB pruning the scan (an unused CTE, LIMIT 0,
-		// a false filter, count(*)) can never leave a credit that covers another
-		// reader.
-		st.readers += catalogScanUnit
+		// ICEBERG_SCAN, in a budget of its own (readerCount.catalog): only
+		// ICEBERG_SCAN nodes may spend it, so DuckDB pruning the scan (an unused
+		// CTE, LIMIT 0, a false filter, count(*)) can never leave a credit that
+		// covers another reader.
+		st.readers.catalog++
 	}
 	if strings.EqualFold(schema, "pg_catalog") && (catalogName == "" || strings.EqualFold(catalogName, "system")) {
 		st.fail("%s", pgCatalogMsg)
@@ -390,7 +390,7 @@ func (a *analyzer) resolveRef(catalogName, schema, table string, st *walkState) 
 				st.fail("%s", r)
 				return
 			}
-			st.readers += n
+			st.readers = st.readers.add(n)
 		}
 		return
 	}
@@ -400,7 +400,7 @@ func (a *analyzer) resolveRef(catalogName, schema, table string, st *walkState) 
 			return
 		}
 		a.vetted[full] = true
-		st.readers++
+		st.readers.plain++
 		return
 	}
 	// A qualified name inside an attached catalog that is simply not listed

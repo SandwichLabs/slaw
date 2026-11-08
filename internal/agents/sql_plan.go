@@ -65,7 +65,7 @@ func stripExplainWrapper(msg string) string {
 //
 // Plain EXPLAIN does not execute anything; EXPLAIN ANALYZE would, and is never
 // used here.
-func planCheck(ctx context.Context, userDB queryDB, stmt string, args []any, vettedReaders int) (reason string, kind defKind) {
+func planCheck(ctx context.Context, userDB queryDB, stmt string, args []any, vetted readerCount) (reason string, kind defKind) {
 	if nilDB(userDB) {
 		return "could not validate query: no database connection available", defUnchecked
 	}
@@ -100,7 +100,7 @@ func planCheck(ctx context.Context, userDB queryDB, stmt string, args []any, vet
 	if err := json.Unmarshal([]byte(planJSON), &nodes); err != nil {
 		return externalAccessDeniedMsg, 0
 	}
-	readers := 0
+	var readers readerCount
 	for i := range nodes {
 		if reason := checkPlanNode(&nodes[i], &readers); reason != "" {
 			return reason, 0
@@ -111,29 +111,34 @@ func planCheck(ctx context.Context, userDB queryDB, stmt string, args []any, vet
 	// attached catalog's table and a raw iceberg_scan('<path>') both plan as, may
 	// spend the literals not used by other readers plus one credit per catalog
 	// reference. A catalog reference's credit is spendable only on ICEBERG_SCAN.
-	if readersExceedBudget(readers, vettedReaders) {
+	if readers.exceeds(vetted) {
 		return "this query reads a file or URL that is not written out as a literal inside the statement (a view or macro that wraps a reader?), so it can't be verified", 0
 	}
 	return "", 0
 }
 
-// catalogScanUnit is the weight of one reference into an attached Iceberg
-// catalog in a reader count (a plain reader weighs 1): the count is one int, so
-// the two budgets travel through every place that sums it. splitReaders takes it
-// apart: (plain readers, catalog scans).
-const catalogScanUnit = 1 << 16
-
-func splitReaders(v int) (plain, catalogScans int) {
-	return v & (catalogScanUnit - 1), v >> 16
+// readerCount is a count of readers in two budgets, so they cannot carry into
+// each other. Counted from a statement (what was vetted), plain is the readers
+// written out as literals (read_csv('x'), a file-shaped name, a raw
+// iceberg_scan('<path>')) and catalog the references into an attached Iceberg
+// catalog. Counted from a plan, plain is every reader operator but ICEBERG_SCAN
+// and catalog is the ICEBERG_SCAN nodes.
+type readerCount struct {
+	plain   int
+	catalog int
 }
 
-// readersExceedBudget is the reader-count rule over the two budgets (see
-// planCheck): plain readers may not exceed the literals the statement wrote out,
-// and ICEBERG_SCANs may spend the unused literals plus the catalog references.
-func readersExceedBudget(planReaders, vetted int) bool {
-	other, scans := splitReaders(planReaders)
-	raw, catalog := splitReaders(vetted)
-	return other > raw || other+scans > raw+catalog
+// add is the sum of two counts, field by field.
+func (c readerCount) add(o readerCount) readerCount {
+	return readerCount{plain: c.plain + o.plain, catalog: c.catalog + o.catalog}
+}
+
+// exceeds is the reader-count rule over the two budgets (see planCheck), with c
+// the plan's count and vetted the statement's: plain readers may not exceed the
+// literals the statement wrote out, and ICEBERG_SCANs may spend the unused
+// literals plus the catalog references.
+func (c readerCount) exceeds(vetted readerCount) bool {
+	return c.plain > vetted.plain || c.plain+c.catalog > vetted.plain+vetted.catalog
 }
 
 // planOpName is an operator's name without MotherDuck's location marker. With
@@ -151,15 +156,15 @@ func planOpName(raw string) string {
 	return name
 }
 
-func checkPlanNode(n *planNode, readers *int) string {
+func checkPlanNode(n *planNode, readers *readerCount) string {
 	name := planOpName(n.Name)
 	table, hasTable := n.ExtraInfo["Table"].(string)
 	_, hasFunc := n.ExtraInfo["Function"]
 	switch {
 	case name == "ICEBERG_SCAN":
-		*readers += catalogScanUnit // one scan: see planCheck for the budgets
+		readers.catalog++ // one scan: see planCheck for the budgets
 	case readerPlanOps[name]:
-		*readers++
+		readers.plain++
 	case hasTable && table != "" && !hasFunc && strings.HasSuffix(name, "_SCAN"):
 		// A scan of a catalog table: SEQ_SCAN, TABLE_SCAN, POSTGRES_SCAN, ...
 	case allowedPlanOperators[name], isRemoteWriteOp(name):
