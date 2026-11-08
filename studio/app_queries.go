@@ -529,9 +529,15 @@ func (a *App) GetDashboard() (*DashboardData, error) {
 // explainReadOnlyDenial turns the classifier's generic "live bindings are
 // read-only" refusal into the real reason when this window opened the workspace
 // read-only: its own database is in use by another program, so the tables are
-// simply not reachable yet.
+// simply not reachable yet. A refusal about the statement itself (empty, a
+// syntax or binding mistake) is shown as it is; only a missing table or catalog
+// can be the unreachable database.
 func (a *App) explainReadOnlyDenial(err error) error {
 	if !errors.Is(err, agents.ErrReadOnlyBindingDenied) {
+		return err
+	}
+	var about interface{ MissingObject() bool }
+	if errors.As(err, &about) && !about.MissingObject() {
 		return err
 	}
 	a.mu.RLock()

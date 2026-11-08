@@ -138,47 +138,70 @@ func (h *Handler) executorFor(connection string) (func(ctx context.Context, q st
 	}, nil
 }
 
+// denial is a refused statement's classifier reason and what is known about it
+// (see defKind); the zero value is "no reason".
+type denial struct {
+	Reason string
+	Kind   defKind
+}
+
 // readOnlyVerdict is the policy half of every render-time read: connect what
 // the statement references, expand s3/gcs/r2 wildcards, classify the statement
 // on a connection pinned to the named catalog, and apply the read-only gate. It
 // returns the statement as it will run (wildcards expanded), the context to
 // run it under, the params to run it with (the caller's plus the defaults of any
-// metric() saved query's parameters), and the classifier's reason (empty for a read). err is the
+// metric() saved query's parameters), and the classifier's denial (empty for a read). err is the
 // connection's own failure, ErrReadOnlyBindingDenied, or an expansion or
 // classification failure. RunReadOnlySQLIn and the save-time artifact vet both
 // call it, so a statement is vetted by exactly the code that later runs it.
-func (h *Handler) readOnlyVerdict(ctx context.Context, connection, orig string, params map[string]any) (runSQL string, runParams map[string]any, runCtx context.Context, reason string, err error) {
+func (h *Handler) readOnlyVerdict(ctx context.Context, connection, orig string, params map[string]any) (runSQL string, runParams map[string]any, runCtx context.Context, den denial, err error) {
 	// metric() calls are expanded first, then wildcards on s3/gcs/r2; the
 	// statement is classified and run as expanded, so the cell and the binding
 	// keep the metric call and the wildcard.
 	mx, params, err := h.expandMetrics(ctx, connection, orig, params)
 	if err != nil {
-		return "", params, ctx, "", fmt.Errorf("query execution failed: %w", &DefinitionError{Err: err})
+		return "", params, ctx, denial{}, fmt.Errorf("query execution failed: %w", &DefinitionError{Err: err})
 	}
 	connectErr := h.connectReferenced(ctx, connection, mx.SQL)
 	runSQL, runCtx, err = h.expand(ctx, mx.SQL)
 	if err != nil {
-		return "", params, ctx, "", fmt.Errorf("query execution failed: %w", err)
+		return "", params, ctx, denial{}, fmt.Errorf("query execution failed: %w", err)
 	}
 	v, err := h.classifyIn(runCtx, connection, runSQL, params)
 	if err != nil {
 		// A connection that failed to connect cannot be pinned: say why it
 		// failed, not that it "is not attached" (#302).
-		return "", params, ctx, "", withConnectError(err, connectErr)
+		return "", params, ctx, denial{}, withConnectError(err, connectErr)
 	}
-	if err := h.sandboxFor(ctx).checkSQLClassReadOnly(v.Class, v.Reason); err != nil {
+	if err := h.sandboxFor(ctx).checkSQLClassReadOnly(v); err != nil {
 		if connectErr != nil {
-			return "", params, ctx, v.Reason, withConnectError(err, connectErr)
+			return "", params, ctx, denial{v.Reason, v.Kind}, withConnectError(err, connectErr)
 		}
 		// The user/agent-facing error is one fixed, mode-agnostic message
 		// (see ErrReadOnlyBindingDenied) — it never surfaces the policy's
 		// reason, which can name a tier requirement that is false for a
 		// full-tier caller. The reason is still useful for debugging a denial
 		// that looks surprising, so it's logged here at debug level only.
-		h.logger.Debug("render-time sql binding denied", "class", v.Class, "reason", v.Reason, "query_sha256", engine.QueryDigest(orig), "query_bytes", len(orig))
-		return "", params, ctx, v.Reason, err
+		if v.Kind&defStatement != 0 {
+			// The reason is shown to the caller and can quote the statement
+			// (a binder error's LINE context): never log it (#276).
+			h.logger.Debug("render-time sql binding denied", "class", v.Class, "query_sha256", engine.QueryDigest(orig), "query_bytes", len(orig))
+		} else {
+			h.logger.Debug("render-time sql binding denied", "class", v.Class, "reason", v.Reason, "query_sha256", engine.QueryDigest(orig), "query_bytes", len(orig))
+		}
+		return "", params, ctx, denial{v.Reason, v.Kind}, err
 	}
-	return runSQL, params, runCtx, v.Reason, nil
+	return runSQL, params, runCtx, denial{v.Reason, v.Kind}, nil
+}
+
+// denialWithReason is a read-only denial followed by the classifier's reason,
+// unless the denial already is that reason (a definitionRefusal) or there is none.
+func denialWithReason(err error, reason string) string {
+	var dr *definitionRefusal
+	if reason == "" || errors.As(err, &dr) {
+		return err.Error()
+	}
+	return err.Error() + ": " + reason
 }
 
 // sqlParam reads run_query's sql argument. A value that is not a string (sql:

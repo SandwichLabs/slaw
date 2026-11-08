@@ -59,6 +59,12 @@ func (h *Handler) handlePreviewQuery(ctx context.Context, req *Request) *Respons
 	}
 	rs, rowsTruncated, err := h.RunReadOnlySQLIn(ctx, connection, sqlStr, nil, previewQueryRowCap)
 	if err != nil {
+		var dr *definitionRefusal
+		if errors.As(err, &dr) {
+			// The statement itself is wrong (empty, unparseable, unbindable):
+			// not a permission problem, and the reason is the useful part.
+			return NewErrorResponse(req.ID, ErrInvalidParams, fmt.Sprintf("query failed: %v", err))
+		}
 		if errors.Is(err, ErrReadOnlyBindingDenied) {
 			return NewErrorResponse(req.ID, ErrPermission, fmt.Sprintf("preview_query only runs read-only statements: %v", err))
 		}
@@ -226,8 +232,8 @@ func (h *Handler) handleWriteCell(ctx context.Context, req *Request) *Response {
 		if verr != nil {
 			return NewErrorResponse(req.ID, ErrInternal, verr.Error())
 		}
-		if err := h.sandboxFor(ctx).checkSQLClassReadOnly(v.Class, v.Reason); err != nil {
-			return NewErrorResponse(req.ID, ErrInvalidParams, fmt.Sprintf("write_cell only accepts read-only sql: %v: %s", withConnectError(err, connectErr), v.Reason))
+		if err := h.sandboxFor(ctx).checkSQLClassReadOnly(v); err != nil {
+			return NewErrorResponse(req.ID, ErrInvalidParams, fmt.Sprintf("write_cell only accepts read-only sql: %s", denialWithReason(withConnectError(err, connectErr), v.Reason)))
 		}
 		// review fix (finding 4): require this EXACT (trimmed) sql to have
 		// been run through preview_query earlier in this same task turn —

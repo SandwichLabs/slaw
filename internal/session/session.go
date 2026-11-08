@@ -459,11 +459,23 @@ func (h *hub) pin(ctx context.Context, catalog string) (*Conn, error) {
 	return c, nil
 }
 
+// UnknownCatalogError says no connection is defined under Name, as opposed to a
+// defined connection that is not attached (it failed to connect, or needs a
+// sign-in): that one has a status of its own to show.
+type UnknownCatalogError struct{ Name string }
+
+func (e *UnknownCatalogError) Error() string {
+	return fmt.Sprintf("connection %q is not attached", e.Name)
+}
+
 // checkPinnable refuses a catalog a connection cannot be switched to: unknown,
 // not attached, or storage (no catalog of its own).
 func (h *hub) checkPinnable(catalog string) error {
 	e, eAtt := h.entryOf(catalog)
-	if e == nil || !eAtt {
+	if e == nil {
+		return &UnknownCatalogError{Name: catalog}
+	}
+	if !eAtt {
 		return fmt.Errorf("connection %q is not attached", catalog)
 	}
 	if h.catalogless(e) {

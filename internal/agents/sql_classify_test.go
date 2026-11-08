@@ -279,15 +279,15 @@ func TestSandboxConfig_CheckSQLClassReadOnly(t *testing.T) {
 	for _, mode := range []SandboxMode{ModeReadOnly, ModeReadWrite, ModeFull} {
 		t.Run(string(mode), func(t *testing.T) {
 			sc := &SandboxConfig{Mode: mode}
-			assert.NoError(t, sc.checkSQLClassReadOnly(sqlClassRead, ""))
-			assert.Error(t, sc.checkSQLClassReadOnly(sqlClassWrite, ""), "a write must never be allowed through a live sql binding")
+			assert.NoError(t, sc.checkSQLClassReadOnly(&sqlVerdict{Class: sqlClassRead}))
+			assert.Error(t, sc.checkSQLClassReadOnly(&sqlVerdict{Class: sqlClassWrite}), "a write must never be allowed through a live sql binding")
 			// DDL/multi-statement Other (empty reason, the shape DROP TABLE
 			// and multi-statement SQL classify as) must be denied in every
 			// mode, full included.
-			assert.Error(t, sc.checkSQLClassReadOnly(sqlClassOther, ""))
+			assert.Error(t, sc.checkSQLClassReadOnly(&sqlVerdict{Class: sqlClassOther}))
 			// An Other whose reason names external-file access must ALSO be
 			// denied in every mode, full included — no carve-out.
-			assert.Error(t, sc.checkSQLClassReadOnly(sqlClassOther, externalAccessDeniedMsg))
+			assert.Error(t, sc.checkSQLClassReadOnly(deny(externalAccessDeniedMsg)))
 		})
 	}
 }

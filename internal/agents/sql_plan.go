@@ -65,13 +65,13 @@ func stripExplainWrapper(msg string) string {
 //
 // Plain EXPLAIN does not execute anything; EXPLAIN ANALYZE would, and is never
 // used here.
-func planCheck(ctx context.Context, userDB queryDB, stmt string, args []any, vettedReaders int) string {
+func planCheck(ctx context.Context, userDB queryDB, stmt string, args []any, vettedReaders int) (reason string, kind defKind) {
 	if nilDB(userDB) {
-		return "could not validate query: no database connection available"
+		return "could not validate query: no database connection available", defUnchecked
 	}
 	rows, err := userDB.QueryContext(ctx, explainPrefix+stmt, args...)
 	if err != nil {
-		return fmt.Sprintf("could not validate query: %s", stripExplainWrapper(secrets.RedactPatterns(err.Error())))
+		return fmt.Sprintf("could not validate query: %s", stripExplainWrapper(secrets.RedactPatterns(err.Error()))), failureKind(err)
 	}
 	defer rows.Close() //nolint:errcheck
 
@@ -80,7 +80,7 @@ func planCheck(ctx context.Context, userDB queryDB, stmt string, args []any, vet
 	for rows.Next() {
 		var key, value string
 		if err := rows.Scan(&key, &value); err != nil {
-			return fmt.Sprintf("could not validate query: %v", err)
+			return fmt.Sprintf("could not validate query: %v", err), defUnchecked
 		}
 		if key == "physical_plan" {
 			planJSON = value
@@ -88,22 +88,22 @@ func planCheck(ctx context.Context, userDB queryDB, stmt string, args []any, vet
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Sprintf("could not validate query: %s", stripExplainWrapper(secrets.RedactPatterns(err.Error())))
+		return fmt.Sprintf("could not validate query: %s", stripExplainWrapper(secrets.RedactPatterns(err.Error()))), failureKind(err)
 	}
 	if !found {
-		return "could not validate query: EXPLAIN (FORMAT JSON) returned no physical_plan"
+		return "could not validate query: EXPLAIN (FORMAT JSON) returned no physical_plan", defUnchecked
 	}
 	if planDeniedFuncRe.MatchString(planJSON) {
-		return externalAccessDeniedMsg
+		return externalAccessDeniedMsg, 0
 	}
 	var nodes []planNode
 	if err := json.Unmarshal([]byte(planJSON), &nodes); err != nil {
-		return externalAccessDeniedMsg
+		return externalAccessDeniedMsg, 0
 	}
 	readers := 0
 	for i := range nodes {
 		if reason := checkPlanNode(&nodes[i], &readers); reason != "" {
-			return reason
+			return reason, 0
 		}
 	}
 	// Two budgets. Raw readers (everything but a catalog scan) may not exceed the
@@ -112,9 +112,9 @@ func planCheck(ctx context.Context, userDB queryDB, stmt string, args []any, vet
 	// spend the literals not used by other readers plus one credit per catalog
 	// reference. A catalog reference's credit is spendable only on ICEBERG_SCAN.
 	if readersExceedBudget(readers, vettedReaders) {
-		return "this query reads a file or URL that is not written out as a literal inside the statement (a view or macro that wraps a reader?), so it can't be verified"
+		return "this query reads a file or URL that is not written out as a literal inside the statement (a view or macro that wraps a reader?), so it can't be verified", 0
 	}
-	return ""
+	return "", 0
 }
 
 // catalogScanUnit is the weight of one reference into an attached Iceberg

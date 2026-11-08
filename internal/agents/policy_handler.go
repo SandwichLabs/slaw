@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SandwichLabs/slaw/internal/secrets"
 	"github.com/SandwichLabs/slaw/internal/semantics"
 	"github.com/SandwichLabs/slaw/internal/session"
 	"github.com/SandwichLabs/slaw/internal/storageglob"
@@ -114,15 +115,19 @@ func scrubbedError(err error) error { return &scrubbedErr{err: err} }
 // hides, so a cloned repository's metric is held to the same policy as a
 // cloned artifact query.
 func (h *Handler) VetReadOnlySQLIn(ctx context.Context, connection, sqlStr string, params map[string]any) error {
-	_, _, _, reason, err := h.readOnlyVerdict(ctx, connection, sqlStr, params)
-	if errors.Is(err, ErrReadOnlyBindingDenied) && reason != "" {
-		if definitionReason(reason) {
-			if strings.HasPrefix(reason, "could not validate query:") {
-				return &BindFailure{Err: errors.New(reason)}
-			}
-			return &DefinitionError{Err: errors.New(reason)}
+	_, _, _, den, err := h.readOnlyVerdict(ctx, connection, sqlStr, params)
+	var dr *definitionRefusal
+	if errors.As(err, &dr) {
+		if dr.EngineReported() {
+			return &BindFailure{Err: errors.New(dr.reason)}
 		}
-		return errors.New(reason)
+		return &DefinitionError{Err: errors.New(dr.reason)}
+	}
+	if errors.Is(err, ErrReadOnlyBindingDenied) && den.Reason != "" {
+		if den.Kind&defUnchecked != 0 {
+			return errors.New(den.Reason) // the check could not run: not the statement's fault
+		}
+		return &DefinitionError{Err: errors.New(den.Reason)} // a policy refusal
 	}
 	return err
 }
@@ -162,6 +167,9 @@ func (h *Handler) classify(ctx context.Context, db queryDB, raw string, params m
 	if rw, ok := storageglob.FromContext(ctx); ok && v.Reason != "" {
 		v.Reason = rw.Redact(v.Reason)
 	}
+	if v.Kind&defStatement != 0 {
+		v.Reason = secrets.RedactPatterns(v.Reason)
+	}
 	return v
 }
 
@@ -182,11 +190,37 @@ func (h *Handler) classifyIn(ctx context.Context, connection, raw string, params
 	}
 	pinned, err := sess.Conn(ctx, session.WithCatalog(connection))
 	if err != nil {
-		return nil, fmt.Errorf("unknown connection %q: %w", connection, err)
+		return nil, pinError(sess, connection, err)
 	}
 	defer func() { _ = pinned.Close() }()
 	return h.classify(ctx, pinned.SQLConn(), raw, params), nil
 }
+
+// pinError explains why a connection could not be pinned. "unknown connection"
+// is only for a name nothing defines; a defined connection that is not usable
+// reports its own status text (a changed server, a sign-in to redo), redacted,
+// as a ConnectError, so the real reason is not read as a typo.
+func pinError(sess session.Session, connection string, err error) error {
+	var unknown *session.UnknownCatalogError
+	if errors.As(err, &unknown) {
+		return fmt.Errorf("unknown connection %q: %w", connection, err)
+	}
+	for _, st := range sess.Connections() {
+		if st.Name == connection && st.Kind != session.StatusOK && st.Message != "" {
+			return &ConnectError{Err: fmt.Errorf("connection %q: %s", connection, sess.Redact(st.Message))}
+		}
+	}
+	return &redactedError{msg: sess.Redact(err.Error()), err: err}
+}
+
+// redactedError carries an error's chain but prints only the redacted text.
+type redactedError struct {
+	msg string
+	err error
+}
+
+func (e *redactedError) Error() string { return e.msg }
+func (e *redactedError) Unwrap() error { return e.err }
 
 // writeGates is the second write gate: every connection a statement changes
 // must be writable. It returns the names of the targets that are not local

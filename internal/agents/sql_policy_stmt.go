@@ -111,8 +111,8 @@ func (a *analyzer) dml(toks []lexTok, args []any) *sqlVerdict {
 	// EXPLAIN cannot even be run against a read-only database; the write gate
 	// refuses such a target, so there is nothing to bind.
 	if !anyReadOnly(targets) {
-		if r := planCheck(a.ctx, a.db, a.textOf(toks), args, readers); r != "" {
-			return deny(r)
+		if r, kind := planCheck(a.ctx, a.db, a.textOf(toks), args, readers); r != "" {
+			return planDenial(r, kind)
 		}
 	}
 	return &sqlVerdict{Class: sqlClassWrite, Targets: targets}
@@ -207,8 +207,8 @@ func (a *analyzer) ddl(toks []lexTok, args []any) *sqlVerdict {
 		return deny(r)
 	}
 	if verb == "CREATE" && hasQueryPart(toks) && !anyReadOnly(targets) {
-		if r := planCheck(a.ctx, a.db, a.textOf(toks), args, readers); r != "" {
-			return deny(r)
+		if r, kind := planCheck(a.ctx, a.db, a.textOf(toks), args, readers); r != "" {
+			return planDenial(r, kind)
 		}
 	}
 	return &sqlVerdict{Class: sqlClassDDL, Targets: targets}
@@ -310,8 +310,8 @@ func (a *analyzer) copyStmt(toks []lexTok, args []any) *sqlVerdict {
 	if r := a.stringNet(toks); r != "" {
 		return deny(r)
 	}
-	if r := planCheck(a.ctx, a.db, a.textOf(toks), args, readers); r != "" {
-		return deny(r)
+	if r, kind := planCheck(a.ctx, a.db, a.textOf(toks), args, readers); r != "" {
+		return planDenial(r, kind)
 	}
 	return &sqlVerdict{Class: sqlClassDDL}
 }

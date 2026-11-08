@@ -10,9 +10,10 @@ import (
 	"strings"
 	"sync"
 
-	_ "github.com/duckdb/duckdb-go/v2" // DuckDB driver, for the dedicated parser connection below
+	"github.com/duckdb/duckdb-go/v2" // DuckDB driver (parser connection below; typed errors)
 	"github.com/duckdb/duckdb-go/v2/mapping"
 
+	"github.com/SandwichLabs/slaw/internal/secrets"
 	"github.com/SandwichLabs/slaw/internal/usersql"
 )
 
@@ -79,9 +80,57 @@ type sqlVerdict struct {
 	discardedReads int
 	// Temp is set for a statement that creates a TEMP object (see tempObjectNote).
 	Temp bool
+	// Kind says whether the denial's Reason is about the statement itself and so
+	// holds in every tier (defStatement: it is empty, or the database could not
+	// parse or bind it, or it names a table that is not there). The render-time
+	// gate shows such a reason instead of its fixed message; every other denial
+	// (a write, a file outside data/, a tier requirement) is tier-dependent and
+	// stays masked.
+	Kind defKind
 }
 
+// defKind is what is known about a denial's reason, as flags.
+type defKind uint8
+
+const (
+	// defStatement: the reason is about the statement itself, true in every tier.
+	defStatement defKind = 1 << iota
+	// defMissing refines it: a table or catalog the statement names is not there
+	// (a read-only window whose own database is in use sees the same thing).
+	defMissing
+	// defEngine: DuckDB itself reported it (a parser, binder or catalog error).
+	defEngine
+	// defUnchecked: the check could not run (no database, an I/O failure); the
+	// reason says nothing about the statement.
+	defUnchecked
+)
+
+// kindMissing is a table or catalog that does not exist, found by the policy.
+const kindMissing = defStatement | defMissing
+
 func deny(reason string) *sqlVerdict { return &sqlVerdict{Class: sqlClassOther, Reason: reason} }
+
+// denyDefinition is deny for a reason about the statement itself (see
+// sqlVerdict.Definition).
+func denyDefinition(reason string) *sqlVerdict {
+	return &sqlVerdict{Class: sqlClassOther, Reason: reason, Kind: defStatement}
+}
+
+// parseDenial is the verdict for a statement DuckDB's parser could not read.
+// The reason is redacted like every other engine error shown to a caller: a
+// parser error quotes the text near the failure.
+func parseDenial(err error, text string) *sqlVerdict {
+	v := deny(secrets.RedactPatterns(fmt.Sprintf("%s: %s", couldntVerifyMsg, parseFailure(err, text))))
+	v.Kind = failureKind(err)
+	return v
+}
+
+// planDenial is the verdict for a planCheck or walker failure of the given kind.
+func planDenial(reason string, kind defKind) *sqlVerdict {
+	v := deny(reason)
+	v.Kind = kind
+	return v
+}
 
 const (
 	// externalAccessDeniedMsg is the generic refusal for something that reaches
@@ -130,6 +179,16 @@ func unresolvedTableDeniedMsg(catalogName, schema, table string) string {
 			catalogName, dotJoin(catalogName, schema, table), oneDatabasePerConnectionHint)
 	}
 	return fmt.Sprintf("%s (%q)", externalAccessDeniedMsg, dotJoin(catalogName, schema, table))
+}
+
+// unresolvedTableIsMissing reports whether unresolvedTableDeniedMsg says the
+// table or connection does not exist (true in every tier), rather than the
+// external-access or system-catalog refusal.
+func unresolvedTableIsMissing(catalogName, schema, table string) bool {
+	if catalogName == "" && schema == "" && plainIdentifierRe.MatchString(table) {
+		return true
+	}
+	return catalogName != "" && !strings.EqualFold(catalogName, "system")
 }
 
 // oneDatabasePerConnectionHint explains how to reach a database a connection
@@ -215,10 +274,16 @@ func countStatements(raw string) (int, error) {
 	errStr := mapping.ExtractStatementsError(extracted)
 	mapping.DestroyExtracted(&extracted)
 	if errStr != "" {
-		return 0, errors.New(errStr)
+		return 0, &statementParseError{msg: errStr}
 	}
 	return int(n), nil
 }
+
+// statementParseError is DuckDB's parser refusing the text (countStatements only
+// parses): a fact about the statement, not about the connection or the tier.
+type statementParseError struct{ msg string }
+
+func (e *statementParseError) Error() string { return e.msg }
 
 // queryDB is the read surface the policy needs from the user's database.
 // *sql.DB satisfies it, and so does a pinned *sql.Conn: a statement bound to a
@@ -412,10 +477,13 @@ func (sc *SandboxConfig) checkSQLClass(class sqlClass, reason string) error {
 	return nil
 }
 
-// ErrReadOnlyBindingDenied is the ONE message checkSQLClassReadOnly returns for
-// a denial: the render-time gate is read-only in every tier, so the reason the
+// ErrReadOnlyBindingDenied is the message checkSQLClassReadOnly returns for a
+// denial: the render-time gate is read-only in every tier, so the reason the
 // classifier gave (which can name a tier requirement) would be false for a
-// full-tier caller. Callers log the reason themselves.
+// full-tier caller. The one exception is a tier-independent reason (an empty
+// statement, a parse or binder error), which arrives as a definitionRefusal;
+// it also satisfies errors.Is(err, ErrReadOnlyBindingDenied), so every caller's
+// "not a read" branch still sees it. Callers log the reason themselves.
 var ErrReadOnlyBindingDenied error = &policyRefusal{msg: "live bindings are read-only queries over this workspace's connections (no writes, and files only inside data/)"}
 
 // policyRefusal is the policy's own "no": a statement that is not a plain read.
@@ -427,14 +495,62 @@ type policyRefusal struct{ msg string }
 func (e *policyRefusal) Error() string       { return e.msg }
 func (e *policyRefusal) PolicyRefused() bool { return true }
 
+// definitionRefusal is a render-time denial that shows its own reason, because
+// the reason does not depend on the tier (sqlVerdict.Definition). It is an
+// ErrReadOnlyBindingDenied for errors.Is, and a DefinitionProblem like
+// DefinitionError.
+type definitionRefusal struct {
+	reason string
+	kind   defKind
+}
+
+func (e *definitionRefusal) Error() string           { return e.reason }
+func (e *definitionRefusal) PolicyRefused() bool     { return true }
+func (e *definitionRefusal) DefinitionProblem() bool { return true }
+
+// MissingObject: the statement names a table or catalog that is not there.
+func (e *definitionRefusal) MissingObject() bool { return e.kind&defMissing != 0 }
+
+// EngineReported: DuckDB itself said the statement does not parse or bind.
+func (e *definitionRefusal) EngineReported() bool { return e.kind&defEngine != 0 }
+
+func (e *definitionRefusal) Is(target error) bool { return target == ErrReadOnlyBindingDenied }
+
 // checkSQLClassReadOnly is the render-time gate for a live A2UI binding or a
 // notebook cell: sqlClassRead regardless of the tier, because the statement
-// re-runs on every render.
-func (sc *SandboxConfig) checkSQLClassReadOnly(class sqlClass, _ string) error {
-	if class == sqlClassRead {
+// re-runs on every render. A denial is the fixed ErrReadOnlyBindingDenied,
+// unless the verdict marks its reason tier-independent.
+func (sc *SandboxConfig) checkSQLClassReadOnly(v *sqlVerdict) error {
+	if v.Class == sqlClassRead {
 		return nil
 	}
+	if v.Kind&defStatement != 0 && v.Reason != "" {
+		return &definitionRefusal{reason: v.Reason, kind: v.Kind}
+	}
 	return ErrReadOnlyBindingDenied
+}
+
+// failureKind classifies an error from DuckDB while checking a statement:
+// DuckDB saying the statement itself is wrong (a parser, binder or catalog
+// error, or the statement splitter's own parse failure) holds in every tier;
+// anything else (an I/O failure from a dropped remote) is unchecked. It reads
+// the driver's typed error, never the message text. A catalog error is also
+// defMissing.
+func failureKind(err error) defKind {
+	var pe *statementParseError
+	if errors.As(err, &pe) {
+		return defStatement | defEngine
+	}
+	var de *duckdb.Error
+	if errors.As(err, &de) {
+		switch de.Type {
+		case duckdb.ErrorTypeCatalog:
+			return defStatement | defEngine | defMissing
+		case duckdb.ErrorTypeBinder, duckdb.ErrorTypeParser:
+			return defStatement | defEngine
+		}
+	}
+	return defUnchecked
 }
 
 // classifySQL classifies raw (with its $name params) with no workspace context:

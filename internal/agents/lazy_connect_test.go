@@ -123,12 +123,3 @@ func TestQualifiedBrokenConnectionIsAConnectFailure(t *testing.T) {
 	assert.True(t, def.DefinitionProblem())
 	assert.False(t, errors.As(err, &cf))
 }
-
-func TestDefinitionReason(t *testing.T) {
-	assert.True(t, definitionReason("could not validate query: Binder Error: Referenced column \"x\" not found"))
-	assert.True(t, definitionReason("could not validate query: Catalog Error: Table with name t does not exist"))
-	assert.True(t, definitionReason("could not validate query: Parser Error: syntax error"))
-	assert.True(t, definitionReason(secretsDeniedMsg))
-	assert.False(t, definitionReason("could not validate query: IO Error: Connection reset by peer"))
-	assert.False(t, definitionReason("could not validate query: no database connection available"))
-}
