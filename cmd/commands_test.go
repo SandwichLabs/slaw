@@ -1057,3 +1057,12 @@ func useMemoryKeychain(t *testing.T) {
 	newCLIKeychain = func() secrets.Store { return m }
 	t.Cleanup(func() { newCLIKeychain = old })
 }
+
+// TestMain keeps every test in this package off the OS keychain, including a
+// test that never calls newWS: credentials and the LLM key go to process memory.
+func TestMain(m *testing.M) {
+	cli, llm := secrets.NewMemoryStore(), secrets.NewMemoryStore()
+	newCLIKeychain = func() secrets.Store { return cli }
+	newLLMKeyStore = func() secrets.Store { return llm }
+	os.Exit(m.Run())
+}
