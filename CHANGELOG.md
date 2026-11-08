@@ -30,11 +30,6 @@ Iceberg catalogs (S3 Tables and Iceberg REST) as connections, read by you and th
 - Every session that loads httpfs sets `http_timeout = 30` and `http_retries = 1` and locks them, so a hung catalog or storage request errors out instead of freezing a query or a watch check. The editor, console and REPL refuse `SET`, `RESET` and `PRAGMA` on them.
 - The table browser shows a read error instead of "0 records".
 
-### Changed
-
-- **Lake and table connections are no longer own-scope only.** `ducklake`, `iceberg` and `delta` may be defined in a committed `slaw.yaml` and arrive in a `.slaw` bundle; a warning ("Table metadata in this lake decides which files DuckDB reads...") shows on the connection form, in `slaw conn add|move|list` and in bundle import notes. Credential rules are unchanged.
-- **The agent may call `iceberg_scan`, `iceberg_metadata`, `iceberg_snapshots` and `delta_scan`,** under the same path, URL, option and reader-count rules as `read_parquet`. See `docs/reference/agent-policy.md`.
-
 ## [0.7.0] - 2026-11-07
 
 Watches: standing questions with a condition, kept as files and checked on demand from Studio or `slaw watch check` (#247, phase 0).
