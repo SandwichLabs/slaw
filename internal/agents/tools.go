@@ -159,6 +159,7 @@ var Tools = []ToolDef{
 		Params: []ParamDef{
 			{Name: "sql", Type: "string", Required: true, Desc: "One SQL statement to execute, as a string. Only the last statement of a script returns rows, so send one SELECT per call (a trailing semicolon is fine). Write a bound value as $name"},
 			{Name: "params", Type: "object", Required: false, Desc: "Named parameters: use $name in the SQL and pass {name: value} here (for example sql \"SELECT * FROM t WHERE id = $id\", params {\"id\": 7}). A positional ? is not supported. A parameter has no type until DuckDB infers one, so cast it where a function has overloads: date_trunc('month', $from::DATE)"},
+			{Name: "connection", Type: "string", Required: false, Desc: "The connection whose catalog unqualified table names resolve against (a name from list_connections); default is the workspace's default connection. Required to use a metric() whose saved query is pinned to that connection. The same read, write and approval gates apply: a write also needs that connection to be writable"},
 		},
 	},
 	{

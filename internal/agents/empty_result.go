@@ -45,7 +45,14 @@ const emptyResultDeadline = 4 * time.Second
 // for a bare name, only when exactly one of those tables has that column
 // (#216). userDB is queried read-only, using only information_schema-verified
 // table/column names, each part quoted via session.QuoteIdent.
-func explainEmptyResult(ctx context.Context, userDB *sql.DB, sqlText string, rows [][]any) string {
+// sqlQueryer is what the empty-result probes need: a *sql.DB, or a *sql.Conn
+// pinned to one catalog.
+type sqlQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func explainEmptyResult(ctx context.Context, userDB sqlQueryer, sqlText string, rows [][]any) string {
 	if userDB == nil {
 		return ""
 	}
@@ -104,7 +111,7 @@ func isZeroCount(rows [][]any) bool {
 
 // mismatchNote is the line for one compared column: the literals it was
 // compared with that the column does not hold, next to what it does hold.
-func mismatchNote(ctx context.Context, db *sql.DB, tbl probeTable, pred literalPredicate) string {
+func mismatchNote(ctx context.Context, db sqlQueryer, tbl probeTable, pred literalPredicate) string {
 	actual, ok := distinctValues(ctx, db, tbl, tbl.column)
 	if !ok || len(actual) == 0 {
 		return ""
@@ -138,7 +145,7 @@ func mismatchNote(ctx context.Context, db *sql.DB, tbl probeTable, pred literalP
 // distinctValues returns the distinct string values a column holds, or
 // ok=false when the column has too many distinct values to be a useful
 // hint (an id or free-text column) or the probe query fails.
-func distinctValues(ctx context.Context, db *sql.DB, tbl probeTable, column string) ([]string, bool) {
+func distinctValues(ctx context.Context, db sqlQueryer, tbl probeTable, column string) ([]string, bool) {
 	qCol := session.QuoteIdent(column)
 	qTable := tbl.quoted()
 

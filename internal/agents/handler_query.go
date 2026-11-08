@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/SandwichLabs/slaw/internal/engine"
+	"github.com/SandwichLabs/slaw/internal/session"
 )
 
 // --- Data handlers ---
@@ -218,7 +219,53 @@ func discardedReadsMsg(reads, total int) string {
 }
 
 func (h *Handler) handleRunQuery(ctx context.Context, req *Request) *Response {
-	return h.runQuery(ctx, req, runTarget{})
+	conn, err := h.queryConnection(req)
+	if err != nil {
+		return NewErrorResponse(req.ID, ErrInvalidParams, "run_query: "+err.Error())
+	}
+	return h.runQuery(ctx, req, runTarget{connection: conn})
+}
+
+// emptyResultNote is explainEmptyResult on the connection the statement ran
+// on, so its probes resolve unqualified names the way the statement did.
+func (h *Handler) emptyResultNote(ctx context.Context, connection string, userDB *sql.DB, sqlStr string, rows [][]any) string {
+	if connection == "" {
+		return explainEmptyResult(ctx, userDB, sqlStr, rows)
+	}
+	sess := h.access.Session()
+	if sess == nil {
+		return ""
+	}
+	pinned, err := sess.Conn(ctx, session.WithCatalog(connection))
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = pinned.Close() }()
+	return explainEmptyResult(ctx, pinned.SQLConn(), sqlStr, rows)
+}
+
+// queryConnection reads run_query's optional connection argument: the
+// connection whose catalog unqualified names resolve against, as a notebook
+// cell's connection does. It must be a defined connection with a catalog;
+// "" and the workspace's default catalog both mean the default (no pinning).
+// Every gate runQuery applies still applies to the pinned run.
+func (h *Handler) queryConnection(req *Request) (string, error) {
+	raw, present := req.Params["connection"]
+	if !present || raw == nil {
+		return "", nil
+	}
+	name, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("connection must be a connection name (got %s; see list_connections)", jsonKind(raw))
+	}
+	conn, err := h.validConnection(name)
+	if err != nil || conn == "" {
+		return "", err
+	}
+	if strings.EqualFold(conn, h.access.Session().DefaultCatalog()) {
+		return "", nil
+	}
+	return conn, nil
 }
 
 // runTarget narrows one run of the run_query pipeline. The zero value is
@@ -303,7 +350,7 @@ func (h *Handler) runQuery(ctx context.Context, req *Request, tgt runTarget) *Re
 	// The third write gate: the person's OK. It is forced on for anything that
 	// is not a local file, whatever the "Ask before changes" setting is.
 	if class != sqlClassRead && (sb.RequireApproval || len(nonLocal) > 0) {
-		if r := h.awaitApproval(ctx, req, sb, sqlStr, runSQL, params, class, nonLocal); r != nil {
+		if r := h.awaitApproval(ctx, req, sb, sqlStr, runSQL, tgt.connection, params, class, nonLocal); r != nil {
 			return r
 		}
 	}
@@ -350,7 +397,7 @@ func (h *Handler) runQuery(ctx context.Context, req *Request, tgt runTarget) *Re
 	// because they are fixed SELECT DISTINCT templates this handler builds,
 	// never the caller's SQL text executed a second time.
 	if len(rows) <= 1 {
-		if note := explainEmptyResult(ctx, userDB, sqlStr, rows); note != "" {
+		if note := h.emptyResultNote(ctx, tgt.connection, userDB, sqlStr, rows); note != "" {
 			result["note"] = note
 		}
 	}
