@@ -27,6 +27,10 @@ type ProxyOptions struct {
 	// response (GET .../namespaces/<ns>/tables/<t>), the way a catalog vends
 	// storage credentials.
 	Vended map[string]string
+	// HangLoadTable makes every LoadTable request (GET .../tables/<t>) hang until
+	// the request is abandoned or the test ends, the way a stalled catalog does.
+	// Attach and namespace listings still answer.
+	HangLoadTable bool
 }
 
 // Proxy is an in-test HTTP reverse proxy in front of the REST catalog.
@@ -64,6 +68,7 @@ func (f *Fixture) Proxy(t testing.TB, opts ProxyOptions) *Proxy {
 	target, err := url.Parse(f.RESTURI)
 	require.NoError(t, err)
 	p := &Proxy{}
+	done := make(chan struct{})
 	rp := &httputil.ReverseProxy{Rewrite: func(pr *httputil.ProxyRequest) {
 		pr.SetURL(target)
 		pr.Out.Header.Del("Accept-Encoding") // so a modified body is never compressed
@@ -103,6 +108,13 @@ func (f *Fixture) Proxy(t testing.TB, opts ProxyOptions) *Proxy {
 		p.mu.Lock()
 		p.seen = append(p.seen, r.Method+" "+r.URL.Path)
 		p.mu.Unlock()
+		if opts.HangLoadTable && r.Method == http.MethodGet && loadTablePath.MatchString(r.URL.Path) {
+			select {
+			case <-r.Context().Done():
+			case <-done:
+			}
+			return
+		}
 		if opts.RequireBearer && r.Header.Get("Authorization") != "Bearer "+BearerToken {
 			http.Error(w, `{"error":{"message":"unauthorized","type":"NotAuthorizedException","code":401}}`, http.StatusUnauthorized)
 			return
@@ -110,6 +122,7 @@ func (f *Fixture) Proxy(t testing.TB, opts ProxyOptions) *Proxy {
 		rp.ServeHTTP(w, r)
 	}))
 	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(done) }) // runs first: releases hung handlers so Close can return
 	p.URL = srv.URL
 	return p
 }

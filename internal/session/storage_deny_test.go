@@ -55,8 +55,9 @@ func TestDenyStatements(t *testing.T) {
 type fakeDriver struct {
 	mu     sync.Mutex
 	stmts  []string
-	failOn string // an Exec starting with this fails ("network unreachable")
-	sealed bool   // SET GLOBAL s3_url_compatibility_mode = true was run
+	failOn string            // an Exec starting with this fails ("network unreachable")
+	http   map[string]string // http_timeout / http_retries as last set
+	sealed bool              // SET GLOBAL s3_url_compatibility_mode = true was run
 }
 
 func (f *fakeDriver) Open(string) (driver.Conn, error) { return &fakeConn{f}, nil }
@@ -100,6 +101,16 @@ func (c *fakeConn) ExecContext(_ context.Context, q string, _ []driver.NamedValu
 		c.f.sealed = true
 		c.f.mu.Unlock()
 	}
+	for _, name := range []string{httpTimeoutSetting, httpRetriesSetting} {
+		if strings.HasPrefix(q, "SET GLOBAL "+name+" = ") {
+			c.f.mu.Lock()
+			if c.f.http == nil {
+				c.f.http = map[string]string{}
+			}
+			c.f.http[name] = strings.TrimPrefix(q, "SET GLOBAL "+name+" = ")
+			c.f.mu.Unlock()
+		}
+	}
 	if c.f.failOn != "" && strings.HasPrefix(q, c.f.failOn) {
 		return nil, errors.New("network unreachable")
 	}
@@ -112,6 +123,15 @@ func (c *fakeConn) QueryContext(_ context.Context, q string, _ []driver.NamedVal
 	if strings.Contains(q, "current_setting") {
 		c.f.mu.Lock()
 		defer c.f.mu.Unlock()
+		for _, name := range []string{httpTimeoutSetting, httpRetriesSetting} {
+			if strings.Contains(q, "'"+name+"'") {
+				v := c.f.http[name]
+				if v == "" {
+					v = "0"
+				}
+				return &fakeRows{cols: []string{"v"}, vals: []driver.Value{v}}, nil
+			}
+		}
 		return &fakeRows{cols: []string{"v"}, vals: []driver.Value{strconv.FormatBool(c.f.sealed)}}, nil
 	}
 	return &fakeRows{cols: []string{"v"}, vals: []driver.Value{""}}, nil

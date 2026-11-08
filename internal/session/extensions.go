@@ -21,6 +21,11 @@ var extensionSizeHint = map[string]string{"excel": "about 2 MB"}
 // the first use downloads it once. A failure is returned with a message fit
 // for the UI, never swallowed, so callers cannot silently degrade.
 func EnsureExtension(ctx context.Context, db storageQuerier, name, feature string) error {
+	return ensureExtension(ctx, db, name, feature, defaultHTTPLimits())
+}
+
+// ensureExtension is EnsureExtension with the HTTP limits the session was configured with.
+func ensureExtension(ctx context.Context, db storageQuerier, name, feature string, lim httpLimits) error {
 	if !connname.Valid(name) {
 		return fmt.Errorf("invalid extension name %q", name)
 	}
@@ -35,5 +40,5 @@ func EnsureExtension(ctx context.Context, db storageQuerier, name, feature strin
 	if _, err := db.ExecContext(ctx, "LOAD "+q); err != nil {
 		return fmt.Errorf("%s could not load the DuckDB %q extension: %w", feature, name, err)
 	}
-	return DenyUncoveredStorage(ctx, db)
+	return protectStorage(ctx, db, true, lim)
 }

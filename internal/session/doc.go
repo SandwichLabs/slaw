@@ -32,7 +32,9 @@
 // silently ignores it, spike finding J), then lock_configuration=true last,
 // then reads every option back and refuses to open if any did not take.
 // lock_configuration does not block ATTACH/DETACH/secret DDL/INSTALL/LOAD/USE;
-// the agent SQL policy owns those (§4.5).
+// the agent SQL policy owns those (§4.5). httpfs's http_timeout (30 s) and
+// http_retries (1) are set where httpfs loads, with the deny secrets (a context
+// cancel does not interrupt a hung catalog request), and read back too.
 //
 // Findings: docs/plans/spike-duckdb-hub-findings.md.
 package session

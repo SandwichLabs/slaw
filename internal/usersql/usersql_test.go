@@ -100,6 +100,7 @@ func TestCheckManagedRefusesOnlyLoadAndSecretDDL(t *testing.T) {
 		`SET "s3_url_compatibility_mode" = false`, "select 1; set session s3_url_compatibility_mode to false",
 		"PRAGMA s3_url_compatibility_mode=false", "pragma S3_URL_COMPATIBILITY_MODE=false", `PRAGMA "s3_url_compatibility_mode"=false`,
 		"PRAGMA s3_url_compatibility_mode = 'false'", "SELECT 1; PRAGMA s3_url_compatibility_mode=false",
+		"SET http_timeout = 600", "set global HTTP_RETRIES=9", `PRAGMA "http_timeout"=0`,
 	} {
 		assert.Error(t, CheckManaged(bad), bad)
 	}

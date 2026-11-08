@@ -113,7 +113,7 @@ func guardedSetting(words []string) bool {
 	for len(words) > 0 && (words[0] == "GLOBAL" || words[0] == "SESSION" || words[0] == "LOCAL") {
 		words = words[1:]
 	}
-	return len(words) > 0 && (words[0] == "S3_URL_COMPATIBILITY_MODE" || words[0] == "?" || words[0] == "ALL")
+	return len(words) > 0 && (words[0] == "S3_URL_COMPATIBILITY_MODE" || words[0] == "HTTP_TIMEOUT" || words[0] == "HTTP_RETRIES" || words[0] == "?" || words[0] == "ALL")
 }
 
 func secretDDL(first string, rest []string) error {

@@ -276,7 +276,7 @@ func (h *hub) readyForConnect(ctx context.Context, conn *sql.Conn, e *entry, ct 
 			}
 		}
 	}
-	if err := DenyUncoveredStorage(ctx, conn); err != nil {
+	if err := protectStorage(ctx, conn, true, h.cfg.httpLimits()); err != nil {
 		return secrets.Credential{}, StatusError, h.redact(err.Error()), err
 	}
 	var cred secrets.Credential
@@ -448,7 +448,7 @@ func (h *hub) InstallExtension(ctx context.Context, name string) error {
 		}
 		return nil
 	}
-	return EnsureExtension(ctx, conn, name, name+" connections")
+	return ensureExtension(ctx, conn, name, name+" connections", h.cfg.httpLimits())
 }
 
 // RefreshCatalog implements Session.
