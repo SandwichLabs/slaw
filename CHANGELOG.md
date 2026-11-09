@@ -4,6 +4,14 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-09
+
+Plainer, shorter wording across Studio and the CLI. No behaviour changes.
+
+### Changed
+
+- **User-facing text rewritten (#374).** About 120 labels, buttons, empty states, hints, errors and CLI help strings in 69 files are shorter and say what they mean, among them the About header, the chat placeholder, the Import view and the dashboard.
+
 ## [0.9.0] - 2026-11-09
 
 Run receipts and the evidence drawer: every read that shows you a value (in the console, after `.receipts on`), and every `run_query`, `run_saved_query` and `preview_query` the agent runs, keeps a record on this computer of the statement, the connections and, where one can be recorded, the snapshot it read, and Evidence opens it (#241, E1). Also clearer SQL errors and an MCP surface that lists only the tools a session can use.
@@ -519,7 +527,8 @@ The first public release. Vibe is an agentic desktop workspace for working with 
 - Older data-holding `.vibe` (SQLCipher) files are not opened.
 - Linux builds target glibc 2.35 or newer and WebKitGTK 4.1; musl and older distributions are unsupported.
 
-[Unreleased]: https://github.com/SandwichLabs/slaw/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/SandwichLabs/slaw/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/SandwichLabs/slaw/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/SandwichLabs/slaw/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/SandwichLabs/slaw/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/SandwichLabs/slaw/compare/v0.6.4...v0.7.0
