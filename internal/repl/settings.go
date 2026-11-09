@@ -44,6 +44,7 @@ type settings struct {
 	nullvalue string // how NULL reads in every mode but json
 	headers   bool   // csv header row
 	columns   bool   // transposed rendering
+	receipts  bool   // .receipts on: each plain read keeps a receipt (this session only)
 }
 
 func defaultSettings() settings {

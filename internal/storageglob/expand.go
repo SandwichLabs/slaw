@@ -69,7 +69,10 @@ type Rewrite struct {
 // sub is one replaced literal: the list that took its place, the literal as
 // written, and the start of the first quoted key (a fragment of the list that
 // DuckDB's "LINE n:" context may show on its own).
-type sub struct{ repl, orig, probe string }
+type sub struct {
+	repl, orig, probe string
+	n                 int // objects the pattern expanded to
+}
 
 // Changed reports whether the text was rewritten.
 func (r *Rewrite) Changed() bool { return r != nil && len(r.subs) > 0 }
@@ -113,6 +116,33 @@ func (r *Rewrite) carriesKeys(line string) bool {
 		}
 	}
 	return false
+}
+
+// Summarize is the statement as a record may keep it: text with each expanded
+// key list put back as the pattern the person wrote, followed by a comment
+// saying how many objects it expanded to, so 10,000 keys never land in a
+// receipt. n is the number of objects the patterns expanded to. Unlike Redact it
+// never clips and never rewrites an error's "LINE n:" excerpt. sql is the text
+// the rewrite produced (what ran); text with nothing rewritten comes back
+// unchanged with n 0. The keyed hash of what ran (run_sql_hash) is the caller's.
+func (r *Rewrite) Summarize(sql string) (text string, n int) {
+	if !r.Changed() {
+		return sql, 0
+	}
+	text = sql
+	changed := false
+	for _, s := range r.subs {
+		if !strings.Contains(text, s.repl) {
+			continue
+		}
+		changed = true
+		n += s.n
+		text = strings.Replace(text, s.repl, s.orig+fmt.Sprintf(" /* expanded to %d objects */", s.n), 1)
+	}
+	if !changed {
+		return sql, 0
+	}
+	return text, n
 }
 
 type ctxKey struct{}
@@ -254,7 +284,7 @@ func rewrite(ctx context.Context, text string, sites []site, o Options) (string,
 		}
 		b.WriteString(text[prev:s.start])
 		b.WriteString(repl)
-		rw.subs = append(rw.subs, sub{repl: repl, orig: text[s.start:s.end], probe: probe(keys[s.pattern])})
+		rw.subs = append(rw.subs, sub{repl: repl, orig: text[s.start:s.end], probe: probe(keys[s.pattern]), n: len(keys[s.pattern])})
 		prev = s.end
 	}
 	b.WriteString(text[prev:])

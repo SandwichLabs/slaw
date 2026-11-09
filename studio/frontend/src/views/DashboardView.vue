@@ -169,21 +169,21 @@ onUnmounted(() => {
           <Icon name="layers" :size="22" />
         </div>
         <div style="font-family: var(--sh-font-display); font-weight: 600; font-size: 20px; letter-spacing: -0.015em; margin-top: 12px;">Library</div>
-        <div class="sh-meta" style="margin-top: 4px;">Notebooks, live views & pages</div>
+        <div class="sh-meta" style="margin-top: 4px;">Notebooks, live views and pages</div>
       </div>
       <div class="card" style="padding: 20px 20px 18px 28px; cursor: pointer; border-left: 6px solid var(--sh-subj-science);" @click="router.push('/tables')">
         <div style="width: 40px; height: 40px; border: 1.5px solid var(--sh-ink); border-radius: var(--sh-radius-sm); background: var(--sh-paper-2); display: inline-flex; align-items: center; justify-content: center;">
           <Icon name="database" :size="22" />
         </div>
         <div style="font-family: var(--sh-font-display); font-weight: 600; font-size: 20px; letter-spacing: -0.015em; margin-top: 12px;">Tables</div>
-        <div class="sh-meta" style="margin-top: 4px;">Browse & edit your data</div>
+        <div class="sh-meta" style="margin-top: 4px;">Browse and edit your data</div>
       </div>
       <div class="card" style="padding: 20px 20px 18px 28px; cursor: pointer; border-left: 6px solid var(--sh-subj-math);" @click="router.push('/queries')">
         <div style="width: 40px; height: 40px; border: 1.5px solid var(--sh-ink); border-radius: var(--sh-radius-sm); background: var(--sh-paper-2); display: inline-flex; align-items: center; justify-content: center;">
           <Icon name="terminal" :size="22" />
         </div>
         <div style="font-family: var(--sh-font-display); font-weight: 600; font-size: 20px; letter-spacing: -0.015em; margin-top: 12px;">Queries</div>
-        <div class="sh-meta" style="margin-top: 4px;">Ask questions with SQL</div>
+        <div class="sh-meta" style="margin-top: 4px;">Run and save SQL</div>
       </div>
     </div>
   </div>

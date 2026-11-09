@@ -79,6 +79,7 @@ func (h *consoleHost) open(a *App, connection string) (string, error) {
 		},
 		Complete: completeFromCatalog(a),
 		Expand:   expand,
+		Receipts: ws.Receipts(),
 	}
 	h.mu.Lock()
 	h.sessions[id] = c

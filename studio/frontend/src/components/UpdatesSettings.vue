@@ -60,7 +60,7 @@ const openRelease = (url: string) => { if (url.startsWith('https://')) BrowserOp
       </p>
       <div v-else class="col" style="gap: var(--sh-space-2);" data-testid="updates-available">
         <div style="font-weight: 600;">{{ updateResult.latest }} is available <span class="sh-meta">(you have {{ updateResult.current }})</span></div>
-        <p v-if="updateResult.skipped" class="sh-meta" style="margin: 0;" data-testid="updates-skipped">You skipped this version. Weekly checks stay quiet about it.</p>
+        <p v-if="updateResult.skipped" class="sh-meta" style="margin: 0;" data-testid="updates-skipped">You skipped this version, so weekly checks don't mention it.</p>
         <pre v-if="updateResult.notes" class="notes" data-testid="updates-notes">{{ updateResult.notes }}</pre>
         <p v-if="!updateResult.updatable" class="sh-meta" style="margin: 0;" data-testid="updates-external">{{ updateResult.managedNote }}</p>
         <p v-if="updateApplyError" class="sh-meta" role="alert" style="color: var(--sh-error); margin: 0;" data-testid="updates-apply-error">Could not install: {{ updateApplyError }}</p>

@@ -59,7 +59,7 @@ export function useSkillsEditor() {
         selectedName.value = skills.value[0].name
       }
     } catch (e: any) {
-      errorMessage.value = 'Failed to load skills: ' + errorText(e)
+      errorMessage.value = "Couldn't load skills: " + errorText(e)
     }
     loading.value = false
   }
@@ -97,11 +97,11 @@ export function useSkillsEditor() {
 
   async function submitEditor() {
     if (!NAME_PATTERN.test(formName.value)) {
-      formNameError.value = 'Lowercase letters, numbers, and hyphens only (e.g. "revenue-rules")'
+      formNameError.value = 'Lowercase letters, numbers and hyphens, like revenue-rules'
       return
     }
     if (!formDescription.value.trim() || !formInstructions.value.trim()) {
-      formNameError.value = 'Description and instructions are required'
+      formNameError.value = 'Add a description and instructions'
       return
     }
     saving.value = true
@@ -204,7 +204,7 @@ export function useSkillsEditor() {
       if (selectedName.value === name) selectedName.value = null
       await loadSkills()
     } catch (e: any) {
-      errorMessage.value = 'Failed to delete skill: ' + errorText(e)
+      errorMessage.value = "Couldn't delete the skill: " + errorText(e)
     }
   }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/lsp"
 	"github.com/SandwichLabs/slaw/internal/queries"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/session"
 )
 
@@ -43,6 +44,10 @@ type Options struct {
 	// and the parameter values it needs; an error is shown and nothing runs.
 	// The history keeps what was typed.
 	Expand func(ctx context.Context, text, connection string) (string, map[string]any, error)
+	// Receipts keeps the receipts of the statements this console runs while the
+	// person has turned them on (.receipts on, per session, off by default).
+	// nil: the command answers that receipts are not available here.
+	Receipts *receipts.Recorder
 	// ConnectTimeout bounds dialling a connection that is not attached yet
 	// (opening on one, .conn, Use). 0 = no bound beyond the session's context.
 	ConnectTimeout time.Duration
@@ -271,19 +276,27 @@ func (s *Session) errorLine(label, msg string) {
 }
 
 func (s *Session) makePrompts() {
-	s.mainPrompt, s.contPrompt = prompts(s.o.Workspace, s.pal())
+	s.mainPrompt, s.contPrompt = prompts(s.o.Workspace, s.pal(), s.st.receipts)
 }
 
 // prompts are the main and continuation prompts: "<workspace> ▸ D " and the
 // same width of spaces ending in "· ". The workspace name is not trusted text.
-func prompts(workspace string, pal palette) (main, cont string) {
+// While receipts are on the main prompt says so ("D [receipts] ").
+func prompts(workspace string, pal palette, receiptsOn bool) (main, cont string) {
 	d := pal.bold("D")
+	tag := ""
+	if receiptsOn {
+		tag = " " + receiptsTag
+	}
 	if workspace == "" {
-		return d + " ", "· "
+		return d + tag + " ", strings.Repeat(" ", cellWidth(tag)) + "· "
 	}
 	name := runewidth.Truncate(safe(workspace), 32, "…")
-	return name + " ▸ " + d + " ", strings.Repeat(" ", cellWidth(name)+3) + "· "
+	return name + " ▸ " + d + tag + " ", strings.Repeat(" ", cellWidth(name)+3+cellWidth(tag)) + "· "
 }
+
+// receiptsTag is what the prompt shows while .receipts is on.
+const receiptsTag = "[receipts]"
 
 func bannerText(workspace string) string {
 	who := ""

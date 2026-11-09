@@ -20,7 +20,7 @@ onMounted(about.load)
 
     <div class="card card-pad col" style="gap: var(--sh-space-4);">
       <div>
-        <div style="font-weight: 600;">Slaw: SandwichLabs analysis workspace</div>
+        <div style="font-weight: 600;">Slaw, the SandwichLabs analysis workspace</div>
         <div class="sh-meta">Analyze your data in a secure private workspace.</div>
       </div>
       <dl class="build" data-testid="about-build">

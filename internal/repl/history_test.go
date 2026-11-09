@@ -11,6 +11,8 @@ import (
 	duckdb "github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/SandwichLabs/slaw/internal/engine"
 )
 
 func historyPath(root string) string { return filepath.Join(root, ".slaw-local", "repl", "history") }
@@ -144,7 +146,7 @@ func TestOrdinarySQLStaysRecordable(t *testing.T) {
 		"-- bearer of bad news\nSELECT 1",
 		"SELECT max_tokens FROM settings",
 	} {
-		assert.True(t, recordable(foldEntry(stmt)), stmt)
+		assert.True(t, engine.Recordable(foldEntry(stmt)), stmt)
 	}
-	assert.False(t, recordable(foldEntry("SELECT 1 WHERE password = 'x'")))
+	assert.False(t, engine.Recordable(foldEntry("SELECT 1 WHERE password = 'x'")))
 }

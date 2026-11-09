@@ -26,7 +26,7 @@ useModalKeys(toRef(props, 'visible'), () => emit('cancel'), root, () => cancelBt
         <li v-for="i in items" :key="i.id">
           <strong>{{ i.kind }} {{ i.name }}</strong>
           <span class="sh-mono bulk-dialog__meta">{{ i.target }} · +{{ i.added }} −{{ i.removed }}</span>
-          <span v-if="i.stale" class="bulk-dialog__stale">changed since proposed: this stops the run</span>
+          <span v-if="i.stale" class="bulk-dialog__stale">changed since it was proposed; the run stops here</span>
         </li>
       </ul>
       <div class="row" style="justify-content: flex-end; margin-top: 12px;">

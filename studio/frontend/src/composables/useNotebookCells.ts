@@ -18,7 +18,7 @@ import { blankCell, envelopeToRaw, newCellId, newCellState, type CellState } fro
 import { closeCompletion } from '@codemirror/autocomplete'
 import { sqlCompletion } from '../lib/sqlComplete'
 
-export function useNotebookCells(opts: { onDelete: (id: string) => void }) {
+export function useNotebookCells(opts: { onDelete: (id: string) => void; notebookId?: () => string }) {
   // Cast: ref() would unwrap the CodeMirror EditorView type inside each cell's editor handle.
   const cells = ref<CellState[]>([]) as Ref<CellState[]>
 
@@ -118,7 +118,10 @@ export function useNotebookCells(opts: { onDelete: (id: string) => void }) {
     // never wait behind a background a2ui component storm's auto-fetches
     // (which stay 'low', the default), which is exactly what "returns in
     // under 1s regardless of how many a2ui components are mounted" requires.
-    const res = await runLiveQuery(cell.source, signal, 'high', cell.connection || undefined)
+    // The source names the cell, so its receipt says which notebook and cell asked (Go checks it).
+    const nbId = opts.notebookId?.()
+    const source: RenderSource | undefined = nbId ? { kind: 'cell', notebook: nbId, cell: cell.id } : undefined
+    const res = await runLiveQuery(cell.source, signal, 'high', cell.connection || undefined, source)
     if (res.aborted) return // this load was superseded (notebook switch / unmount) — discard
     cell.running = false
     cell.lastRunSource = cell.source.trim()
@@ -130,7 +133,7 @@ export function useNotebookCells(opts: { onDelete: (id: string) => void }) {
       nextTick(mountEditors)
       return
     }
-    cell.result = { columns: res.columns, types: res.types, rows: res.rows }
+    cell.result = { columns: res.columns, types: res.types, rows: res.rows, receipt_id: res.receipt_id, receipt_note: res.receipt_note }
     if (!cell.viewPinned) {
       cell.view = bestView(describeShape(res.columns, res.rows, res.types))
     }

@@ -78,7 +78,7 @@ func TestMetric_RunsInANotebookCellAndAnArtifactQuery(t *testing.T) {
 	app := appWithMetric(t)
 	for _, mode := range []string{"read-only", "read-write", "full"} {
 		setAgentSandbox(t, app, mode)
-		res, err := app.RunA2UIQueryIn("SELECT region, net_revenue FROM metric('net_revenue', by => 'region') ORDER BY region", "")
+		res, err := app.RunA2UIQueryIn("SELECT region, net_revenue FROM metric('net_revenue', by => 'region') ORDER BY region", "", RenderSource{})
 		require.NoError(t, err, mode)
 		require.Len(t, res.Rows, 2, mode)
 		assert.EqualValues(t, 30, res.Rows[0][1])

@@ -164,7 +164,7 @@ const {
             <span><span class="ot">My keychain</span><span class="od">Saved once on this computer.</span></span>
           </button>
           <button type="button" role="radio" class="opt-card" :class="{ on: method === 'env' }" :aria-checked="method === 'env'" data-testid="method-env" @click="method = 'env'; envPrefix = envPrefix || f.name.toUpperCase()">
-            <span><span class="ot">Environment variables</span><span class="od">Read from <code>{{ envVars[0]?.name }}</code> and friends when Slaw starts. Good for scripts and servers.</span></span>
+            <span><span class="ot">Environment variables</span><span class="od">Read from <code>{{ envVars[0]?.name }}</code> and the related variables when Slaw starts. Good for scripts and servers.</span></span>
           </button>
           <button type="button" role="radio" class="opt-card" :class="{ on: method === 'prompt' }" :aria-checked="method === 'prompt'" data-testid="method-prompt" @click="method = 'prompt'">
             <span><span class="ot">Ask me each time</span><span class="od">Slaw asks when it connects and forgets it when you close the workspace.</span></span>
@@ -212,7 +212,7 @@ const {
           <p class="help">Slaw shows whether each variable is set, never what it is. Set them in the environment Slaw starts from.</p>
         </template>
         <p v-else class="help">When you connect, Slaw asks for {{ credFields.map((c) => c.label.toLowerCase()).join(' and ') }} and forgets {{ credFields.length > 1 ? 'them' : 'it' }} when you close the workspace. The prompt can offer to remember {{ credFields.length > 1 ? 'them' : 'it' }} in your keychain, off by default.</p>
-        <p class="help">The team's file only says which details are needed. How you sign in is your own choice and stays on this computer, so teammates can use a different way.</p>
+        <p class="help">The team's file only lists what's needed. How you sign in stays on this computer, so each teammate can choose their own way.</p>
       </div>
 
       <!-- Safety -->
@@ -227,12 +227,12 @@ const {
             <span>
               <span id="ro-t" class="st-t">Read-only{{ readOnly ? ' (recommended)' : '' }}</span>
               <span id="ro-d" class="st-d">
-                <template v-if="readOnly">Slaw will refuse to run changes on this connection, from you or the Slaw assistant. This is a safety belt inside Slaw, not a lock on the database: a determined query can still get around it.</template>
-                <template v-else>Changes are allowed. You and the Slaw assistant can edit data here. It will still ask you before every change.</template>
+                <template v-if="readOnly">Slaw refuses changes on this connection, from you or the Slaw assistant. That is a guard inside Slaw, not a lock on the database: a determined query can still get around it.</template>
+                <template v-else>Changes are allowed. You and the Slaw assistant can edit data here, and it still asks you before every change.</template>
               </span>
             </span>
           </div>
-          <div v-if="readOnly && remote && typeId !== 'ducklake'" class="note warn"><Icon name="alert" :size="16" /><span><b>For production data, also use a read-only database user.</b> Ask your database admin for a role that can only read. That is the only way to be certain nothing can change.</span></div>
+          <div v-if="readOnly && remote && typeId !== 'ducklake'" class="note warn"><Icon name="alert" :size="16" /><span><b>For production data, also use a read-only database user.</b> Ask your database admin for a role that can only read; that is the only way to be sure nothing changes.</span></div>
         </template>
       </div>
 

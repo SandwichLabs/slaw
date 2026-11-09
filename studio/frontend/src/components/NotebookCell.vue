@@ -8,6 +8,7 @@
 import Icon from './Icon.vue'
 import A2UIPage from '../a2ui/A2UIPage.vue'
 import CellDrawer from './CellDrawer.vue'
+import { openEvidence } from '../composables/useEvidenceDrawer'
 import ConnectionSelect from './ConnectionSelect.vue'
 import { defaultConnectionName } from '../composables/useConnections'
 import { renderSafeMarkdown } from '../lib/markdown'
@@ -19,7 +20,9 @@ import {
   synthesizedPage, titleOf, type CellState,
 } from '../lib/notebookCells'
 
-defineProps<{
+const props = defineProps<{
+  // The notebook this cell is in: an A2UI cell's components name it in their receipts.
+  notebookId?: string
   cell: CellState
   // Aborts the cell's live queries when the load that rendered it is superseded.
   signal?: AbortSignal
@@ -35,6 +38,15 @@ const emit = defineEmits<{
   move: [delta: number]
   remove: []
 }>()
+
+// The Evidence button of a sql cell: the receipt of its last run, or why there is none.
+function showEvidence(e: MouseEvent) {
+  const c = props.cell
+  openEvidence(
+    { title: titleOf(c), receiptId: c.result?.receipt_id, note: c.result?.receipt_note, memory: { sql: c.lastRunSource ?? c.source, connection: c.connection || undefined } },
+    e,
+  )
+}
 </script>
 
 <template>
@@ -188,6 +200,9 @@ const emit = defineEmits<{
               </div>
             </div>
             <A2UIPage v-else-if="synthesizedPage(cell)" :page="synthesizedPage(cell)!" :signal="signal" />
+            <div v-if="cell.result.receipt_id || cell.result.receipt_note" style="display: flex; justify-content: flex-end; margin-top: var(--sh-space-2); font-size: var(--sh-fs-xs);" data-testid="cell-footer">
+              <button type="button" class="ev-link" :aria-label="`Show evidence for ${titleOf(cell)}`" data-testid="cell-evidence" @click="showEvidence">Evidence</button>
+            </div>
           </template>
           <div v-else class="sh-mono" style="color: var(--sh-graphite); font-size: var(--sh-fs-xs);">Not run yet.</div>
           <div v-if="cell.result && !cell.result.error && !cell.connection && defaultConnectionName !== 'local'" class="sh-mono" style="color: var(--sh-graphite); font-size: var(--sh-fs-xs); margin-top: var(--sh-space-2);" data-testid="cell-default-note">
@@ -207,7 +222,7 @@ const emit = defineEmits<{
            rendered until this cell has scrolled into view) -->
       <template v-else-if="cell.type === 'a2ui'">
         <div style="padding: var(--sh-space-4); min-height: 48px;">
-          <A2UIPage v-if="cell.page && cell.visible" :page="cell.page" :signal="signal" />
+          <A2UIPage v-if="cell.page && cell.visible" :page="cell.page" :signal="signal" :source="notebookId ? { notebook: notebookId, cell: cell.id } : undefined" />
           <div v-else class="sh-mono" style="color: var(--sh-graphite); font-size: var(--sh-fs-xs);">Scroll into view to render…</div>
         </div>
         <div style="border-top: var(--sh-border-thin);">

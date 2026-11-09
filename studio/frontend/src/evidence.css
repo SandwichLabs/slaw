@@ -1,0 +1,139 @@
+/* The Evidence drawer (components/Evidence*.vue): a right-hand panel, 420px wide,
+   a 2px left border and a surface background. Sections are separated by 1.5px
+   subtle borders. Roles only (--sh-* and --slaw-*), no hex. */
+
+.ev-drawer {
+  position: fixed;
+  top: 64px; /* under the top bar, so the assistant and theme buttons stay reachable */
+  right: 0;
+  bottom: 0;
+  width: 420px;
+  max-width: 100vw;
+  z-index: 950;
+  display: flex;
+  flex-direction: column;
+  background: var(--sh-paper);
+  color: var(--sh-ink);
+  border-left: 2px solid var(--sh-ink);
+}
+
+.ev-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sh-space-3);
+  padding: var(--sh-space-4);
+  border-bottom: 1.5px solid var(--ev-rule);
+}
+.ev-eyebrow {
+  font-size: var(--sh-fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--sh-graphite);
+}
+.ev-title {
+  margin: 2px 0 0;
+  font-size: var(--sh-fs-lg);
+  overflow-wrap: anywhere;
+}
+
+.ev-drawer {
+  /* a subtle rule: the ink at low strength, so it holds in every theme */
+  --ev-rule: color-mix(in srgb, var(--sh-ink) 22%, transparent);
+}
+
+.ev-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.ev-body > .note { margin: var(--sh-space-4); }
+
+.ev-sec {
+  padding: var(--sh-space-4);
+  border-bottom: 1.5px solid var(--ev-rule);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sh-space-2);
+  min-width: 0;
+}
+.ev-h {
+  margin: 0;
+  font-size: var(--sh-fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sh-graphite);
+}
+.ev-sentence { margin: 0; overflow-wrap: anywhere; }
+.ev-badges { display: flex; flex-wrap: wrap; gap: var(--sh-space-2); }
+.ev-badges .badge { display: inline-flex; align-items: center; gap: 6px; }
+
+/* No overflow:hidden here: it would clip the focus ring of the buttons. The ends are rounded by the buttons. */
+.ev-seg { display: inline-flex; align-self: flex-start; border: 1.5px solid var(--sh-ink); border-radius: var(--sh-radius-sm); }
+.ev-seg button:first-child { border-radius: 1px 0 0 1px; }
+.ev-seg button:last-child { border-radius: 0 1px 1px 0; }
+.ev-seg button {
+  background: transparent;
+  color: var(--sh-ink);
+  border: 0;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: var(--sh-fs-xs);
+  cursor: pointer;
+}
+.ev-seg button + button { border-left: 1.5px solid var(--sh-ink); }
+.ev-seg button[aria-pressed='true'] { background: var(--slaw-accent); color: var(--slaw-accent-fg); font-weight: 700; }
+
+.ev-code {
+  margin: 0;
+  padding: var(--sh-space-2) var(--sh-space-3);
+  background: var(--sh-paper-2);
+  border: 1.5px solid var(--ev-rule);
+  border-radius: var(--sh-radius-sm);
+  font-family: var(--sh-font-mono);
+  font-size: var(--sh-fs-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+}
+.ev-kv { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px var(--sh-space-3); font-family: var(--sh-font-mono); font-size: var(--sh-fs-xs); }
+.ev-kv dt { color: var(--sh-graphite); }
+.ev-kv dd { margin: 0; overflow-wrap: anywhere; }
+
+.ev-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sh-space-3); }
+.ev-pair + .ev-pair { margin-top: var(--sh-space-3); }
+.ev-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ev-cell b { overflow-wrap: anywhere; }
+.ev-mono { font-family: var(--sh-font-mono); font-size: var(--sh-fs-xs); overflow-wrap: anywhere; }
+.ev-muted { color: var(--sh-graphite); font-size: var(--sh-fs-xs); margin: 0; overflow-wrap: anywhere; }
+.ev-row { display: flex; gap: var(--sh-space-1); align-items: flex-start; }
+.ev-lock { display: flex; gap: var(--sh-space-2); align-items: flex-start; }
+
+.ev-cols { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; max-height: 160px; overflow: auto; font-family: var(--sh-font-mono); font-size: var(--sh-fs-xs); }
+.ev-cols li { display: flex; justify-content: space-between; gap: var(--sh-space-3); }
+.ev-cols .ev-type { color: var(--sh-graphite); }
+
+.ev-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sh-space-2);
+  padding: var(--sh-space-3) var(--sh-space-4);
+  background: var(--sh-paper-2);
+  border-top: 1.5px solid var(--ev-rule);
+}
+.ev-id { display: flex; align-items: center; gap: var(--sh-space-2); font-family: var(--sh-font-mono); font-size: var(--sh-fs-sm); }
+.ev-id code { overflow-wrap: anywhere; }
+
+.ev-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--slaw-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}

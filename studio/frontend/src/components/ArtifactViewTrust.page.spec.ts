@@ -100,9 +100,9 @@ describe('ArtifactViewTrust, HTML page', () => {
   it('fails closed without the prompt text: says so, lists the declared capabilities, and keeps Allow off', async () => {
     const app = makeApp(status({ page_kind: 'scripted', disclosure: undefined, capabilities: ['ask', 'download'] }))
     const w = await mountTrust()
-    expect(w.get('[data-testid="page-prompt-missing"]').text()).toContain('could not be loaded')
+    expect(w.get('[data-testid="page-prompt-missing"]').text()).toContain("Couldn't load what this page can do")
     expect(w.get('[data-testid="page-prompt-caps"]').text()).toContain('ask')
-    expect(w.text()).not.toContain('declares no capabilities')
+    expect(w.text()).not.toContain('no capabilities')
     expect(w.find('[data-testid="page-prompt-credential"]').exists()).toBe(false)
     expect(w.get('[data-testid="view-trust-allow"]').attributes('disabled')).toBeDefined()
     await w.get('[data-testid="view-trust-allow"]').trigger('click')

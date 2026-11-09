@@ -14,7 +14,7 @@ import { num } from './series'
 import { formatNumber } from '../lib/formatCell'
 
 const props = defineProps<{ component: A2UIComponentT }>()
-const { loading, error, table } = useChartData(() => props.component)
+const { loading, error, table, result } = useChartData(() => props.component)
 const points = computed(() => table.value.rows.map((r) => ({ label: String(r[0] ?? ''), value: num(r.length > 1 ? r[1] : r[0]) })))
 const { values, replay, enabled } = useMotion(() => points.value.map((p) => p.value), () => props.component.motion)
 
@@ -32,7 +32,7 @@ const ariaLabel = computed(() => `Stream of ${points.value.length} values; lates
 </script>
 
 <template>
-  <A2UIChartFrame kind="stream" :label="component.label" :sql="isBound(component)" :loading="loading" :error="error" :empty="points.length === 0" :animated="enabled" @replay="replay">
+  <A2UIChartFrame :result="result" :title="component.label || component.id" kind="stream" :label="component.label" :sql="isBound(component)" :loading="loading" :error="error" :empty="points.length === 0" :animated="enabled" @replay="replay">
     <div class="a2ui-kchart__readout">
       <span v-if="live" class="a2ui-stream__live">● LIVE · {{ component.refresh }}s</span>
       <span v-if="latest">{{ latest.label }}</span>

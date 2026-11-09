@@ -58,6 +58,6 @@ const idx = (id: string) => active.value.findIndex((t) => t.id === id)
         </button>
       </template>
     </div>
-    <p class="help" style="margin-top: 16px;">Just have a CSV, Parquet or Excel file? You don't need a connection: put it in the workspace's <code>data/</code> folder or use Import, and query it from there.</p>
+    <p class="help" style="margin-top: 16px;">Only have a CSV, Parquet or Excel file? No connection needed: put it in the workspace's <code>data/</code> folder or use Import, then query it from there.</p>
   </div>
 </template>

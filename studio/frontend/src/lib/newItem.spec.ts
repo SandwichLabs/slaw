@@ -10,7 +10,7 @@ describe('newItem rules', () => {
     expect(starterKind('script', false)).toBe('script')
   })
   it('validates per type', () => {
-    expect(nameProblem('notebook', '  ')).toBe('Title is required')
+    expect(nameProblem('notebook', '  ')).toBe('Give it a title')
     expect(nameProblem('notebook', 'Any Title!')).toBe('')
     for (const t of ['live', 'page', 'script'] as const) {
       expect(nameProblem(t, 'Bad Name')).toMatch(/lowercase/)

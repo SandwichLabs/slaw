@@ -19,7 +19,7 @@ const scripted = computed(() => props.status.page_kind === 'scripted')
   <div class="col page-prompt" data-testid="page-prompt">
     <div v-if="!info" class="note warn" role="alert" data-testid="page-prompt-missing">
       <Icon name="alert" :size="16" />
-      <span>The details of what this page can do could not be loaded, so it cannot be allowed. Refresh to try again.</span>
+      <span>Couldn't load what this page can do, so it can't be allowed yet. Refresh to try again.</span>
     </div>
     <p v-else class="page-prompt__host" data-testid="page-prompt-host">{{ info.host }}</p>
 

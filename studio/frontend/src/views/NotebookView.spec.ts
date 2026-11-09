@@ -1,6 +1,6 @@
 // NotebookView interaction tests (#66 part A): run a sql cell and see it
 // auto-fit a view, edit-without-running shows the stale badge, and a write
-// attempt surfaces the read-only message RunA2UIQuery already returns.
+// attempt surfaces the read-only message RunA2UIQueryIn already returns.
 type MockApp = Partial<Record<keyof AppApi, any>>
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -37,6 +37,7 @@ vi.mock('vue-router', async () => {
 
 import NotebookView from './NotebookView.vue'
 import { setPendingAsk } from '../composables/usePendingAsk'
+import { useEvidenceDrawer, _resetEvidenceForTests } from '../composables/useEvidenceDrawer'
 
 const BAR_NOTEBOOK = {
   schemaVersion: 1,
@@ -68,7 +69,7 @@ function makeApp(overrides: MockApp = {}) {
   const app: MockApp = {
     GetNotebook: vi.fn(async () => JSON.parse(JSON.stringify(BAR_NOTEBOOK))),
     SaveNotebook: vi.fn(async (nb: any) => ({ notebook: nb, warnings: [] })),
-    RunA2UIQuery: vi.fn(async () => ({
+    RunA2UIQueryIn: vi.fn(async () => ({
       columns: ['region', 'sum(revenue)'],
       rows: [['North', 100], ['South', 200], ['East', 50]],
       truncated: false,
@@ -157,7 +158,7 @@ describe('NotebookView', () => {
   // -> synthesizedPage -> A2UITable), not just formatCell in isolation.
   it('a table-view sql cell renders DECIMAL results with their real scale via the synthesized types', async () => {
     const app = makeApp({
-      RunA2UIQuery: vi.fn(async () => ({
+      RunA2UIQueryIn: vi.fn(async () => ({
         columns: ['id', 'amt'],
         types: ['BIGINT', 'DECIMAL(12,2)'],
         rows: [['9007199254740993', 15675.3]],
@@ -226,8 +227,8 @@ describe('NotebookView', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(app.RunA2UIQueryIn).toHaveBeenCalledWith(nb.cells[0].source, 'prod_pg')
-    expect(app.RunA2UIQuery).not.toHaveBeenCalled()
+    // The cell names itself (notebook and cell id), so its receipt says where it ran.
+    expect(app.RunA2UIQueryIn).toHaveBeenCalledWith(nb.cells[0].source, 'prod_pg', { kind: 'cell', notebook: 'nb1', cell: 'c1' })
 
     // An edit triggers a save; the connection must ride along in the payload.
     const vm = wrapper.vm as any
@@ -267,9 +268,9 @@ describe('NotebookView', () => {
     expect(wrapper.find('[data-testid="stale-badge"]').exists()).toBe(true)
   })
 
-  it('a write query surfaces the read-only message from RunA2UIQuery', async () => {
+  it('a write query surfaces the read-only message from RunA2UIQueryIn', async () => {
     const app = makeApp({
-      RunA2UIQuery: vi.fn(async () => {
+      RunA2UIQueryIn: vi.fn(async () => {
         throw new Error('live bindings are read-only queries over this file\'s own tables (no writes, no external files)')
       }),
     })
@@ -283,7 +284,7 @@ describe('NotebookView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="cell-error"]').text()).toContain('read-only')
-    expect(app.RunA2UIQuery).toHaveBeenCalled()
+    expect(app.RunA2UIQueryIn).toHaveBeenCalled()
   })
 
   it('an empty cell disables Run and says to write a query first, without calling the binding (#3)', async () => {
@@ -295,14 +296,14 @@ describe('NotebookView', () => {
     const vm = wrapper.vm as any
     vm.cells[0].source = '   '
     await wrapper.vm.$nextTick()
-    const calls = (app.RunA2UIQuery as any).mock.calls.length
+    const calls = (app.RunA2UIQueryIn as any).mock.calls.length
     expect(wrapper.find('[data-testid="run-cell"]').attributes('disabled')).toBeDefined()
 
     await vm.runCell(vm.cells[0])
     await flushPromises()
 
     expect(wrapper.find('[data-testid="cell-error"]').text()).toBe('Write a query first.')
-    expect((app.RunA2UIQuery as any).mock.calls.length).toBe(calls)
+    expect((app.RunA2UIQueryIn as any).mock.calls.length).toBe(calls)
   })
 
   it('picking an unfit view shows a mismatch note instead of the chart', async () => {
@@ -630,7 +631,7 @@ describe('NotebookView', () => {
   it('opens the drawer on a run error and never auto-closes it again', async () => {
     const app = makeApp({
       GetNotebook: vi.fn(async () => JSON.parse(JSON.stringify(MIXED_NOTEBOOK))),
-      RunA2UIQuery: vi.fn(async () => { throw new Error('boom') }),
+      RunA2UIQueryIn: vi.fn(async () => { throw new Error('boom') }),
     })
     const wrapper = mountView()
     await flushPromises()
@@ -640,8 +641,8 @@ describe('NotebookView', () => {
     expect(c1.sourceOpen).toBe(true)
     expect(wrapper.find('[data-testid="cell-error"]').exists()).toBe(true)
 
-    app.RunA2UIQuery = vi.fn(async () => ({ columns: ['region'], rows: [['a']], truncated: false }))
-    ;(window as any).go.main.App.RunA2UIQuery = app.RunA2UIQuery
+    app.RunA2UIQueryIn = vi.fn(async () => ({ columns: ['region'], rows: [['a']], truncated: false }))
+    ;(window as any).go.main.App.RunA2UIQueryIn = app.RunA2UIQueryIn
     await vm.runCell(c1)
     await flushPromises()
     expect(c1.sourceOpen).toBe(true) // never auto-closes
@@ -832,13 +833,13 @@ describe('NotebookView', () => {
     const vm = wrapper.vm as any
 
     app.GetNotebook.mockClear()
-    app.RunA2UIQuery.mockClear()
+    app.RunA2UIQueryIn.mockClear()
     await vm.handleChangedOnDisk({ kind: 'notebook', id: 'nb1', op: 'changed' })
     await flushPromises()
     await flushPromises()
 
     expect(app.GetNotebook).toHaveBeenCalledTimes(1)
-    expect(app.RunA2UIQuery).toHaveBeenCalled()
+    expect(app.RunA2UIQueryIn).toHaveBeenCalled()
     expect(vm.conflict).toBeNull()
   })
 
@@ -1042,5 +1043,65 @@ describe('NotebookView connections (#117)', () => {
       expect.anything(),
     )
     vi.useRealTimers()
+  })
+
+  // Evidence (docs/plans/run-receipts.md R4a): a sql cell's footer opens the shared
+  // drawer for its last run, and an a2ui cell's components say which cell asked.
+  it('a sql cell with a receipt has an Evidence button that opens the drawer for the cell', async () => {
+    _resetEvidenceForTests()
+    const app = makeApp({
+      RunA2UIQueryIn: vi.fn(async () => ({ columns: ['n'], types: ['BIGINT'], rows: [[1]], truncated: false, receipt_id: 'r_cell' })),
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+    expect(app.RunA2UIQueryIn).toHaveBeenCalledWith(BAR_NOTEBOOK.cells[0].source, '', { kind: 'cell', notebook: 'nb1', cell: 'c1' })
+    const btn = wrapper.find('[data-testid="cell-evidence"]')
+    expect(btn.exists()).toBe(true)
+    await btn.trigger('click')
+    expect(useEvidenceDrawer().target.value).toMatchObject({ title: 'by region', receiptId: 'r_cell' })
+    expect(useEvidenceDrawer().target.value?.memory?.sql).toBe(BAR_NOTEBOOK.cells[0].source)
+    _resetEvidenceForTests()
+  })
+
+  it('a sql cell whose run has no receipt and no note has no Evidence button', async () => {
+    makeApp()
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="cell-evidence"]').exists()).toBe(false)
+  })
+
+  it('a sql cell with only a note still has the button, and the drawer gets the note', async () => {
+    _resetEvidenceForTests()
+    makeApp({
+      RunA2UIQueryIn: vi.fn(async () => ({ columns: ['n'], types: ['BIGINT'], rows: [[1]], truncated: false, receipt_note: 'not_kept' })),
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+    await wrapper.find('[data-testid="cell-evidence"]').trigger('click')
+    expect(useEvidenceDrawer().target.value).toMatchObject({ note: 'not_kept' })
+    expect(useEvidenceDrawer().target.value?.receiptId).toBeUndefined()
+    _resetEvidenceForTests()
+  })
+
+  it('an a2ui cell’s data-bound component runs with its notebook, cell and component id', async () => {
+    const nb = JSON.parse(JSON.stringify(BAR_NOTEBOOK))
+    nb.cells = [{ id: 'ui1', type: 'a2ui', collapsed: false, page: { title: 'KPIs', components: [{ id: 'k', type: 'stat', label: 'Revenue', sql: 'SELECT 7' }] } }]
+    const app = makeApp({
+      GetNotebook: vi.fn(async () => nb),
+      RunA2UIQueryIn: vi.fn(async () => ({ columns: ['n'], types: ['BIGINT'], rows: [[7]], truncated: false, receipt_id: 'r_ui' })),
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+    // The cell is lazily mounted when it scrolls into view; jsdom has no IntersectionObserver, so show it.
+    const vm = wrapper.vm as any
+    vm.cells[0].visible = true
+    await flushPromises()
+    await flushPromises()
+    expect(app.RunA2UIQueryIn).toHaveBeenCalledWith('SELECT 7', '', { kind: 'a2ui', notebook: 'nb1', cell: 'ui1', component: 'k' })
+    expect(wrapper.find('[data-testid="a2ui-evidence"]').attributes('aria-label')).toBe('Show evidence for Revenue')
   })
 })

@@ -9,6 +9,7 @@ import (
 
 	"github.com/SandwichLabs/slaw/internal/connname"
 	"github.com/SandwichLabs/slaw/internal/engine"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/semantics"
 	"github.com/SandwichLabs/slaw/internal/semantics/assert"
 )
@@ -103,7 +104,7 @@ func RunAssertions(ctx context.Context, ws Workspace, kind, name string, runner 
 		if opts.CompileOnly {
 			checks = checks[:1] // the compile check is always first
 		}
-		out = append(out, assert.Run(ctx, checks, runner)...)
+		out = append(out, assert.Run(receipts.WithOrigin(ctx, p.origin()), checks, runner)...)
 	}
 	return out, nil
 }
@@ -147,6 +148,15 @@ func planAssertions(ctx context.Context, ws Workspace, kind, name string, now ti
 		}
 	}
 	return out, nil
+}
+
+// origin is where an assertion's read came from, for its receipt: the entity
+// or metric file that declares the check.
+func (p subjectPlan) origin() receipts.Origin {
+	if p.kind == assert.SubjectMetric {
+		return receipts.Origin{Surface: receipts.SurfaceAssertion, Source: receipts.Source{Kind: receipts.SourceMetric, Ref: "semantics/metrics/" + p.name + ".yaml"}}
+	}
+	return receipts.Origin{Surface: receipts.SurfaceAssertion, Source: receipts.Source{Ref: "semantics/entities/" + p.name + ".yaml"}}
 }
 
 // planEntityChecks is the compile check followed by the declared assertions.
@@ -211,6 +221,8 @@ func metricsNamed(ctx context.Context, st semantics.ReadStore, name string) ([]s
 // semantics.ProfileJoin): a file that changed while the profile ran is a
 // semantics.ErrConflict and nothing is written.
 func ProfileJoin(ctx context.Context, ws Workspace, name string, run semantics.QueryFunc, now time.Time) (*semantics.Profile, error) {
+	// A profile measures a definition and answers nobody's question: no receipt.
+	ctx = receipts.WithOrigin(ctx, receipts.Origin{Skip: true})
 	return semantics.ProfileJoin(ctx, ws.Semantics(), name, run, now)
 }
 

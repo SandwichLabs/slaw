@@ -10,12 +10,14 @@ import { ARTIFACT_RUNTIME } from './artifactRuntime'
 import { useBoundQuery } from './useBoundQuery'
 import type { A2UIComponentT } from './types'
 import { runLiveQuery, type LiveQueryResult } from './query'
+import { useRenderSource } from './source'
 
 export function useLiveQuery(component: () => A2UIComponentT) {
   // Inside a data artifact view the rows come from its named queries (#162).
   const artifact = inject(ARTIFACT_RUNTIME, undefined)
   if (artifact) return useBoundQuery(artifact, component)
   const abortSignal = inject<AbortSignal | undefined>('a2uiAbortSignal', undefined)
+  const sourceOf = useRenderSource()
 
   const loading = ref(false)
   const error = ref('')
@@ -28,7 +30,7 @@ export function useLiveQuery(component: () => A2UIComponentT) {
     const c = component()
     if (!c.sql) return
     loading.value = true
-    const res = await runLiveQuery(c.sql, abortSignal, 'low', c.connection || undefined)
+    const res = await runLiveQuery(c.sql, abortSignal, 'low', c.connection || undefined, sourceOf(c.id))
     if (res.aborted) return // caller stopped caring (unmounted/reloaded) — never apply a stale result
     loading.value = false
     fetched.value = true

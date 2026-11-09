@@ -256,7 +256,7 @@ func TestDeleteWatch_RefusesNoRevision(t *testing.T) {
 	require.NoError(t, err)
 	err = app.DeleteWatch("stuck", "")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "revision")
+	assert.Contains(t, err.Error(), "which version of the watch you saw")
 	_, err = app.GetWatch("stuck")
 	require.NoError(t, err, "the file is still there")
 }

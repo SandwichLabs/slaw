@@ -1,0 +1,17 @@
+[
+  {"text": "Revenue was $1.2M, up 12.5% from 1,234 orders.", "tokens": ["$1.2M", "12.5%", "1,234"]},
+  {"text": "In 2024 we sold 3 items and 12 more", "tokens": ["12"]},
+  {"text": "From 2024-03-05 at 10:30, v1.2.3 and Q3 and 10-20", "tokens": []},
+  {"text": "1.5 million users and 2 billion, 3K, 4.5B and 6 thousand", "tokens": ["1.5 million", "2 billion", "3K", "4.5B", "6 thousand"]},
+  {"text": "-5% and +7.5% and -1,200", "tokens": ["-5%", "+7.5%", "-1,200"]},
+  {"text": "x 5Kg and 3Mbps and 20px", "tokens": []},
+  {"text": "007 and 0123 and 1999 and 2100 and 2101", "tokens": ["2101"]},
+  {"text": "$5 and €1,000.50 and £7", "tokens": ["$5", "€1,000.50", "£7"]},
+  {"text": "about 1,2345 items", "tokens": []},
+  {"text": "Ratio 3/4, page 12.", "tokens": ["12"]},
+  {"text": "see #1234 and order_55 and a12", "tokens": []},
+  {"text": "10,000 and 10 000", "tokens": ["10,000", "10"]},
+  {"text": "−4.2% drop", "tokens": ["−4.2%"]},
+  {"text": "(99) and [100] and 45.", "tokens": ["99", "100", "45"]},
+  {"text": "COVID-19 and x-5 and 5-x", "tokens": []}
+]

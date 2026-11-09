@@ -76,11 +76,11 @@ func FuzzRenderNoEscape(f *testing.F) {
 			}
 		}
 		// A recordable history entry is its own sanitised form.
-		if e := foldEntry(cell); recordable(e) && safe(e) != e {
+		if e := foldEntry(cell); engine.Recordable(e) && safe(e) != e {
 			t.Fatalf("recordable entry changes under safe: %q", e)
 		}
 
-		main, cont := prompts(colName, palette{})
+		main, cont := prompts(colName, palette{}, true)
 		assertTerminalSafe(t, []byte(main+cont+bannerText(colName)))
 	})
 }

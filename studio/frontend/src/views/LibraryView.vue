@@ -95,7 +95,7 @@ onUnmounted(() => document.removeEventListener('keydown', onSlash))
     </div>
 
     <NewItemDialog :visible="newOpen" :initial-type="newType" @close="newOpen = false" @created="created" />
-    <ConfirmDialog :visible="!!actions.pendingDeleteId.value" title="Delete Notebook" confirm-label="Delete" message="Delete this notebook? This cannot be undone." @confirm="actions.confirmDelete" @cancel="actions.pendingDeleteId.value = null" />
+    <ConfirmDialog :visible="!!actions.pendingDeleteId.value" title="Delete notebook" confirm-label="Delete" message="Delete this notebook? This can't be undone." @confirm="actions.confirmDelete" @cancel="actions.pendingDeleteId.value = null" />
     <div v-if="actions.message.value" class="error-toast">{{ actions.message.value }}</div>
   </div>
 </template>

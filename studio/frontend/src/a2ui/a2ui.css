@@ -868,3 +868,19 @@
 .a2ui-page .a2ui-pivot td.cell-num { text-align: right; font-variant-numeric: tabular-nums; }
 .a2ui-page .a2ui-pivot__btn { width: 100%; text-align: inherit; font-variant-numeric: tabular-nums; padding: 2px 4px; }
 .a2ui-page .a2ui-pivot__btn:hover { background: var(--sh-paper-2); }
+
+/* The small icon button on an A2UI value that opens its evidence. */
+.a2ui-page .a2ui-evidence {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  margin-left: var(--sh-space-1);
+  background: transparent;
+  color: var(--sh-graphite);
+  border: 0;
+  border-radius: var(--sh-radius-sm);
+  cursor: pointer;
+  vertical-align: middle;
+}
+.a2ui-page .a2ui-evidence:hover { color: var(--sh-ink); }

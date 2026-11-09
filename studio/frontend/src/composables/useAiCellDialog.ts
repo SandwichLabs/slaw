@@ -249,7 +249,7 @@ export function useAiCellDialog(host: DialogHost) {
     if (env.outcome === 'needs_info') {
       return `Asked: ${(env.questions || []).join(' ')} ${env.notes || ''}`.trim()
     }
-    return `Could not resolve it: ${env.notes || ''}`
+    return `Couldn't resolve it: ${env.notes || ''}`
   }
 
   // submit runs one task turn (the initial ask, or a follow-up). The
@@ -369,8 +369,8 @@ export function useAiCellDialog(host: DialogHost) {
       // target (create mode, or the target vanished entirely) has nothing
       // to be "below", so it appends (afterCellId undefined).
       host.insertCell(proposed, liveTarget ? liveTarget.id : undefined)
-      if (preview?.cellDrifted) note = 'The cell changed while this was running — added as a new cell below.'
-      else if (preview?.typeMismatch) note = 'The proposed cell is a different type than the one you were editing — added as a new cell instead of replacing it.'
+      if (preview?.cellDrifted) note = 'The cell changed while this was running, so this was added as a new cell below.'
+      else if (preview?.typeMismatch) note = 'The proposed cell is a different type from the one you were editing, so it was added as a new cell instead.'
     }
     state.applyNote = note
     reset()

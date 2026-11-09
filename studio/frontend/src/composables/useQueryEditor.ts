@@ -8,6 +8,8 @@
 import { ref, shallowRef, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { App } from '../lib/bindings'
+import { paramText, rememberRun, type RunMemory } from './useReceipt'
+import { openEvidence } from './useEvidenceDrawer'
 import { connectionList, defaultConnectionName, refreshConnections, openPromptFor, startConnectionTracking } from './useConnections'
 import { errorText, isCancelled, isConflict } from '../lib/errors'
 import { formatCell } from '../lib/formatCell'
@@ -130,7 +132,11 @@ export function useQueryEditor() {
     result.value = null
     try {
       ranOn.value = ranOnText(sqlText.value)
+      const ran: RunMemory = { sql: sqlText.value, connection: conn.value || undefined, params: 'params' in bound ? paramText(bound.params) : undefined }
       result.value = await App.RunQuery({ sql: sqlText.value, connection: conn.value, tabId, ...bound })
+      // The drawer shows the values this run had even when the receipt keeps none.
+      lastRun = ran
+      rememberRun(result.value?.receipt_id, ran)
       lastRunOk.value = true
     } catch (e: any) {
       if (isCancelled(e)) {
@@ -151,6 +157,13 @@ export function useQueryEditor() {
     }
     lastRunAt.value = new Date().toLocaleTimeString()
     running.value = false
+  }
+
+  let lastRun: RunMemory = {}
+  /** Open the Evidence drawer for the last run's result: its receipt, or why none was kept. */
+  function showEvidence(e: MouseEvent) {
+    const r = result.value
+    if (r) openEvidence({ title: currentTitle.value, receiptId: r.receipt_id, note: r.receipt_note, memory: lastRun }, e)
   }
 
   /** Stop the run in flight (this tab's); the run then ends with the cancelled error. */
@@ -350,7 +363,7 @@ export function useQueryEditor() {
     qp, queries, selectedId, sqlText, result, loading, running, cancelled, error, showSaveModal, saveTitle, errorMessage,
     statusMessage, showConfirmDelete, pendingDeleteId, hoveredId, conflict, conflictBusy: cf.busy,
     lastRunAt, lastRunOk, ranOn, conn, dirty, currentTitle, truncated, formattedRows,
-    selectQuery, runQuery, stopQuery, saveQuery, resolveConflict, exportResults, askAgent, deleteQuery,
+    selectQuery, runQuery, showEvidence, stopQuery, saveQuery, resolveConflict, exportResults, askAgent, deleteQuery,
     confirmDeleteQuery, newQuery,
   }
 }

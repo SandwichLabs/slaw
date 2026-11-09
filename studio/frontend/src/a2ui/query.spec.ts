@@ -225,12 +225,22 @@ describe('runLiveQuery connection', () => {
 
     const bound = await runLiveQuery('SELECT * FROM orders', undefined, 'high', 'prod_pg')
     expect(bound.rows).toEqual([[1]])
-    expect(App.RunA2UIQueryIn).toHaveBeenCalledWith('SELECT * FROM orders', 'prod_pg')
+    expect(App.RunA2UIQueryIn).toHaveBeenCalledWith('SELECT * FROM orders', 'prod_pg', { kind: '' })
     expect(App.RunA2UIQuery).toHaveBeenCalledTimes(1)
 
     // An empty connection is "unset".
     await runLiveQuery('SELECT 2', undefined, 'low', '')
     expect(App.RunA2UIQuery).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes the source (which cell or component asked) to RunA2UIQueryIn, with or without a connection', async () => {
+    const App = { RunA2UIQuery: vi.fn(), RunA2UIQueryIn: vi.fn(async () => ({ columns: [], types: [], rows: [], receipt_id: 'r_1' })) }
+    ;(window as any).go = { main: { App } }
+    const source = { kind: 'cell', notebook: 'nb1', cell: 'c1' } as const
+    const res = await runLiveQuery('SELECT 1', undefined, 'high', undefined, source)
+    expect(App.RunA2UIQueryIn).toHaveBeenCalledWith('SELECT 1', '', source)
+    expect(App.RunA2UIQuery).not.toHaveBeenCalled()
+    expect(res.receipt_id).toBe('r_1')
   })
 
   it('surfaces a connection error inline instead of throwing', async () => {

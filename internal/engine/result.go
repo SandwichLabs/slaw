@@ -10,6 +10,14 @@ type Column struct {
 type ResultSet struct {
 	Columns []Column
 	Rows    [][]any
+	// ReceiptID is the run's receipt (receipts.Finish), set by a caller that
+	// finished one after trimming its rows. The engine never sets it; it rides on
+	// the result so a surface can forward it on its own wire type.
+	ReceiptID string `json:"-"`
+	// ReceiptNote is why a run that should have a receipt has none (a
+	// receipts.Note: "not_kept" or "unavailable"), empty when there is one or
+	// none was due. A reason class for the drawer, never an error message.
+	ReceiptNote string `json:"-"`
 }
 
 // RowCount returns the number of rows in the result set.

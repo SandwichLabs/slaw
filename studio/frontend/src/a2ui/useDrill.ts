@@ -43,7 +43,7 @@ export function useDrill(component: () => A2UIComponentT, source: () => DrillSou
     const s = spec.value!
     const idx = columnIndex()
     const p = paramDecl()
-    if (!rt || !p || idx < 0) { local.value = 'This row cannot set a parameter.'; return }
+    if (!rt || !p || idx < 0) { local.value = "This row can't set a parameter."; return }
     const cand = drillCandidate(p, source()?.rows[row]?.[idx], s.column)
     if (!cand.ok) { local.value = cand.error; return }
     const res = rt.params.set(s.param, cand.raw)

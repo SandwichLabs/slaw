@@ -292,7 +292,7 @@ export function useImport() {
         importedKey.value = key0
         await loadTables()
       } else {
-        error.value = s.blocked || 'Import could not be completed; see the details below.'
+        error.value = s.blocked || "The import didn't finish. See the details below."
       }
     } catch (e: any) {
       error.value = errorText(e)

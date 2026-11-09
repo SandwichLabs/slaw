@@ -15,6 +15,8 @@ import SignInBanner from './SignInBanner.vue'
 import McpApprovals from './McpApprovals.vue'
 import ConnectionRail from './ConnectionRail.vue'
 import ConnectionDialogs from './ConnectionDialogs.vue'
+import EvidenceDrawer from './EvidenceDrawer.vue'
+import { useEvidenceDrawer } from '../composables/useEvidenceDrawer'
 import { useTheme } from '../theme/useTheme'
 import { shortcutLabel } from '../composables/useModal'
 import { workspaceInfo } from '../composables/useWorkspace'
@@ -24,6 +26,9 @@ import { firedWatches, refreshWatchBadge, startWatchBadge } from '../composables
 import { hasWailsRuntime } from '../lib/wails'
 
 const theme = useTheme()
+// The Evidence drawer sits beside the page, under the top bar: while it is open the page
+// makes room for it, so the buttons at the page's right edge stay reachable.
+const { target: evidence } = useEvidenceDrawer()
 
 // Agent wizard panel — a slide-in chat available across every screen.
 const agentOpen = ref(false)
@@ -201,7 +206,7 @@ watch(() => info.value?.name, (name) => {
     </aside>
 
     <!-- Main content -->
-    <main style="overflow: hidden; background: var(--sh-paper); min-width: 0; display: flex; flex-direction: column;">
+    <main class="shell-main" :class="{ 'has-evidence': !!evidence }" style="overflow: hidden; background: var(--sh-paper); min-width: 0; display: flex; flex-direction: column;">
       <WorkspaceBanner />
       <SignInBanner />
       <div style="flex: 1; min-height: 0; overflow: hidden;">
@@ -212,12 +217,16 @@ watch(() => info.value?.name, (name) => {
     <AgentPanel :open="agentOpen" :prefill="prefill" @close="agentOpen = false" />
     <McpApprovals />
     <ConnectionDialogs />
+    <!-- The one Evidence drawer (useEvidenceDrawer): any value's "Show evidence" button opens it. -->
+    <EvidenceDrawer />
 
     <div v-if="errorMessage" class="error-toast" role="alert">{{ errorMessage }}</div>
   </div>
 </template>
 
 <style scoped>
+/* Room for the 420px Evidence drawer (evidence.css); on a narrow window it overlays instead. */
+@media (min-width: 1000px) { .shell-main.has-evidence { padding-right: 420px; } }
 .theme-toggle {
   width: 32px; height: 32px;
   display: inline-flex; align-items: center; justify-content: center;

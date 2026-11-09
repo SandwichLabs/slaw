@@ -49,7 +49,7 @@ func TestSaveNotebook_RejectsStaleSession(t *testing.T) {
 	// file's NotebookView, in flight when the switch happened.
 	_, err = app.SaveNotebook(raw, staleSessionID)
 	require.Error(t, err, "a save from a superseded file session must be rejected")
-	assert.Contains(t, err.Error(), "stale workspace session")
+	assert.Contains(t, err.Error(), "the workspace changed since this notebook was loaded")
 
 	// Prove it did NOT land in the new (second) file: no notebook with
 	// nb.ID exists there.

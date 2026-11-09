@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/SandwichLabs/slaw/internal/session"
 )
@@ -117,6 +118,7 @@ func (m *Manager) run(ctx context.Context, connection, query string, exec func()
 	if m.duckdb == nil {
 		return nil, 0, fmt.Errorf("duckdb engine is not available")
 	}
+	start := time.Now()
 
 	// Statement text is never logged (#276): a literal in a statement can be a
 	// credential, and the console runs statements a person typed. The log
@@ -156,6 +158,9 @@ func (m *Manager) run(ctx context.Context, connection, query string, exec func()
 		slog.String("engine", "duckdb"),
 		slog.Int("rows", rs.RowCount()),
 	)
+	// A caller that asked for a receipt finishes it after its own trimming;
+	// here only what the engine knows is noted (receipt.go).
+	m.recordRunFacts(ctx, connection, start)
 
 	return rs, total, nil
 }
