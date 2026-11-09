@@ -16,7 +16,6 @@
   color: var(--sh-ink);
   border-left: 2px solid var(--sh-ink);
 }
-.ev-drawer:focus { outline: none; }
 
 .ev-head {
   display: flex;
@@ -72,7 +71,10 @@
 .ev-badges { display: flex; flex-wrap: wrap; gap: var(--sh-space-2); }
 .ev-badges .badge { display: inline-flex; align-items: center; gap: 6px; }
 
-.ev-seg { display: inline-flex; align-self: flex-start; border: 1.5px solid var(--sh-ink); border-radius: var(--sh-radius-sm); overflow: hidden; }
+/* No overflow:hidden here: it would clip the focus ring of the buttons. The ends are rounded by the buttons. */
+.ev-seg { display: inline-flex; align-self: flex-start; border: 1.5px solid var(--sh-ink); border-radius: var(--sh-radius-sm); }
+.ev-seg button:first-child { border-radius: 1px 0 0 1px; }
+.ev-seg button:last-child { border-radius: 0 1px 1px 0; }
 .ev-seg button {
   background: transparent;
   color: var(--sh-ink);

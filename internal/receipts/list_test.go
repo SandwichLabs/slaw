@@ -34,19 +34,19 @@ func TestList_NewestFirstFilteredAndLimited(t *testing.T) {
 	mid := putAt(t, st, 2, SurfaceNotebookCell, now.Add(-2*time.Hour))
 	top := putAt(t, st, 3, SurfaceQueryEditor, now.Add(-1*time.Hour))
 
-	all, err := st.List(ListFilter{})
+	all, _, err := st.List(ListFilter{})
 	require.NoError(t, err)
 	require.Len(t, all, 3)
 	// Newest first, by the receipt's own time (sample(n) puts n in the nanoseconds).
 	assert.Equal(t, []string{top.ID, mid.ID, old.ID}, []string{all[0].ID, all[1].ID, all[2].ID})
 
-	editor, err := st.List(ListFilter{Surface: SurfaceQueryEditor})
+	editor, _, err := st.List(ListFilter{Surface: SurfaceQueryEditor})
 	require.NoError(t, err)
 	require.Len(t, editor, 2)
 	assert.Equal(t, top.ID, editor[0].ID)
 	assert.Equal(t, old.ID, editor[1].ID)
 
-	one, err := st.List(ListFilter{Limit: 1})
+	one, _, err := st.List(ListFilter{Limit: 1})
 	require.NoError(t, err)
 	require.Len(t, one, 1)
 	assert.Equal(t, top.ID, one[0].ID)
@@ -63,7 +63,7 @@ func TestList_HoldsNoValueAndCutsTheStatement(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, st.Put(r))
 
-	rows, err := st.List(ListFilter{})
+	rows, _, err := st.List(ListFilter{})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.True(t, strings.HasPrefix(rows[0].SQL, "SELECT "))
@@ -86,7 +86,7 @@ func TestList_SkipsAFileThatIsNotAReceiptAndIsBounded(t *testing.T) {
 	require.NoError(t, os.WriteFile(bogus, []byte(`{"not":"a receipt"}`), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(st.Dir(), "note.txt"), []byte("x"), 0o600))
 
-	rows, err := st.List(ListFilter{Limit: 10_000}) // over MaxListLimit: clamped
+	rows, _, err := st.List(ListFilter{Limit: 10_000}) // over MaxListLimit: clamped
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, good.ID, rows[0].ID)
@@ -102,11 +102,11 @@ func TestList_MockMatchesTheFileStore(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, m.Put(a))
 	require.NoError(t, m.Put(b))
-	rows, err := m.List(ListFilter{})
+	rows, _, err := m.List(ListFilter{})
 	require.NoError(t, err)
 	require.Len(t, rows, 2)
 	assert.Equal(t, b.ID, rows[0].ID, "newer first")
-	rows, err = m.List(ListFilter{Surface: SurfaceA2UI, Limit: 1})
+	rows, _, err = m.List(ListFilter{Surface: SurfaceA2UI, Limit: 1})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, b.ID, rows[0].ID)
@@ -124,4 +124,34 @@ func TestSurfacesForRenderSources(t *testing.T) {
 	assert.True(t, SurfaceNotebookCell.Valid())
 	assert.True(t, SurfaceA2UI.Valid())
 	assert.True(t, SourceComponent.Valid())
+}
+
+// The scan reads at most MaxListScan files; when it stops there with the page not
+// full, it says so, so "none" is never claimed for a store it did not finish.
+func TestList_SaysWhenTheScanStoppedEarly(t *testing.T) {
+	st, err := NewFileStore(t.TempDir(), Policy{MaxCount: 200000})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	for i := 0; i < MaxListScan+5; i++ {
+		require.NoError(t, st.Put(sealed(t, i)))
+	}
+	rows, capped, err := st.List(ListFilter{Surface: SurfaceA2UI})
+	require.NoError(t, err)
+	assert.Empty(t, rows)
+	assert.True(t, capped, "nothing matched among the newest, and older files were not read")
+
+	rows, capped, err = st.List(ListFilter{Limit: 10})
+	require.NoError(t, err)
+	assert.Len(t, rows, 10)
+	assert.False(t, capped, "a full page is not capped")
+}
+
+func TestList_SmallStoreIsNeverCapped(t *testing.T) {
+	st, err := NewFileStore(t.TempDir(), DefaultPolicy())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	require.NoError(t, st.Put(sealed(t, 1)))
+	_, capped, err := st.List(ListFilter{Surface: SurfaceA2UI})
+	require.NoError(t, err)
+	assert.False(t, capped)
 }

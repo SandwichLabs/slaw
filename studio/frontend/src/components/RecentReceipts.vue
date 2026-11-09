@@ -10,7 +10,7 @@ import { openEvidenceById } from '../composables/useEvidenceDrawer'
 import { whenText, byText } from '../lib/receiptText'
 
 const props = defineProps<{ count: number }>()
-const { rows, error, refresh } = useRecentReceipts()
+const { rows, error, capped, refresh } = useRecentReceipts()
 watch(() => props.count, () => { void refresh() }, { immediate: true })
 
 const what = (s: ReceiptSummary) => (s.sql_withheld ? '(statement not kept)' : s.sql || '(no statement)')
@@ -21,6 +21,7 @@ const who = (s: ReceiptSummary) => byText({ surface: s.surface, actor: s.actor }
   <section class="col" style="gap: var(--sh-space-2);" aria-labelledby="recent-receipts-h" data-testid="recent-receipts">
     <h3 id="recent-receipts-h" class="sh-label" style="margin: 0;">Recent receipts</h3>
     <div v-if="error" class="help" role="alert" style="color: var(--sh-error);" data-testid="recent-receipts-error">{{ error }}</div>
+    <p v-else-if="rows.length === 0 && capped" class="help" style="margin: 0;" data-testid="recent-receipts-capped">None among the newest 2,000 receipts.</p>
     <p v-else-if="rows.length === 0" class="help" style="margin: 0;" data-testid="recent-receipts-empty">No receipts yet. A read in the Query Explorer, a notebook or a page makes one.</p>
     <ul v-else class="recent" aria-label="Recent receipts">
       <li v-for="s in rows" :key="s.id" class="recent__row" :data-testid="`recent-${s.id}`">

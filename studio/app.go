@@ -35,6 +35,8 @@ type App struct {
 	pages *pageHost
 	// pageApp holds the capability services' App-side state (pagecaps_app.go).
 	pageApp pageAppState
+	// renderIndex caches the cells of notebooks that render sources named (render_source.go).
+	renderIndex notebookIndexCache
 
 	ctx    context.Context
 	logger *slog.Logger

@@ -59,3 +59,15 @@ func TestPrintReceipt_WordsTheDrawerStates(t *testing.T) {
 	r.SQL, r.SQLWithheld = "", true
 	assert.Contains(t, show(r), "(not kept: it looked like it held a credential)")
 }
+
+func TestPrintReceiptList_SaysWhenTheScanStoppedEarly(t *testing.T) {
+	var b bytes.Buffer
+	printReceiptList(&b, nil, true)
+	assert.Equal(t, "none among the newest 2000 receipts\n", b.String())
+	b.Reset()
+	printReceiptList(&b, nil, false)
+	assert.Equal(t, "No receipts.\n", b.String())
+	b.Reset()
+	printReceiptList(&b, []receipts.Summary{{ID: "r_0123456789abcdef0123", Surface: receipts.SurfaceCLIQuery}}, true)
+	assert.Contains(t, b.String(), "only the newest 2000 receipts were scanned")
+}

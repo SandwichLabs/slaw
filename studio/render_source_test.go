@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -118,13 +121,13 @@ func TestGetReceiptAndListReceipts(t *testing.T) {
 
 	all, err := app.ListReceipts(ReceiptFilter{})
 	require.NoError(t, err)
-	require.Len(t, all, 2)
-	assert.Equal(t, q.ReceiptID, all[0].ID, "newest first")
+	require.Len(t, all.Receipts, 2)
+	assert.Equal(t, q.ReceiptID, all.Receipts[0].ID, "newest first")
 
 	editor, err := app.ListReceipts(ReceiptFilter{Surface: "query_editor", Limit: 5})
 	require.NoError(t, err)
-	require.Len(t, editor, 1)
-	assert.Equal(t, "SELECT 2 AS b", editor[0].SQL)
+	require.Len(t, editor.Receipts, 1)
+	assert.Equal(t, "SELECT 2 AS b", editor.Receipts[0].SQL)
 
 	_, err = app.ListReceipts(ReceiptFilter{Surface: "nowhere"})
 	require.Error(t, err)
@@ -155,4 +158,58 @@ func TestReceiptNote_TravelsOnTheWire(t *testing.T) {
 	assert.Empty(t, res.ReceiptID)
 	assert.Equal(t, "not_kept", res.ReceiptNote)
 	assert.NotContains(t, res.ReceiptNote, dir, "a reason class, never a path")
+}
+
+// The source check is cached per notebook by the file's size and mtime, follows a
+// change on disk, and never reads through the notebook store: its Get would record
+// the revision as seen and hide a later conflict from the editor.
+func TestRenderOrigin_CachesByFileStampAndLeavesTheStoreAlone(t *testing.T) {
+	app := newOpenApp(t)
+	nb := notebookWithCells(t, app)
+	ctx := app.ctxOrBackground()
+	src := RenderSource{Kind: "cell", Notebook: nb.ID, Cell: "cell_sql"}
+
+	// The editor loaded the notebook: the store has seen this revision.
+	loaded, _, err := app.ws.Notebooks().Get(ctx, nb.ID)
+	require.NoError(t, err)
+
+	o := renderOrigin(ctx, app.ws, &app.renderIndex, src)
+	assert.Equal(t, receipts.SurfaceNotebookCell, o.Surface)
+	require.Len(t, app.renderIndex.m, 1)
+	first := app.renderIndex.m[app.ws.Root()+"\x00"+nb.ID]
+	renderOrigin(ctx, app.ws, &app.renderIndex, src)
+	assert.Equal(t, first.cells["cell_sql"].typ, app.renderIndex.m[app.ws.Root()+"\x00"+nb.ID].cells["cell_sql"].typ, "a second render reuses the entry")
+
+	// Another process edits the file (the cell is gone). The next check sees it.
+	path := filepath.Join(app.ws.Root(), "notebooks", nb.ID+".slnb")
+	edited := strings.Replace(readFile(t, path), "cell_sql", "cell_other", 1)
+	require.NoError(t, os.WriteFile(path, []byte(edited), 0o600))
+	future := time.Now().Add(2 * time.Second)
+	require.NoError(t, os.Chtimes(path, future, future))
+	assert.Equal(t, receipts.SurfaceRender, renderOrigin(ctx, app.ws, &app.renderIndex, src).Surface, "the cell no longer exists")
+
+	// The check did not tell the store it had seen the new revision: saving from
+	// the old copy is still a conflict.
+	_, _, err = app.ws.Notebooks().Save(ctx, loaded)
+	require.ErrorIs(t, err, notebooks.ErrConflict)
+}
+
+func TestNotebookIndexCache_IsBounded(t *testing.T) {
+	app := newOpenApp(t)
+	for i := 0; i < notebookIndexMax+5; i++ {
+		nb := notebooks.Empty("N")
+		nb.ID = "nb_" + strings.Repeat("a", 8) + "-" + strings.Repeat("0", 4) + "-" + strings.Repeat("0", 4) + "-" + strings.Repeat("0", 4) + "-" + fmt.Sprintf("%012d", i)
+		saved, _, err := app.ws.Notebooks().Insert(app.ctxOrBackground(), nb)
+		require.NoError(t, err)
+		_, ok := app.renderIndex.cells(app.ws.Root(), saved.ID)
+		require.True(t, ok)
+	}
+	assert.LessOrEqual(t, len(app.renderIndex.m), notebookIndexMax)
+}
+
+func readFile(t *testing.T, p string) string {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	require.NoError(t, err)
+	return string(b)
 }

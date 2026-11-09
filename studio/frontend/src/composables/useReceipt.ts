@@ -72,6 +72,11 @@ export function useReceipt() {
   return { receipt, loading, error, load }
 }
 
+/** Forget every remembered run (a workspace was closed or another one opened). */
+export function clearRunMemory(): void {
+  memory.clear()
+}
+
 export function _resetRunMemoryForTests() {
   memory.clear()
 }

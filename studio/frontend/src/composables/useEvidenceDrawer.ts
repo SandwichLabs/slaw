@@ -2,7 +2,7 @@
 // Opening it from another value replaces what it shows. The element that opened
 // it is kept so Esc (or Close) hands focus back to it.
 import { ref, readonly } from 'vue'
-import { recallRun, type RunMemory } from './useReceipt'
+import { clearRunMemory, recallRun, type RunMemory } from './useReceipt'
 
 export interface EvidenceTarget {
   /** The title of the value: a stat label, a cell or chart title, or the id when opened from one. */
@@ -38,12 +38,31 @@ export function openEvidenceById(id: string, from?: Event | HTMLElement | null):
   openEvidence({ title: id, receiptId: id, fromId: true }, from)
 }
 
-/** Close the drawer and give focus back to the button that opened it, if it is still on the page. */
+/**
+ * Close the drawer and give focus back to the button that opened it. When that
+ * button has left the page (its value re-rendered, or the view changed), focus goes
+ * to the page's heading or main region, never to the body.
+ */
 export function closeEvidence(): void {
   const back = trigger
   trigger = null
   target.value = null
-  if (back && back !== document.body && document.contains(back)) back.focus()
+  if (back && back !== document.body && document.contains(back)) {
+    back.focus()
+    return
+  }
+  const fallback = document.querySelector<HTMLElement>('main h1') ?? document.querySelector<HTMLElement>('main')
+  if (fallback) {
+    if (!fallback.hasAttribute('tabindex')) fallback.setAttribute('tabindex', '-1')
+    fallback.focus()
+  }
+}
+
+/** A workspace was closed or another opened: what the drawer shows and what the windows remembered belong to the old one. */
+export function resetEvidence(): void {
+  trigger = null
+  target.value = null
+  clearRunMemory()
 }
 
 export function useEvidenceDrawer() {

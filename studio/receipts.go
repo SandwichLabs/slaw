@@ -25,6 +25,14 @@ type ReceiptFilter struct {
 	Limit   int    `json:"limit"`
 }
 
+// ReceiptListing is ListReceipts's answer: the newest receipts, and whether the
+// scan stopped early (Capped), so an empty or short list means "none among the
+// newest", not "none".
+type ReceiptListing struct {
+	Receipts []receipts.Summary `json:"receipts"`
+	Capped   bool               `json:"capped"`
+}
+
 // receiptStore is the open workspace's receipts, or an error saying there are
 // none to read.
 func receiptStore(ws workspace.Workspace) (receipts.Store, error) {
@@ -49,20 +57,20 @@ func getReceipt(ws workspace.Workspace, id string) (Receipt, error) {
 }
 
 // listReceipts is the newest receipts, a line each.
-func listReceipts(ws workspace.Workspace, f ReceiptFilter) ([]receipts.Summary, error) {
+func listReceipts(ws workspace.Workspace, f ReceiptFilter) (ReceiptListing, error) {
 	st, err := receiptStore(ws)
 	if err != nil {
-		return nil, err
+		return ReceiptListing{}, err
 	}
 	surface := receipts.Surface(f.Surface)
 	if surface != "" && !surface.Valid() {
-		return nil, fmt.Errorf("unknown surface %q", f.Surface)
+		return ReceiptListing{}, fmt.Errorf("unknown surface %q", f.Surface)
 	}
-	out, err := st.List(receipts.ListFilter{Surface: surface, Limit: f.Limit})
+	out, capped, err := st.List(receipts.ListFilter{Surface: surface, Limit: f.Limit})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list receipts: %w", err)
+		return ReceiptListing{}, fmt.Errorf("failed to list receipts: %w", err)
 	}
-	return out, nil
+	return ReceiptListing{Receipts: out, Capped: capped}, nil
 }
 
 // ReceiptSettings is the Settings > Workspace > Receipts form.

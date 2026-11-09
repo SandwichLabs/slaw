@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/workspace"
 )
@@ -98,7 +99,7 @@ func runReceiptsList(cmd *cobra.Command, _ []string) error {
 	if limit <= 0 {
 		return fmt.Errorf("--limit must be positive, not %d", limit)
 	}
-	rows, err := st.List(receipts.ListFilter{Surface: receipts.Surface(surface), Limit: limit})
+	rows, capped, err := st.List(receipts.ListFilter{Surface: receipts.Surface(surface), Limit: limit})
 	if err != nil {
 		return fmt.Errorf("failed to list receipts: %w", err)
 	}
@@ -108,22 +109,87 @@ func runReceiptsList(cmd *cobra.Command, _ []string) error {
 		}
 		return encodeJSON(cmd.OutOrStdout(), rows)
 	}
-	printReceiptList(cmd.OutOrStdout(), rows)
+	printReceiptList(cmd.OutOrStdout(), rows, capped)
 	return nil
 }
 
-func printReceiptList(w io.Writer, rows []receipts.Summary) {
+func printReceiptList(w io.Writer, rows []receipts.Summary, capped bool) {
 	if len(rows) == 0 {
+		if capped {
+			fmt.Fprintf(w, "none among the newest %d receipts\n", receipts.MaxListScan)
+			return
+		}
 		fmt.Fprintln(w, "No receipts.")
 		return
 	}
 	for _, s := range rows {
+		s = cleanSummary(s)
 		sql := s.SQL
 		if s.SQLWithheld {
 			sql = "(statement withheld)"
 		}
 		fmt.Fprintf(w, "%s  %s  %-17s %s  %d rows  %s\n", s.ID, s.At.Local().Format("2006-01-02 15:04:05"), string(s.Surface), refOrDash(s.Source.Ref), s.Rows.Returned, sql)
 	}
+	if capped {
+		fmt.Fprintf(w, "(only the newest %d receipts were scanned; older ones that match are not shown)\n", receipts.MaxListScan)
+	}
+}
+
+// A receipt file can be edited by hand and its id recomputed, so its text is not
+// trusted terminal input: an escape sequence in a statement, a column name or a
+// connection type would otherwise reach the terminal (OSC 52 clipboard writes,
+// window titles). Text mode prints receipts through these; --json is unchanged.
+
+// line makes one-line text terminal-safe; block keeps its line breaks (SQL).
+func line(s string) string {
+	return engine.TerminalText(s, engine.TerminalOpts{StripC1: true, StripBidi: true})
+}
+
+func block(s string) string {
+	return engine.TerminalText(s, engine.TerminalOpts{KeepNewlines: true, StripC1: true, StripBidi: true})
+}
+
+func cleanSummary(s receipts.Summary) receipts.Summary {
+	s.Source.Ref, s.SQL = line(s.Source.Ref), line(s.SQL)
+	conns := make([]string, len(s.Connections))
+	for i, c := range s.Connections {
+		conns[i] = line(c)
+	}
+	s.Connections = conns
+	return s
+}
+
+// cleanReceipt is a copy of r with every free-text field terminal-safe.
+func cleanReceipt(r receipts.Receipt) receipts.Receipt {
+	r.AgentSession = line(r.AgentSession)
+	r.Source.Ref = line(r.Source.Ref)
+	r.SQL, r.RunSQL = block(r.SQL), block(r.RunSQL)
+	if r.Params != nil {
+		ps := make(map[string]receipts.ParamValue, len(r.Params))
+		for n, p := range r.Params {
+			p.Value = line(p.Value)
+			ps[line(n)] = p
+		}
+		r.Params = ps
+	}
+	conns := make([]receipts.Connection, len(r.Connections))
+	for i, c := range r.Connections {
+		c.Name, c.Type = line(c.Name), line(c.Type)
+		if c.Snapshot != nil {
+			sn := *c.Snapshot
+			sn.Fact, sn.Value = line(sn.Fact), line(sn.Value)
+			c.Snapshot = &sn
+		}
+		conns[i] = c
+	}
+	r.Connections = conns
+	cols := make([]receipts.Column, len(r.Columns))
+	for i, c := range r.Columns {
+		c.Name, c.Type = line(c.Name), line(c.Type)
+		cols[i] = c
+	}
+	r.Columns = cols
+	return r
 }
 
 func refOrDash(ref string) string {
@@ -136,6 +202,7 @@ func refOrDash(ref string) string {
 // printReceipt writes a receipt as the drawer's sections: Summary, Query,
 // Connections, Result, Run, then the id.
 func printReceipt(w io.Writer, r receipts.Receipt) {
+	r = cleanReceipt(r)
 	section := func(name string) { fmt.Fprintf(w, "\n%s\n", strings.ToUpper(name)) }
 	fmt.Fprintf(w, "RECEIPT %s\n", r.ID)
 

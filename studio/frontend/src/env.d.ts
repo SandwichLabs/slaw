@@ -100,7 +100,7 @@ interface AppApi {
   ClearReceipts(): Promise<void>
   // Evidence (the drawer; `slaw receipts show|list`): what a receipt says, never a result value
   GetReceipt(id: string): Promise<ReceiptRecord>
-  ListReceipts(filter: ReceiptFilter): Promise<ReceiptSummary[]>
+  ListReceipts(filter: ReceiptFilter): Promise<ReceiptListing>
   GetClaudeConfig(): Promise<{ name: string; desktop: string; code: string }>
   CancelQuit(): Promise<void>
   HoldQuit(): Promise<void>
@@ -1069,6 +1069,8 @@ interface ReceiptSummary {
   sql_withheld?: boolean
 }
 interface ReceiptFilter { surface: string; limit: number }
+// capped: the scan stopped early (the newest 2,000 receipts), so an empty or short list is not "none"
+interface ReceiptListing { receipts: ReceiptSummary[]; capped: boolean }
 
 // ArtifactSummary mirrors studio.ArtifactSummary (#162): one data artifact in
 // the Library. A folder that could not be read still lists, with `error`.

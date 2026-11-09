@@ -330,7 +330,7 @@ func (a *App) RunA2UIQueryIn(sqlStr, connection string, source RenderSource) (*A
 	defer cancel()
 	before := session.StatusSnapshot(runSess)
 	ws, _, _, _ := a.snapshot() // the workspace is open: readOnlyRunner just said so
-	origin := renderOrigin(ctx, ws, source)
+	origin := renderOrigin(ctx, ws, &a.renderIndex, source)
 	rs, truncated, err := handler.RunReadOnlySQLIn(receipts.WithOrigin(agents.ArtifactQueryContext(ctx), origin), connection, sqlStr, nil, a2uiQueryRowCap)
 	a.afterRun(runSess, before, sqlStr)
 	if err != nil {

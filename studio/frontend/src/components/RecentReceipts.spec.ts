@@ -11,8 +11,8 @@ function line(over: Partial<ReceiptSummary> = {}): ReceiptSummary {
   }
 }
 
-function setApp(list: ReceiptSummary[] | Error) {
-  const app = { ListReceipts: vi.fn(async () => { if (list instanceof Error) throw list; return list }) }
+function setApp(list: ReceiptSummary[] | Error, capped = false) {
+  const app = { ListReceipts: vi.fn(async () => { if (list instanceof Error) throw list; return { receipts: list, capped } }) }
   ;(globalThis as any).window = (globalThis as any).window || {}
   ;(window as any).go = { main: { App: app } }
   return app
@@ -51,7 +51,7 @@ describe('RecentReceipts', () => {
     const w = mount(RecentReceipts, { props: { count: 0 } })
     await flushPromises()
     expect(w.find('[data-testid="recent-receipts-empty"]').exists()).toBe(true)
-    app.ListReceipts.mockResolvedValue([line()])
+    app.ListReceipts.mockResolvedValue({ receipts: [line()], capped: false })
     await w.setProps({ count: 1 })
     await flushPromises()
     expect(app.ListReceipts).toHaveBeenCalledTimes(2)
@@ -63,5 +63,13 @@ describe('RecentReceipts', () => {
     const w = mount(RecentReceipts, { props: { count: 0 } })
     await flushPromises()
     expect(w.find('[data-testid="recent-receipts-error"]').text()).toContain('not being kept')
+  })
+
+  it('an empty list from a scan that stopped early says none among the newest, not none', async () => {
+    setApp([], true)
+    const w = mount(RecentReceipts, { props: { count: 20000 } })
+    await flushPromises()
+    expect(w.find('[data-testid="recent-receipts-capped"]').text()).toBe('None among the newest 2,000 receipts.')
+    expect(w.find('[data-testid="recent-receipts-empty"]').exists()).toBe(false)
   })
 })

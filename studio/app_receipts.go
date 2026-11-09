@@ -1,9 +1,6 @@
 package main
 
-import (
-	"github.com/SandwichLabs/slaw/internal/receipts"
-	"github.com/SandwichLabs/slaw/internal/workspace"
-)
+import "github.com/SandwichLabs/slaw/internal/workspace"
 
 // --- Evidence (the drawer, and `slaw receipts show|list`) ---
 
@@ -18,10 +15,10 @@ func (a *App) GetReceipt(id string) (Receipt, error) {
 }
 
 // ListReceipts returns the newest receipts, one line each, newest first.
-func (a *App) ListReceipts(filter ReceiptFilter) ([]receipts.Summary, error) {
+func (a *App) ListReceipts(filter ReceiptFilter) (ReceiptListing, error) {
 	ws, _, _, err := a.snapshot()
 	if err != nil {
-		return nil, err
+		return ReceiptListing{}, err
 	}
 	return listReceipts(ws, filter)
 }

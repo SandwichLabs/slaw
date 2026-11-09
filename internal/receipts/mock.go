@@ -105,7 +105,7 @@ func (m *Mock) Clear() error {
 }
 
 // List returns the newest receipts, newest first, narrowed by the filter.
-func (m *Mock) List(f ListFilter) ([]Summary, error) {
+func (m *Mock) List(f ListFilter) ([]Summary, bool, error) {
 	all := m.All()
 	out := make([]Summary, 0, len(all))
 	for _, r := range all {
@@ -117,5 +117,5 @@ func (m *Mock) List(f ListFilter) ([]Summary, error) {
 	if lim := f.limit(); len(out) > lim {
 		out = out[:lim]
 	}
-	return out, nil
+	return out, false, nil
 }

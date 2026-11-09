@@ -10,16 +10,18 @@
 // or not), "no receipt was kept for this run" (with the reason class and the
 // SQL and connection the window still has), and a receipt opened from an id
 // alone (no value to show). Text interpolation only.
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import EvidenceSummary from './EvidenceSummary.vue'
 import EvidenceQuery from './EvidenceQuery.vue'
 import EvidenceConnections from './EvidenceConnections.vue'
 import EvidenceResult from './EvidenceResult.vue'
 import EvidenceRun from './EvidenceRun.vue'
-import { useEvidenceDrawer } from '../composables/useEvidenceDrawer'
+import { resetEvidence, useEvidenceDrawer } from '../composables/useEvidenceDrawer'
 import { useReceipt } from '../composables/useReceipt'
 import { noteText } from '../lib/receiptText'
+import { hasWailsRuntime } from '../lib/wails'
+import { EventsOn } from '../wailsjs/runtime/runtime'
 import '../evidence.css'
 
 const { target, close } = useEvidenceDrawer()
@@ -46,10 +48,18 @@ watch(target, (t, was) => {
   void load(t.receiptId)
   // Focus moves in on open, and again when another value replaces the content.
   setTimeout(() => root.value?.querySelector<HTMLElement>('[data-evidence-close]')?.focus(), 0)
+}, { immediate: true })
+
+// A receipt of the old workspace must not show over the new one: closing or opening
+// a workspace closes the drawer and forgets what the windows remembered.
+const offs: Array<() => void> = []
+onMounted(() => {
+  if (hasWailsRuntime()) offs.push(EventsOn('workspace:closed', resetEvidence), EventsOn('workspace:opened', resetEvidence))
 })
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
   clearTimeout(copiedTimer)
+  offs.splice(0).forEach((off) => off())
 })
 
 async function copyId() {
