@@ -121,6 +121,26 @@ describe('useAiCellDialog state machine', () => {
     expect(dialog.state.envelope?.questions).toEqual(['which table?'])
   })
 
+  it('every follow-up of one dialog sends the dialog\'s one taskId (one agent session), a reopened dialog a new one', async () => {
+    const calls: string[] = []
+    setBinding(async (req) => {
+      calls.push(req.taskId)
+      return { outcome: 'needs_info', questions: ['which table?'] }
+    })
+    const dialog = useAiCellDialog(makeHost())
+    dialog.openCreate()
+    const id = dialog.state.taskId
+    await dialog.submit('first ask')
+    await dialog.submit('the orders table') // answer and retry
+    await dialog.submit('and only open ones') // refine
+    expect(calls).toEqual([id, id, id])
+    expect(dialog.state.taskId).toBe(id)
+
+    dialog.openCreate()
+    await dialog.submit('another dialog')
+    expect(calls[3]).not.toBe(id)
+  })
+
   it('unresolved outcome moves to the unresolved state', async () => {
     setBinding(async () => ({ outcome: 'unresolved', notes: 'ran out of steps' }))
     const dialog = useAiCellDialog(makeHost())

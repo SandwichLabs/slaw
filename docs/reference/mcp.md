@@ -109,6 +109,16 @@ Three tools author and read [data artifacts](artifacts.md) (`artifacts/<name>/`)
 | `get_watch` | `name`. Returns the same fields plus `yaml` (the canonical file text) and `rev`. |
 | `write_watch` | `name`, `question` (`{query, params?}` or `{metric}`), `when` (`{rows: any\|none}`, `{above}`, `{below}` or `{outside: [low, high]}`), optional `description` and `rev` (from `get_watch`; without it the write only creates and an existing name is refused). Validated with the file decoder; the saved query or metric must exist. The reply is `{saved, created, rev, file, note, warnings?}`; a required parameter with no value is a warning. |
 
+### Receipts
+
+`run_query`, `run_saved_query` and `preview_query` return a `receipt_id` (see [run receipts](receipts.md)). `get_receipt` reads it back. It is an introspect tool, listed and allowed in every tier (a read of the agent's own record, so a read-only session has it too).
+
+| Tool | Notes |
+|---|---|
+| `get_receipt` | `id` (the `receipt_id`, `r_` and 20 hex digits). Returns the receipt: `id`, `at`, `duration_ms`, `surface`, `actor`, `source`, `sql` (as written, with `metric()` and `$name` intact), `run_sql` (as run), the bound `params` as stored (a value that looked like a credential is `withheld`, and with the person's **Keep parameter values** off only the names), `connections` (name, type, `read_only`, `status` and each one's `snapshot`), `verdict`, `rows` (`returned`, `total`, `truncated`, as shown), `columns` (names and types), `result_hmac` (the fingerprint) and the `*_hash` fields. Never a row value, never `agent_session`. |
+
+It answers only for a receipt made by **the calling MCP session**: the SSE session that made the call (each connected client has its own), or, over stdio, the one `slaw mcp serve` process. Anything else, a receipt a person made, another session's, an id that does not exist or is malformed, is the same error, `no receipt with that id`, so the tool cannot be used to find out which receipts exist. **A client that reconnects is a new session** (a new SSE connection gets a new session id) and cannot read the receipts its earlier session made; it can still run the query again and cite the new `receipt_id`, and the person can read any receipt with `slaw receipts show`.
+
 ### Saved queries
 
 `save_query` and `build_query` write `queries/<id>.sql` and are content tools, so `read-write` may save a query like an artifact or a notebook cell; they validate before the approval gate and answer "valid and ready" when nobody can approve. `list_queries` and `run_saved_query` are introspect tools.
@@ -237,7 +247,7 @@ See "Copy Claude config" above: no passphrase and no token are needed. The older
 
 | Category | Tools |
 |---|---|
-| introspect (every tier) | `list_connections`, `introspect_schema`, `describe_table`, `list_notebooks`, `get_notebook`, `list_queries`, `run_saved_query`, `list_skills`, `read_skill`, `list_artifacts`, `get_artifact`, `list_definitions`, `get_definition`, `list_watches`, `get_watch`, `help_search`, `propose_schema`, `preview_query` |
+| introspect (every tier) | `list_connections`, `introspect_schema`, `describe_table`, `list_notebooks`, `get_notebook`, `list_queries`, `run_saved_query`, `list_skills`, `read_skill`, `list_artifacts`, `get_artifact`, `list_definitions`, `get_definition`, `list_watches`, `get_watch`, `help_search`, `propose_schema`, `preview_query`, `get_receipt` |
 | data | `run_query`, `create_record`, `update_record`, `delete_record`, `bulk_insert` |
 | content | `add_query_cell`, `add_markdown_cell`, `update_cell`, `delete_cell`, `move_cell`, `create_dashboard`, `create_or_update_skill`, `write_artifact`, `save_query`, `build_query`, `propose_definition`, `write_watch` |
 | schema (`full` only) | `create_table`, `add_column`, `drop_table`, `import_csv` |
