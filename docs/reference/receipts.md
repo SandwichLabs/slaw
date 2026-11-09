@@ -1,6 +1,8 @@
 # Run receipts: evidence, settings and clear
 
-A **receipt** is a small file that says a question was asked and what it touched: the statement, the connections, the columns, how many rows and a keyed fingerprint of them. It never holds a result value or a credential. Receipts live in `.slaw-local/receipts/` in the workspace folder (git-ignored, never read into a `.slaw` bundle) and nothing is sent anywhere because of them. What a receipt holds, and who mints one, is in [privacy](../privacy.md#proposals-watch-history-and-receipts-stay-on-this-machine) and the [console](console.md#run-receipts); this page is how to read one (the Evidence drawer, `slaw receipts show` and `list`), how long they are kept and how to delete them.
+A **receipt** is a small file that says a question was asked and what it touched: the statement, the connections, the columns, how many rows and a keyed fingerprint of them. It never holds a result value or a credential. Receipts live in `.slaw-local/receipts/` in the workspace folder (git-ignored: `.slaw-local/` gets its own `.gitignore` containing `*` the first time receipts are kept, if it has none; never read into a `.slaw` bundle) and nothing is sent anywhere because of them. What a receipt holds, and who mints one, is in [privacy](../privacy.md#proposals-watch-history-and-receipts-stay-on-this-machine) and the [console](console.md#run-receipts); this page is how to read one (the Evidence drawer, `slaw receipts show` and `list`), how long they are kept and how to delete them.
+
+> **Opening in an older Slaw:** once you change a receipt setting (Settings > Workspace > Receipts or `slaw receipts settings`), Slaw 0.8.0 and older refuse to open that workspace on this computer (`field receipts not found`). Set every receipt setting back to its default (`slaw receipts settings --keep-params on --days default --max-count default --max-mb default`), or remove the `receipts:` block from your per-workspace `local.yaml` in the config directory, before opening it in an older Slaw.
 
 ## Evidence: reading a receipt
 
@@ -24,7 +26,7 @@ The drawer's sections, top to bottom:
 | **Connection and snapshot** | Each connection's name, type and status beside its snapshot: the value and what it is, "Recorded right after the run" and, for a replayable one, "current when the run finished". A snapshot that was **not recorded** says why ("Not recorded: not available for catalog tables" for an `iceberg_catalog`, "version pinned in the statement") and never offers replay. |
 | **Result** | Rows "N returned of M" (and "truncated" when the run was cut), the columns as name and type ("(name withheld)" where a name could carry a value), and the result's fingerprint shortened as `9c1e04…b7a4`. "The receipt keeps a fingerprint of the rows, never the rows. The value on the card comes from this run, not from the receipt." |
 | **Run** | When (time and duration), By ("You, opening the notebook", "The agent (run_query)") and From (the file-relative ref). |
-| **Footer** | The receipt id, a copy button (**Copy receipt id**) and "Kept on this computer, never in the folder. `slaw receipts show` prints it." |
+| **Footer** | The receipt id, a copy button (**Copy receipt id**) and "Kept on this computer, in `.slaw-local/` (never in git or a bundle). `slaw receipts show` prints it." |
 
 States other than a plain receipt:
 
@@ -52,6 +54,7 @@ Every other id gets the same answer, "no receipt with that id": an id that does 
 **Chips in the chat.** The tool chips for `run_query`, `run_saved_query` and `preview_query` show the receipt id, the number of rows the model was shown ("cut" when the result budget trimmed them) and an **Open evidence** button that opens the drawer from that id (the SQL and parameter values the agent sent are kept in the window's memory for the drawer, as for any run).
 
 **Marks on the answer's numbers.** When a turn ends, each number in the assistant's answer is checked against the rows that turn's own reads showed the model, in Go and in memory (never against the receipt store, which holds no value; the values are dropped when the turn's result has been sent). A number that matches gets a **✓** after it that opens the evidence of the read that showed it (hover: "Matches a value in a query result (column X)"); a number that matches nothing gets a dotted underline, **not from a query**. A legend under the answer says which marks are there. The text is never rewritten: marks are drawn over the answer, and never inside code or a link. A ✓ means **this value appears in a result the agent was shown**, not that the answer is right or that the number was taken from it: a number the assistant computed itself is usually left unmarked, but one that happens to equal a shown value can still get a ✓. Nothing is struck through, and the grounding check (which sends an unchecked claim back once for verification) is unchanged and does not look at the marks.
+ If a read made no receipt (the receipts folder cannot be used), the turn's numbers are not checked against it: no number is underlined as "not from a query" (a ✓ from a read that did make a receipt stays), and the chips of the other reads stay.
 
 The rules are exact:
 
@@ -75,9 +78,13 @@ How receipts are kept is **your own** setting for this workspace on this compute
 | At most (receipts) | The newest this many are kept. | 20,000 | 100 to 200,000 |
 | Using at most (MB) | The newest receipts that fit in this much space are kept. | 64 | 1 to 1,024 |
 
-A positive number outside its range is moved to the nearest bound when you save (a typo can neither switch pruning off nor delete everything). A limit left **blank** in Studio, or set to the word `default` on the command line, means the default; `0`, a negative number or text is refused, never read as the default. Settings are applied at once, to the open workspace: new receipts follow them, existing receipts are not rewritten, and a **lowered limit removes the oldest receipts** (in the background in Studio, so a moment after you save; the command line waits up to 5 seconds and says so if it could not). Every process that has the workspace open (Studio, `slaw mcp serve`) re-reads your settings file before each receipt and each prune, so a change made in another process, such as `slaw receipts settings --days 365`, reaches them without a restart; a settings file that cannot be read or is not trusted leaves the limits already in force, never the defaults. Receipts are also pruned when a workspace opens and every 500 receipts written. A receipt's age is its file's modification time.
+A positive number outside its range is moved to the nearest bound when you save (a typo can neither switch pruning off nor delete everything). A limit left **blank** in Studio, or set to the word `default` on the command line, means the default; `0`, a negative number or text is refused, never read as the default. Settings are applied at once, to the open workspace: new receipts follow them, existing receipts are not rewritten, and a **lowered limit removes the oldest receipts** (in the background in Studio, so a moment after you save; the command line waits up to 5 seconds and says so if it could not). Every process that has the workspace open (Studio, `slaw mcp serve`) re-reads your settings file before each receipt and each prune, so a change made in another process, such as `slaw receipts settings --days 365`, reaches them without a restart; a settings file that cannot be read or is not trusted leaves the limits already in force, never the defaults. Receipts are pruned in the background the first time a process uses the workspace's receipts (not when the workspace opens: the first receipted read, opening a console, a `slaw receipts` command, Studio's agent or the start of `slaw mcp serve`) and then every 500 receipts written. A receipt's age is its file's modification time.
 
 The console keeps no receipts unless you type `.receipts on`; that is per console session and is not one of these settings.
+
+## Cost
+
+Collecting a connection's snapshot fact adds up to 300 ms to a receipted read (the budget for all of a run's facts together). A remote Postgres may often record `timed out`, and an `iceberg_catalog` records no snapshot. See [the console](console.md#run-receipts) for the details.
 
 ## Studio
 

@@ -229,7 +229,7 @@ func printReceipt(w io.Writer, r receipts.Receipt) {
 	fmt.Fprintf(w, "By    %s\n", receiptBy(r))
 	fmt.Fprintf(w, "From  %s\n", receiptFrom(r))
 
-	fmt.Fprintln(w, "\nKept on this computer, never in the folder.")
+	fmt.Fprintln(w, "\nKept on this computer, in .slaw-local/ (never in git or a bundle).")
 }
 
 // receiptSummary is the one sentence of the drawer's Summary section.

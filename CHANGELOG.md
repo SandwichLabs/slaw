@@ -4,6 +4,8 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+**Opening in an older Slaw:** once you change a receipt setting (Settings > Workspace > Receipts or `slaw receipts settings`), Slaw 0.8.0 and older refuse to open that workspace on this computer (`field receipts not found`). Set every receipt setting back to its default (`slaw receipts settings --keep-params on --days default --max-count default --max-mb default`), or remove the `receipts:` block from your per-workspace `local.yaml` in the config directory, before opening it in an older Slaw.
+
 ### Added
 
 - **Run receipts and the evidence drawer (#241).**
@@ -11,12 +13,14 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
   - A receipt records:
     - the statement as written and as run, and the parameter values;
     - the connections, each with a snapshot fact (replayable, live only or not recorded);
-    - the columns, the rows shown and a keyed fingerprint of them.
+    - the columns (a name that could carry a value is withheld), how many rows were shown and a keyed fingerprint of them.
   - It never holds a result row or a credential, and its connection facts never hold a path, a bucket or a host. The statement is kept as you wrote it, so a file path you typed stays in it. It stays on this computer, and is never in git or a bundle.
-  - **Evidence** opens a drawer with the receipt from the Query Explorer, notebook SQL cells, metric Try it and every A2UI stat, table and chart. `slaw receipts show` and `slaw receipts list` print the same.
+  - **Evidence** opens a drawer with the receipt from the Query Explorer, notebook SQL cells, metric Try it and every A2UI stat, table and chart. `slaw receipts show <id>` prints the drawer's sections as text; `slaw receipts list` prints the newest receipts one per line (`--surface`, `--limit`, `--json`).
   - Settings > Workspace > Receipts and `slaw receipts settings` control whether parameter values are kept and how long receipts are kept (30 days, 20,000 or 64 MB by default). **Delete all receipts** and `slaw receipts clear` remove them.
-  - The agent's read tools return a `receipt_id` to cite, and `get_receipt` returns the agent's own receipts.
-  - In chat, tool chips open the evidence. A number in an answer that matches a value the query showed gets a ✓. A number that doesn't is underlined as "not from a query".
+  - The agent's read tools return a `receipt_id` to cite, and `get_receipt` returns receipts made by the same session (an MCP connection, or a chat conversation until **New chat**); a client that reconnects can't read its earlier ones.
+  - In chat, tool chips open the evidence. A number in an answer that matches a value this turn's queries showed the model gets a ✓ that opens its evidence; a number in no result is underlined as "not from a query"; a number that could match by coincidence (an id column, a non-unique value, a short number in a long result) is left unmarked. A ✓ means the value appeared in a result, not that the answer is right.
+  - Recording a connection's snapshot fact adds up to 300 ms to a read; a remote Postgres may often record `timed out`, and an `iceberg_catalog` records no snapshot.
+  - Settings also lists the ten most recent receipts, each with Evidence. Out-of-range limits are moved into range, and a lowered limit removes the oldest receipts.
 - **`run_query` takes an optional `connection`** (#352): the catalog unqualified names resolve against, so the agent can call `metric()` on a saved query pinned to a non-default connection (an `iceberg_catalog`, for one). The same tier, read-only, writable-connection and approval gates apply; an unknown name is refused.
 
 ### Changed
@@ -24,9 +28,14 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 - **MCP clients see the tools they can use (#221).**
   - `present_data` is chat-only: it renders in Studio's chat, so `tools/list` no longer offers it and an MCP call to it is refused as an unknown tool.
   - The notebook cell tools no longer mention "the notebook currently open in Studio" over MCP: omit `notebook_id` to create a new notebook (Studio's own MCP server still appends to the notebook you have open).
-  - `tools/list` leaves out the tools the session's tier can never run (a read-only session lists no write tool). Calls are gated as before, so an unlisted tool still returns the tier refusal. Studio sends `tools/list_changed` when you save the agent settings.
+  - `tools/list` leaves out the tools the session's tier can never run (read-only lists no write, content or schema tool; read-write no schema tool). Calls are gated as before, so an unlisted tool still returns the tier refusal. Studio's MCP server sends `tools/list_changed` when you save Settings > Workspace.
   - `list_connections` no longer shows DuckDB's `memory`, `system` and `temp` catalogs.
   - `describe_table` on a missing table is an error that names it and points at `introspect_schema` (it was an empty column list), `pk` is real (read from DuckDB's constraints; an attached Postgres or MySQL database reports none), and a file path or URL is answered with `run_query` `DESCRIBE SELECT * FROM read_csv(...)`.
+
+### Fixed
+
+- **Errors say what is wrong (#3).** A notebook cell, A2UI component, artifact or metric query with a typo, a missing table or an empty statement shows that reason (DuckDB's parser or binder error, `table "x" not found`, `the statement is empty`) instead of "live bindings are read-only…"; writes and files outside `data/` still get that message, and `preview_query` reports such a statement as `query failed: <reason>`. An empty notebook cell can't be run ("Write a query first"). A defined connection that failed to connect reports its own status (`connection "x": …`); "unknown connection" is only for a name nothing defines.
+- **`run_saved_query` on a saved query pinned to a connection** no longer suggests values from a same-named table on the default connection when it returns no rows (#352).
 
 ## [0.8.0] - 2026-11-08
 

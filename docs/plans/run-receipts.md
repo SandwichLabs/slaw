@@ -4,7 +4,7 @@ Status: **accepted; R0 to R5 built (2026-11-09).** The owner's answers to the op
 
 ## Why this one, now
 
-- **It is the foundation of the year's direction, and none of it is built.** E3 (verifier), E5 (`slaw check`, with #308 already queued behind it), E6 (as-of) and the #7/#30 chat trust items all consume a receipt. E4 (semantics) and E7 (watches) have shipped without one, so a metric value or a watch alert still can't show what produced it.
+- **It is the foundation of the year's direction, and when this plan was written none of it was built.** E3 (verifier), E5 (`slaw check`, with #308 already queued behind it), E6 (as-of) and the #7/#30 chat trust items all consume a receipt. E4 (semantics) and E7 (watches) have shipped without one, so a metric value or a watch alert still can't show what produced it.
 - **The prerequisites are clear.** #193 (byte cap on artifact results) is closed. The part of #5 that matters, the result cap, is done; cancel is not needed until E5.
 - **It is AI-free and benefits every surface.** It's useful to a person with no provider configured, to Claude Code over MCP (a `receipt_id` to cite), and to the in-app agent.
 - **The code has a real chokepoint.** `engine.Manager.run` (`internal/engine/engine.go`) is the one run path behind every `Execute*` entry point. It already logs a statement digest, the size and the connection, and never the text.

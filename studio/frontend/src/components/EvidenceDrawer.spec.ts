@@ -81,7 +81,7 @@ describe('EvidenceDrawer', () => {
     expect(text(w, 'evidence-run')).toContain('You, in the Query Explorer')
     expect(text(w, 'evidence-from')).toBe('queries/net_revenue.sql')
     expect(text(w, 'evidence-id')).toBe('r_0123456789abcdef0123')
-    expect(text(w, 'evidence-footer')).toContain('Kept on this computer, never in the folder.')
+    expect(text(w, 'evidence-footer')).toContain('Kept on this computer, in .slaw-local/ (never in git or a bundle).')
     expect(text(w, 'evidence-footer')).toContain('slaw receipts show')
   })
 

@@ -144,7 +144,7 @@ async function copyId() {
         ><Icon :name="copied ? 'check' : 'copy'" :size="14" /></button>
         <span v-if="copied" class="ev-muted" role="status" data-testid="evidence-copied">Copied</span>
       </div>
-      <p class="ev-muted">Kept on this computer, never in the folder. <code>slaw receipts show</code> prints it.</p>
+      <p class="ev-muted">Kept on this computer, in <code>.slaw-local/</code> (never in git or a bundle). <code>slaw receipts show</code> prints it.</p>
     </footer>
   </aside>
 </template>

@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/SandwichLabs/slaw/internal/agents"
 	"github.com/SandwichLabs/slaw/internal/receipts"
+	"github.com/SandwichLabs/slaw/internal/workspace"
 )
 
 func callTool(t *testing.T, h *agentToolHandler, id, method string, params map[string]any, session string) *agents.Response {
@@ -110,4 +113,63 @@ func TestChatTurnRunsAnnounceChipsAndMarkTheAnswer(t *testing.T) {
 	assert.Empty(t, refs)
 	require.Len(t, marks, 1)
 	assert.False(t, marks[0].Matched, "a value another turn showed is not matched")
+}
+
+// A read that showed rows but made no receipt (an unusable store) hides its
+// values from the check, so the answer's numbers are never underlined as "not
+// from a query"; the chips of the reads that did make one stay.
+func TestTurnRuns_AnUnrecordedReadMakesNoNotFromAQueryMarks(t *testing.T) {
+	read := map[string]any{"columns": []string{"total"}, "rows": [][]any{{int64(1234567)}}}
+
+	var none turnRuns
+	_, ok := none.add("c1", "run_query", read)
+	assert.False(t, ok, "no receipt, no chip")
+	marks, runs := none.answerNumbers("The total is 1234567 and the margin is 98765.")
+	assert.Empty(t, marks)
+	assert.Empty(t, runs)
+
+	// A turn with no read at all still flags an invented number.
+	var nothing turnRuns
+	marks, _ = nothing.answerNumbers("The total is 1234567.")
+	require.NotEmpty(t, marks)
+	assert.False(t, marks[0].Matched)
+
+	// A mixed turn keeps the tick of the recorded read and drops the underline.
+	var mixed turnRuns
+	_, ok = mixed.add("c1", "run_query", read)
+	assert.False(t, ok)
+	_, ok = mixed.add("c2", "run_query", map[string]any{"receipt_id": "r_1", "columns": []string{"n"}, "rows": [][]any{{int64(2468013)}}})
+	require.True(t, ok)
+	marks, runs = mixed.answerNumbers("It is 2468013, and 98765.")
+	require.Len(t, marks, 1)
+	assert.True(t, marks[0].Matched)
+	assert.Equal(t, "r_1", marks[0].ReceiptID)
+	assert.Len(t, runs, 1)
+}
+
+// A workspace whose .slaw-local cannot be written (a read-only folder) keeps no
+// receipts, and a run still returns its rows, with the note that says why.
+func TestRunQuery_ARunStillReturnsItsResultWhenTheReceiptsFolderIsReadOnly(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file modes")
+	}
+	root := newWorkspaceDir(t, "Read Only Receipts")
+	app := newBareApp(t)
+	res, err := app.OpenWorkspace(root)
+	require.NoError(t, err)
+	require.Equal(t, "opened", res.Status)
+	// The workspace keeps its lock in .slaw-local, so it is made read-only after
+	// the open and before the first receipt is asked for.
+	local := filepath.Join(root, workspace.LocalDir)
+	require.NoError(t, os.RemoveAll(filepath.Join(local, "receipts")))
+	require.NoError(t, os.Chmod(local, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(local, 0o700) })
+
+	got, err := app.RunQuery(RunQueryRequest{SQL: "SELECT 41 + 1 AS answer", TabID: "t1"})
+	require.NoError(t, err)
+	require.Len(t, got.Rows, 1)
+	assert.Empty(t, got.ReceiptID)
+	assert.Equal(t, string(receipts.NoteUnavailable), got.ReceiptNote)
+	_, statErr := os.Stat(filepath.Join(local, "receipts"))
+	assert.Error(t, statErr, "nothing was written")
 }

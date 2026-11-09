@@ -17,6 +17,7 @@ The tier is the person's `sandbox` setting, clamped to the team limit in `slaw.y
 |---|---|---|---|
 | `SELECT`, `WITH`, `FROM`-first, `VALUES`, `TABLE`, `DESCRIBE`, `SHOW`, `SUMMARIZE`, `EXPLAIN` (never `ANALYZE`), allow-listed `PRAGMA` and `CALL`, over **any attached catalog** including remote ones (`pg.public.t`) | yes | yes | yes |
 | Files and URLs, only as the policy's rules below allow | yes | yes | yes |
+| Introspect tools: `list_connections`, `introspect_schema`, `describe_table`, `list_*` and `get_*` reads (`get_artifact`, `get_definition`, `get_watch`, `get_notebook`), `read_skill`, `help_search`, `preview_query`, `get_receipt` (the full list is in [mcp.md](mcp.md)) | yes | yes | yes |
 | `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `INSERT ... ON CONFLICT` into a writable catalog | no | yes | yes |
 | `CREATE`, `DROP`, `ALTER` of tables, views, sequences, schemas, indexes, macros, types on a writable catalog | no | no | yes |
 | `COPY (...) TO '<literal path in data/>'` | no | no | yes |
