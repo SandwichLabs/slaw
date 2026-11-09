@@ -4,6 +4,10 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-09
+
+Run receipts and the evidence drawer: every query that shows you a value, and every query the agent runs, keeps a record on this computer of the statement, the connections and the snapshot it read, and Evidence opens it (#241, E1). Also clearer SQL errors and an MCP surface that lists only the tools a session can use.
+
 **Opening in an older Slaw:** once you change a receipt setting (Settings > Workspace > Receipts or `slaw receipts settings`), Slaw 0.8.0 and older refuse to open that workspace on this computer (`field receipts not found`). Clear every limit box in Settings (leave it blank) and tick Keep parameter values, or run `slaw receipts settings --keep-params on --days default --max-count default --max-mb default`, or remove the `receipts:` block from your per-workspace `local.yaml` in the config directory, before opening it in an older Slaw.
 
 ### Added
@@ -515,7 +519,8 @@ The first public release. Vibe is an agentic desktop workspace for working with 
 - Older data-holding `.vibe` (SQLCipher) files are not opened.
 - Linux builds target glibc 2.35 or newer and WebKitGTK 4.1; musl and older distributions are unsupported.
 
-[Unreleased]: https://github.com/SandwichLabs/slaw/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/SandwichLabs/slaw/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/SandwichLabs/slaw/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/SandwichLabs/slaw/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/SandwichLabs/slaw/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/SandwichLabs/slaw/compare/v0.6.3...v0.6.4
