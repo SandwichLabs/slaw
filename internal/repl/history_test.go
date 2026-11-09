@@ -2,6 +2,7 @@ package repl
 
 import (
 	"errors"
+	"github.com/SandwichLabs/slaw/internal/engine"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -144,7 +145,7 @@ func TestOrdinarySQLStaysRecordable(t *testing.T) {
 		"-- bearer of bad news\nSELECT 1",
 		"SELECT max_tokens FROM settings",
 	} {
-		assert.True(t, recordable(foldEntry(stmt)), stmt)
+		assert.True(t, engine.Recordable(foldEntry(stmt)), stmt)
 	}
-	assert.False(t, recordable(foldEntry("SELECT 1 WHERE password = 'x'")))
+	assert.False(t, engine.Recordable(foldEntry("SELECT 1 WHERE password = 'x'")))
 }

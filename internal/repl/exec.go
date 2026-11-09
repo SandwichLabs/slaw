@@ -108,7 +108,7 @@ func (s *Session) runStatement(text string) {
 		s.refreshCurrent()
 	}
 	entry := foldEntry(text)
-	if eligible(text, typ, prepErr) && recordable(entry) {
+	if eligible(text, typ, prepErr) && engine.Recordable(entry) {
 		s.hist.record(text)
 		if err == nil {
 			s.last = text // what .save offers: never an ATTACH, a SET or a credential

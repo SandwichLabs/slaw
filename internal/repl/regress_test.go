@@ -2,6 +2,7 @@ package repl
 
 import (
 	"database/sql"
+	"github.com/SandwichLabs/slaw/internal/engine"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,10 +120,10 @@ func TestCredentialStatementsAreNotRecordableOrSavable(t *testing.T) {
 		".open md:?motherduck_token=SEKRETTOKEN1",
 		"SELECT 'https://user:pw12345@host/x'",
 	} {
-		assert.False(t, recordable(foldEntry(text)), text)
+		assert.False(t, engine.Recordable(foldEntry(text)), text)
 	}
-	assert.True(t, recordable("SELECT 1"))
-	assert.True(t, recordable(".mode csv"))
+	assert.True(t, engine.Recordable("SELECT 1"))
+	assert.True(t, engine.Recordable(".mode csv"))
 
 	store := queries.NewFileStore(t.TempDir())
 	f := newSession(t, func(o *Options) { o.Queries = store })
