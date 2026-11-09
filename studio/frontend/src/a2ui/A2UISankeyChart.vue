@@ -15,7 +15,7 @@ import { seriesClass, toFlows } from './series'
 import { formatNumber } from '../lib/formatCell'
 
 const props = defineProps<{ component: A2UIComponentT }>()
-const { loading, error, table } = useChartData(() => props.component)
+const { loading, error, table, result } = useChartData(() => props.component)
 const data = computed(() => toFlows(table.value))
 const { values, replay, enabled } = useMotion(() => data.value.flows.map((f) => f.weight), () => props.component.motion)
 
@@ -74,7 +74,7 @@ const ariaLabel = computed(() => `Flow chart of ${data.value.flows.length} flows
 </script>
 
 <template>
-  <A2UIChartFrame kind="sankey" :label="component.label" :sql="isBound(component)" :loading="loading" :error="error" :empty="data.flows.length === 0" :animated="enabled" @replay="replay">
+  <A2UIChartFrame :result="result" :title="component.label || component.id" kind="sankey" :label="component.label" :sql="isBound(component)" :loading="loading" :error="error" :empty="data.flows.length === 0" :animated="enabled" @replay="replay">
     <div class="a2ui-sankey__wrap" :style="{ height: H + 'px' }">
       <div class="a2ui-sankey__col a2ui-sankey__col--src">
         <span v-for="(s, i) in data.sources" :key="'s' + i" class="a2ui-sankey__label" :style="{ top: topPct(srcBoxes[i]) }">{{ s.name }} <b>{{ formatNumber(s.total) }}</b></span>

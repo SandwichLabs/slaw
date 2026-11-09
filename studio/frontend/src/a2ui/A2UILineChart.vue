@@ -39,11 +39,12 @@ import A2UIPlotFrame from './A2UIPlotFrame.vue'
 import A2UISeriesLegend from './A2UISeriesLegend.vue'
 import A2UISeriesTip from './A2UISeriesTip.vue'
 import A2UIAnnotations from './A2UIAnnotations.vue'
+import A2UIEvidence from './A2UIEvidence.vue'
 import { placeOnAxis } from './annotations'
 import { useAnnotations } from './useAnnotations'
 
 const props = defineProps<{ component: A2UIComponentT }>()
-const { loading, error, ms } = useMultiSeries(() => props.component, 'points')
+const { loading, error, data, ms } = useMultiSeries(() => props.component, 'points')
 const multi = computed(() => ms.value.series.length > 1)
 const labels = computed(() => ms.value.labels)
 const n = computed(() => labels.value.length)
@@ -150,7 +151,7 @@ const ariaLabel = computed(() => {
 
 <template>
   <div class="a2ui-linechart">
-    <div v-if="component.label" class="a2ui-component__title">{{ component.label }}</div>
+    <div v-if="component.label || data?.receipt_id || data?.receipt_note" class="a2ui-component__title">{{ component.label }}<A2UIEvidence :result="data" :title="component.label || component.id" /></div>
     <div v-if="isBound(component) && loading" class="a2ui-loading">RUNNING QUERY…</div>
     <div v-else-if="isBound(component) && error" class="a2ui-error">QUERY ERROR: {{ error }}</div>
     <div v-else-if="n === 0 || ms.series.length === 0 || values.length === 0" class="a2ui-empty">NO ROWS</div>

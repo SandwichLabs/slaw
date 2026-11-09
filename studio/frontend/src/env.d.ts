@@ -98,6 +98,9 @@ interface AppApi {
   GetReceiptSettings(): Promise<ReceiptSettingsInfo>
   SetReceiptSettings(s: ReceiptSettings): Promise<void>
   ClearReceipts(): Promise<void>
+  // Evidence (the drawer; `slaw receipts show|list`): what a receipt says, never a result value
+  GetReceipt(id: string): Promise<ReceiptRecord>
+  ListReceipts(filter: ReceiptFilter): Promise<ReceiptSummary[]>
   GetClaudeConfig(): Promise<{ name: string; desktop: string; code: string }>
   CancelQuit(): Promise<void>
   HoldQuit(): Promise<void>
@@ -145,7 +148,7 @@ interface AppApi {
   ReplClose(id: string): Promise<void>
   ReplUse(id: string, name: string): Promise<string>
   RunA2UIQuery(sql: string): Promise<A2UIQueryResult>
-  RunA2UIQueryIn(sql: string, connection: string): Promise<A2UIQueryResult>
+  RunA2UIQueryIn(sql: string, connection: string, source: RenderSource): Promise<A2UIQueryResult>
   ListArtifacts(): Promise<ArtifactSummary[]>
   GetArtifact(name: string): Promise<ArtifactDetail>
   RunArtifactQuery(name: string, query: string, values: Record<string, unknown>): Promise<A2UIQueryResult>
@@ -872,6 +875,7 @@ interface QueryResult {
   total_rows: number
   truncated?: boolean // stopped at the cap without counting the rest (total_rows is then only row_count)
   receipt_id?: string // the run's receipt (docs/plans/run-receipts.md); absent when none was kept
+  receipt_note?: ReceiptNote // why there is none when one was due
 }
 
 // KeychainProbe / LLMKeyStatus (#114): where the agent's API key comes from.
@@ -999,7 +1003,72 @@ interface A2UIQueryResult {
   // true when the query had more rows than the 500-row cap (Go caps; never capped again here)
   truncated?: boolean
   receipt_id?: string // the run's receipt; absent when none was kept
+  receipt_note?: ReceiptNote // why there is none when one was due
 }
+
+// RenderSource mirrors studio.RenderSource: which notebook cell or A2UI component a
+// RunA2UIQueryIn run is for. Go checks it against the open notebook or artifact and
+// drops one that does not match. The zero value ({kind: ''}) is a render with no source.
+interface RenderSource {
+  kind: '' | 'cell' | 'a2ui'
+  notebook?: string
+  artifact?: string
+  cell?: string
+  component?: string
+}
+
+// Why a run that should have a receipt has none: its receipt could not be written
+// ("not_kept"), or this workspace keeps none ("unavailable"). A class, never an error.
+type ReceiptNote = 'not_kept' | 'unavailable'
+
+// ReceiptRecord mirrors receipts.Receipt: what was asked and what it touched, never
+// a result value. ReceiptSummary mirrors receipts.Summary (one line of a listing).
+interface ReceiptSnapshot { fact: string; value: string; label: 'replayable' | 'live_only' | 'not_recorded' }
+interface ReceiptConnection {
+  name: string
+  type: string
+  read_only: boolean
+  status: 'connected' | 'not_connected' | 'error'
+  snapshot?: ReceiptSnapshot
+}
+interface ReceiptParam { value?: string; withheld?: boolean; truncated?: boolean }
+interface ReceiptRecord {
+  id: string
+  at: string
+  duration_ms: number
+  surface: string
+  actor: 'person' | 'agent'
+  agent_session?: string
+  source: { kind?: string; ref?: string }
+  sql?: string
+  sql_withheld?: boolean
+  run_sql?: string
+  run_sql_withheld?: boolean
+  sql_hash?: string
+  run_sql_hash?: string
+  params?: Record<string, ReceiptParam>
+  params_hash?: string
+  params_withheld?: boolean
+  connections?: ReceiptConnection[]
+  verdict: 'read' | 'unchecked'
+  rows: { returned: number; total: number; truncated: boolean }
+  columns?: { name: string; type: string; withheld?: boolean }[]
+  result_hmac: string
+}
+interface ReceiptSummary {
+  id: string
+  at: string
+  duration_ms: number
+  surface: string
+  actor: 'person' | 'agent'
+  source: { kind?: string; ref?: string }
+  verdict: 'read' | 'unchecked'
+  rows: { returned: number; total: number; truncated: boolean }
+  connections?: string[]
+  sql?: string
+  sql_withheld?: boolean
+}
+interface ReceiptFilter { surface: string; limit: number }
 
 // ArtifactSummary mirrors studio.ArtifactSummary (#162): one data artifact in
 // the Library. A folder that could not be read still lists, with `error`.

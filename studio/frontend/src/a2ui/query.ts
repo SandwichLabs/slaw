@@ -12,6 +12,7 @@
 import { errorText } from '../lib/errors'
 import { App } from '../lib/bindings'
 import { runPooled, _resetQueryPoolForTests, type QueryPriority } from './pool'
+import { rememberRun } from '../composables/useReceipt'
 
 export interface LiveQueryResult {
   columns: string[]
@@ -22,10 +23,13 @@ export interface LiveQueryResult {
   truncated?: boolean
   // the run's receipt (docs/plans/run-receipts.md); absent when none was kept
   receipt_id?: string
+  // why there is none when one was due: "not_kept" or "unavailable"
+  receipt_note?: ReceiptNote
 }
 
 // runLiveQuery executes sql through RunA2UIQuery (RunA2UIQueryIn when a
-// connection is given) — the sandbox-gated Wails
+// connection or a source is given; the source says which notebook cell or A2UI
+// component asked, for the run's receipt, and Go checks it) — the sandbox-gated Wails
 // binding that re-enters the exact same per-statement SQL classifier
 // run_query uses (internal/agents' checkSQLClass), never a bypass. A denied
 // or failed query resolves with `error` set rather than throwing, so callers
@@ -41,7 +45,7 @@ export interface LiveQueryResult {
 // content.
 export const EMPTY_QUERY_MESSAGE = 'Write a query first.'
 
-export async function runLiveQuery(sql: string, signal?: AbortSignal, priority: QueryPriority = 'low', connection?: string): Promise<LiveQueryResult & { aborted?: boolean }> {
+export async function runLiveQuery(sql: string, signal?: AbortSignal, priority: QueryPriority = 'low', connection?: string, source?: RenderSource): Promise<LiveQueryResult & { aborted?: boolean }> {
   // A blank statement is not sent: the read-only gate would refuse it with a
   // message about live bindings, not about the missing query (#3).
   if (!sql.trim()) return { columns: [], types: [], rows: [], error: EMPTY_QUERY_MESSAGE }
@@ -51,12 +55,15 @@ export async function runLiveQuery(sql: string, signal?: AbortSignal, priority: 
     // default catalog for the statement's unqualified names. Unset keeps the
     // original binding (the session default).
     const out = await runPooled(
-      () => (connection ? App.RunA2UIQueryIn(sql, connection) : App.RunA2UIQuery(sql)),
+      () => (connection || source ? App.RunA2UIQueryIn(sql, connection ?? '', source ?? { kind: '' }) : App.RunA2UIQuery(sql)),
       signal,
       priority,
     )
     if (out.aborted) return aborted
-    return { columns: out.value?.columns ?? [], types: out.value?.types ?? [], rows: out.value?.rows ?? [], receipt_id: out.value?.receipt_id }
+    const receipt_id = out.value?.receipt_id
+    // The drawer shows what this window still has of the run (never a value from the receipt).
+    rememberRun(receipt_id, { sql, connection })
+    return { columns: out.value?.columns ?? [], types: out.value?.types ?? [], rows: out.value?.rows ?? [], receipt_id, receipt_note: out.value?.receipt_note }
   } catch (e: any) {
     if (signal?.aborted) return aborted
     return { columns: [], types: [], rows: [], error: errorText(e) }

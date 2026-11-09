@@ -2,9 +2,13 @@
 // A2UIChartFrame — the chrome every KINETIC chart shares: caption, the
 // loading / error / empty states, a replay button (only when animation is
 // on), and an optional series legend whose swatches come from the closed
-// palette classes, never from a model-supplied color.
+// palette classes, never from a model-supplied color. A bound chart whose run has a
+// receipt (or a note saying why not) also carries the Evidence button, which opens the
+// shared drawer (A2UIEvidence).
 import Icon from '../components/Icon.vue'
 import { seriesClass } from './series'
+import A2UIEvidence from './A2UIEvidence.vue'
+import type { LiveQueryResult } from './query'
 
 defineProps<{
   label?: string
@@ -15,14 +19,17 @@ defineProps<{
   animated: boolean
   legend?: string[]
   kind: string
+  // the run behind the chart (its receipt id or note) and the title of the value
+  result?: LiveQueryResult | null
+  title?: string
 }>()
 const emit = defineEmits<{ replay: [] }>()
 </script>
 
 <template>
   <div class="a2ui-kchart" :class="`a2ui-kchart--${kind}`" :data-testid="`a2ui-${kind}`">
-    <div v-if="label || animated" class="a2ui-kchart__head">
-      <div class="a2ui-component__title">{{ label }}</div>
+    <div v-if="label || animated || result?.receipt_id || result?.receipt_note" class="a2ui-kchart__head">
+      <div class="a2ui-component__title">{{ label }}<A2UIEvidence :result="result" :title="title || label || ''" /></div>
       <button
         v-if="animated && !empty && !loading && !error"
         type="button"

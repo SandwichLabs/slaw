@@ -60,7 +60,7 @@ watch(() => props.detail.name, () => { dims.value = [] })
         <button v-if="detail.metric.assertions?.length" type="button" class="btn btn-sm" :disabled="runs.busy" data-run-trigger data-testid="run-assertions" @click="runs.runAssertions('metric', detail.metric!.name)">Run assertions</button>
       </div>
       <RunStatus :busy="runs.busy" :elapsed="runs.elapsed" :cancelled="runs.cancelled" @stop="runs.stop" :error="runs.error" :conflict="runs.conflict" what="Running" />
-      <ResultGrid v-if="runs.tried" :result="runs.tried" />
+      <ResultGrid v-if="runs.tried" :result="runs.tried" :title="detail.metric?.name" />
       <AssertionResults v-if="runs.results.length" :rows="runs.results" />
     </section>
 

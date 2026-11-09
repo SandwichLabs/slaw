@@ -86,6 +86,7 @@ defineExpose({
           v-for="cell in cells"
           :key="cell.id"
           :cell="cell"
+          :notebook-id="loadedNotebookIdForView"
           :signal="nb.signal()"
           :observe="nb.observeCell"
           @collapse="nb.toggleCollapsed(cell)"

@@ -6,10 +6,64 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/workspace"
 )
+
+// Receipt is one receipt as GetReceipt returns it: the record itself, which
+// holds no result value.
+type Receipt = receipts.Receipt
+
+// ReceiptFilter narrows ListReceipts. An empty Surface is every surface; a zero
+// Limit is the default page.
+type ReceiptFilter struct {
+	Surface string `json:"surface"`
+	Limit   int    `json:"limit"`
+}
+
+// receiptStore is the open workspace's receipts, or an error saying there are
+// none to read.
+func receiptStore(ws workspace.Workspace) (receipts.Store, error) {
+	rec := ws.Receipts()
+	if rec == nil {
+		return nil, errors.New("receipts are not being kept for this workspace")
+	}
+	return rec.Store(), nil
+}
+
+// getReceipt reads one receipt by id.
+func getReceipt(ws workspace.Workspace, id string) (Receipt, error) {
+	st, err := receiptStore(ws)
+	if err != nil {
+		return Receipt{}, err
+	}
+	r, err := st.Get(strings.TrimSpace(id))
+	if err != nil {
+		return Receipt{}, fmt.Errorf("failed to open the receipt: %w", err)
+	}
+	return r, nil
+}
+
+// listReceipts is the newest receipts, a line each.
+func listReceipts(ws workspace.Workspace, f ReceiptFilter) ([]receipts.Summary, error) {
+	st, err := receiptStore(ws)
+	if err != nil {
+		return nil, err
+	}
+	surface := receipts.Surface(f.Surface)
+	if surface != "" && !surface.Valid() {
+		return nil, fmt.Errorf("unknown surface %q", f.Surface)
+	}
+	out, err := st.List(receipts.ListFilter{Surface: surface, Limit: f.Limit})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list receipts: %w", err)
+	}
+	return out, nil
+}
 
 // ReceiptSettings is the Settings > Workspace > Receipts form.
 type ReceiptSettings = workspace.ReceiptSettings

@@ -22,7 +22,7 @@ import { placeOnAxis } from './annotations'
 import { useAnnotations } from './useAnnotations'
 
 const props = defineProps<{ component: A2UIComponentT }>()
-const { loading, error, table } = useChartData(() => props.component)
+const { loading, error, table, result } = useChartData(() => props.component)
 const data = computed(() => toSeries(table.value))
 const flat = computed(() => data.value.series.flatMap((s) => s.values))
 const { values, replay, enabled } = useMotion(() => flat.value, () => props.component.motion)
@@ -72,7 +72,7 @@ const ariaLabel = computed(
 </script>
 
 <template>
-  <A2UIChartFrame
+  <A2UIChartFrame :result="result" :title="component.label || component.id"
     kind="area" :label="component.label" :sql="isBound(component)" :loading="loading" :error="error"
     :empty="n === 0 || data.series.length === 0" :animated="enabled" :legend="data.series.map((s) => s.name)"
     @replay="replay"

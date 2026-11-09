@@ -280,7 +280,7 @@ func (a *App) RunMetric(name string, dims []string) (*QueryResult, error) {
 // leaves TotalRows equal to RowCount (the true total is unknown), instead of
 // inventing a count.
 func tryItResult(rs *engine.ResultSet, truncated bool, took time.Duration) (*QueryResult, error) {
-	out := &QueryResult{Duration: humanDuration(took), RowCount: rs.RowCount(), TotalRows: rs.RowCount(), Rows: rs.Rows, Columns: columnInfos(rs), Truncated: truncated, ReceiptID: rs.ReceiptID}
+	out := &QueryResult{Duration: humanDuration(took), RowCount: rs.RowCount(), TotalRows: rs.RowCount(), Rows: rs.Rows, Columns: columnInfos(rs), Truncated: truncated, ReceiptID: rs.ReceiptID, ReceiptNote: rs.ReceiptNote}
 	if err := jsonRoundTripGuard(out); err != nil {
 		return nil, err
 	}

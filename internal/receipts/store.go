@@ -51,6 +51,9 @@ type Store interface {
 	Usage() (count int, bytes int64, oldest time.Time)
 	// Clear removes every receipt and nothing else.
 	Clear() error
+	// List returns the newest receipts as one line each, newest first, narrowed
+	// by the filter and bounded (see ListFilter).
+	List(f ListFilter) ([]Summary, error)
 }
 
 // Encode is the one file encoding of a receipt: compact canonical JSON.

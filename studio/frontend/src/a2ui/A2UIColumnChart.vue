@@ -21,7 +21,7 @@ import { useAnnotations, useColumnGeometry } from './useAnnotations'
 import { buildColumnAxis } from './columnAxis'
 
 const props = defineProps<{ component: A2UIComponentT }>()
-const { loading, error, table } = useChartData(() => props.component)
+const { loading, error, table, result } = useChartData(() => props.component)
 const data = computed(() => toSeries(table.value))
 const grouped = computed(() => props.component.mode === 'grouped')
 
@@ -83,7 +83,7 @@ const ariaLabel = computed(() => `Column chart, ${grouped.value ? 'grouped' : 's
 </script>
 
 <template>
-  <A2UIChartFrame
+  <A2UIChartFrame :result="result" :title="component.label || component.id"
     kind="columns" :label="component.label" :sql="isBound(component)" :loading="loading && cols.length === 0" :error="error"
     :empty="cols.length === 0 || k === 0" :animated="enabled" :legend="data.series.map((s) => s.name)"
     @replay="replay"

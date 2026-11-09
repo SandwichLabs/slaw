@@ -10,7 +10,7 @@ surface so each area is easy to find:
 | [`artifacts.md`](artifacts.md) | **Data artifacts**: `artifacts/<name>/`, the manifest, parameter types, date defaults, view rules, controls, `pivot` and drill-down |
 | [`semantics.md`](semantics.md) | **The semantic layer**: `semantics/` entities, metrics, joins and the glossary, their formats, caps and name rule, `slaw semantics`, the proposals inbox |
 | [`watches.md`](watches.md) | **Watches**: `watches/` standing questions (a saved query or metric and a condition), checked on demand with `slaw watch`, outcomes and the local history |
-| [`receipts.md`](receipts.md) | **Run receipts**: how long they are kept (your own setting), Keep parameter values, usage, Delete all, `slaw receipts settings\|clear` |
+| [`receipts.md`](receipts.md) | **Run receipts**: the Evidence drawer, `slaw receipts show\|list`, how long they are kept (your own setting), Keep parameter values, usage, Delete all, `slaw receipts settings\|clear` |
 | [`workspaces.md`](workspaces.md) | **Workspaces**: the folder layout, `slaw.yaml`, connection scopes and precedence, the agent limit, file formats, conflicts |
 | [`import-office.md`](import-office.md) | **Import** (CSV/TSV/XLSX) into a connection's table and table/query **export** (CSV, Parquet, XLSX, JSON) |
 | [`templates.md`](templates.md) | Bundled starter **templates** |
