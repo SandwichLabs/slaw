@@ -6,7 +6,7 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [0.9.0] - 2026-11-09
 
-Run receipts and the evidence drawer: every query that shows you a value, and every query the agent runs, keeps a record on this computer of the statement, the connections and the snapshot it read, and Evidence opens it (#241, E1). Also clearer SQL errors and an MCP surface that lists only the tools a session can use.
+Run receipts and the evidence drawer: every read that shows you a value (in the console, after `.receipts on`), and every `run_query`, `run_saved_query` and `preview_query` the agent runs, keeps a record on this computer of the statement, the connections and, where one can be recorded, the snapshot it read, and Evidence opens it (#241, E1). Also clearer SQL errors and an MCP surface that lists only the tools a session can use.
 
 **Opening in an older Slaw:** once you change a receipt setting (Settings > Workspace > Receipts or `slaw receipts settings`), Slaw 0.8.0 and older refuse to open that workspace on this computer (`field receipts not found`). Clear every limit box in Settings (leave it blank) and tick Keep parameter values, or run `slaw receipts settings --keep-params on --days default --max-count default --max-mb default`, or remove the `receipts:` block from your per-workspace `local.yaml` in the config directory, before opening it in an older Slaw.
 
