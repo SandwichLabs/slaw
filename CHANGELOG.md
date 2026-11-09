@@ -8,6 +8,15 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 - **`run_query` takes an optional `connection`** (#352): the catalog unqualified names resolve against, so the agent can call `metric()` on a saved query pinned to a non-default connection (an `iceberg_catalog`, for one). The same tier, read-only, writable-connection and approval gates apply; an unknown name is refused.
 
+### Changed
+
+- **MCP clients see the tools they can use (#221).**
+  - `present_data` is chat-only: it renders in Studio's chat, so `tools/list` no longer offers it and an MCP call to it is refused as an unknown tool.
+  - The notebook cell tools no longer mention "the notebook currently open in Studio" over MCP: omit `notebook_id` to create a new notebook (Studio's own MCP server still appends to the notebook you have open).
+  - `tools/list` leaves out the tools the session's tier can never run (a read-only session lists no write tool). Calls are gated as before, so an unlisted tool still returns the tier refusal. Studio sends `tools/list_changed` when you save the agent settings.
+  - `list_connections` no longer shows DuckDB's `memory`, `system` and `temp` catalogs.
+  - `describe_table` on a missing table is an error that names it and points at `introspect_schema` (it was an empty column list), `pk` is real (read from DuckDB's constraints; an attached Postgres or MySQL database reports none), and a file path or URL is answered with `run_query` `DESCRIBE SELECT * FROM read_csv(...)`.
+
 ## [0.8.0] - 2026-11-08
 
 Iceberg catalogs (S3 Tables and Iceberg REST) as connections, read by you and the agent like any other catalog, and lake types you can share (#20, lakehouse phase 1).

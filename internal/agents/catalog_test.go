@@ -88,9 +88,7 @@ func TestDescribeTable_Qualified(t *testing.T) {
 	cols := func(table string) []string {
 		m := resultMap(t, call(h, "describe_table", map[string]any{"table": table}))
 		cols, ok := m["columns"].([]map[string]any)
-		if !ok {
-			return nil // a missing table describes as no columns
-		}
+		require.True(t, ok)
 		var names []string
 		for _, c := range cols {
 			name, _ := c["name"].(string)
@@ -101,7 +99,74 @@ func TestDescribeTable_Qualified(t *testing.T) {
 	assert.Equal(t, []string{"id", "name"}, cols("users"))
 	assert.Equal(t, []string{"uid", "email"}, cols("other.main.users"))
 	assert.Equal(t, []string{"uid", "email"}, cols("other.users"), "catalog.table uses the catalog's default schema")
-	assert.Empty(t, cols("other.main.nope"))
+	missing := call(h, "describe_table", map[string]any{"table": "other.main.nope"})
+	require.NotNil(t, missing.Error, "a missing table is an error, not an empty column list")
+}
+
+// describe_table reports the primary key DuckDB's catalog holds, per column.
+func TestDescribeTable_ReportsPrimaryKeys(t *testing.T) {
+	h, _ := newCatalogHandler(t)
+	pk := func(table string) map[string]bool {
+		m := resultMap(t, call(h, "describe_table", map[string]any{"table": table}))
+		out := map[string]bool{}
+		cols, _ := m["columns"].([]map[string]any)
+		for _, c := range cols {
+			name, _ := c["name"].(string)
+			isPK, _ := c["pk"].(bool)
+			out[name] = isPK
+		}
+		return out
+	}
+	assert.Equal(t, map[string]bool{"uid": true, "email": false}, pk("other.main.users"))
+	assert.Equal(t, map[string]bool{"id": false, "name": false}, pk("users"), "a table with no key has no pk column")
+}
+
+// A file path or URL is not a table: the error says how to describe a file.
+func TestDescribeTable_PathShapedArgumentPointsAtDescribeSelect(t *testing.T) {
+	h, _ := newCatalogHandler(t)
+	for _, arg := range []string{"/home/zac/", "/home/zac/sales.csv", "data\\sales.csv", "s3://bucket/x.parquet", "~/x.csv"} {
+		r := call(h, "describe_table", map[string]any{"table": arg})
+		require.NotNil(t, r.Error, arg)
+		assert.Equal(t, ErrInvalidParams, r.Error.Code, arg)
+		assert.Contains(t, r.Error.Message, "DESCRIBE SELECT * FROM read_csv(", arg)
+		assert.NotContains(t, r.Error.Message, "unknown connection", arg)
+	}
+}
+
+// A quoted table name may hold a slash: it is a table, not a path.
+func TestDescribeTable_QuotedSlashNameIsNotAPath(t *testing.T) {
+	h, sess := newCatalogHandler(t)
+	_, err := sess.DB().Exec(`CREATE TABLE "a/b" (x INTEGER)`)
+	require.NoError(t, err)
+	for _, arg := range []string{`"a/b"`, `memory.main."a/b"`} {
+		m := resultMap(t, call(h, "describe_table", map[string]any{"table": arg}))
+		cols, _ := m["columns"].([]map[string]any)
+		require.Len(t, cols, 1, arg)
+	}
+}
+
+// list_connections is the workspace's places data lives, not DuckDB's own
+// scratch catalogs; one that is the default stays, since SQL resolves there.
+func TestListConnections_HidesBuiltinCatalogs(t *testing.T) {
+	h, sess := newCatalogHandler(t)
+	names := func() []string {
+		m := resultMap(t, call(h, "list_connections", map[string]any{}))
+		var out []string
+		conns, _ := m["connections"].([]map[string]any)
+		for _, c := range conns {
+			name, _ := c["name"].(string)
+			out = append(out, name)
+		}
+		return out
+	}
+	assert.Contains(t, names(), "memory", "memory is this fixture's default catalog")
+
+	require.NoError(t, sess.SetDefaultCatalog(context.Background(), "other"))
+	got := names()
+	assert.Contains(t, got, "other")
+	for _, builtin := range []string{"memory", "system", "temp"} {
+		assert.NotContains(t, got, builtin)
+	}
 }
 
 func TestWriteTools_OnSecondCatalog(t *testing.T) {
@@ -193,16 +258,17 @@ func TestWriteTools_ResolvedNamesAndLegacyDottedTable(t *testing.T) {
 	assert.Equal(t, 1, n)
 }
 
-// A table that is not there describes as success with an empty columns list, found by the typed session.ErrNoSuchTable, not by message text; any
-// other failure (an unusable name) is a real error.
-func TestDescribeTable_MissingIsEmptyColumnsOtherFailuresAreErrors(t *testing.T) {
+// A table that is not there is an error that names it and points at
+// introspect_schema (found by the typed session.ErrNoSuchTable, not by message
+// text), not an empty column list (#221); any other failure (an unusable name)
+// is an error too.
+func TestDescribeTable_MissingIsAnErrorNamingTheTable(t *testing.T) {
 	h, _ := newCatalogHandler(t)
 
-	m := resultMap(t, call(h, "describe_table", map[string]any{"table": "nope"}))
-	assert.Equal(t, "nope", m["table"])
-	cols, present := m["columns"]
-	require.True(t, present)
-	assert.Equal(t, []map[string]any{}, cols)
+	r := call(h, "describe_table", map[string]any{"table": "nope"})
+	require.NotNil(t, r.Error)
+	assert.Contains(t, r.Error.Message, `"nope"`)
+	assert.Contains(t, r.Error.Message, "introspect_schema")
 
 	bad := call(h, "describe_table", map[string]any{"table": "a.b.c.d"})
 	require.NotNil(t, bad.Error, "an unparseable table name is an error, not an empty list")

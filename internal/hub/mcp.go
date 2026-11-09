@@ -127,6 +127,14 @@ func StartWorkspaceMCP(ws workspace.Workspace, sess session.Session, hold *Hold,
 	return m, nil
 }
 
+// NotifyToolsChanged tells connected clients to list the tools again, for when
+// the agent's tier changed (the list leaves out what the tier cannot run).
+func (m *WorkspaceMCP) NotifyToolsChanged() {
+	if m != nil && m.srv != nil {
+		m.srv.NotifyToolsChanged()
+	}
+}
+
 func (m *WorkspaceMCP) rememberPort(ws workspace.Workspace, saved int, logger *slog.Logger) {
 	_, p, err := net.SplitHostPort(m.srv.Addr())
 	if err != nil {

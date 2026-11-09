@@ -89,8 +89,9 @@ type Handler struct {
 
 	// mode gates task-only tools (preview_query, write_cell,
 	// need_more_info — see ToolDef.Modes/IsModeVisible). Defaults to ""
-	// (deny every Modes-restricted tool) — safe-by-default for chat and MCP,
-	// which never set it. internal/llm's Task() loop calls SetMode(ModeTask)
+	// (the chat and MCP surfaces, see IsModeVisible: task-only tools are
+	// denied, chat-only ones allowed; MCP refuses those itself), which never
+	// set it. internal/llm's Task() loop calls SetMode(ModeTask)
 	// on the Handler it builds for a task() call. This is a second,
 	// independent gate on top of the tool-list filtering
 	// ListToolsForMode(ModeChat)/ListToolsForMode(ModeMCP) already does in

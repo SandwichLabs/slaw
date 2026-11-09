@@ -51,6 +51,11 @@ type Server struct {
 	name, version string
 	instructions  func(ctx context.Context) string
 
+	// tier, when set, reports the sandbox tier a tools/list is answered at
+	// (the handler's policy tightened by the session's ceiling), so the list
+	// leaves out the tools that tier can never run (#221).
+	tier func(ctx context.Context) agents.SandboxMode
+
 	// token is a random bearer credential generated fresh on every Start
 	// (#64/#70 security review: the SSE MCP server listens on localhost
 	// HTTP with no auth, reachable by ANY page open in the user's browser —
@@ -94,6 +99,17 @@ func WithInstructions(f func(ctx context.Context) string) Option {
 	return func(s *Server) { s.instructions = f }
 }
 
+// WithTier sets the function that reports the sandbox tier of the session whose
+// tools/list is being answered. A tool whose category that tier does not allow
+// (agents.TierAllows) is left out of the list. It only shapes the list: every
+// call is gated by the handler exactly as before, so a client that calls an
+// unlisted tool anyway gets the tier refusal, not "unknown tool". The function
+// runs on every tools/list, so a tier changed in Studio shows on the next list;
+// NotifyToolsChanged tells a client that already listed to ask again.
+func WithTier(f func(ctx context.Context) agents.SandboxMode) Option {
+	return func(s *Server) { s.tier = f }
+}
+
 // DefaultServerName is the serverInfo name when none is set.
 const DefaultServerName = "Slaw"
 
@@ -132,6 +148,11 @@ func (s *Server) buildMCPServer(hooks *server.Hooks) *server.MCPServer {
 			result.Instructions = s.instructions(s.withSessionCeiling(ctx))
 		})
 	}
+	if s.tier != nil {
+		hooks.AddAfterListTools(func(ctx context.Context, _ any, _ *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
+			result.Tools = s.tierTools(s.withSessionCeiling(ctx), result.Tools)
+		})
+	}
 	mcpServer := server.NewMCPServer(
 		s.name,
 		s.version,
@@ -144,6 +165,30 @@ func (s *Server) buildMCPServer(hooks *server.Hooks) *server.MCPServer {
 		mcpServer.AddTool(mcpTool, s.makeToolHandler(toolName))
 	}
 	return mcpServer
+}
+
+// tierTools drops from a tools/list the tools the session's tier can never run.
+// A tool the registry does not know stays (it is not ours to judge).
+func (s *Server) tierTools(ctx context.Context, tools []mcp.Tool) []mcp.Tool {
+	mode := s.tier(ctx)
+	out := make([]mcp.Tool, 0, len(tools))
+	for _, t := range tools {
+		if td := agents.GetTool(t.Name); td != nil && !agents.TierAllows(*td, mode) {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// NotifyToolsChanged sends notifications/tools/list_changed to every connected
+// client, for an owner (Studio) whose tier just changed: the server advertises
+// the listChanged capability, and a client that cached the list asks again.
+// It does nothing when the server is not running.
+func (s *Server) NotifyToolsChanged() {
+	if m := s.mcpServer; m != nil {
+		m.SendNotificationToAllClients("notifications/tools/list_changed", nil)
+	}
 }
 
 // generateToken creates a fresh random bearer token (32 bytes, hex-encoded).
@@ -423,6 +468,11 @@ func (s *Server) withSessionCeiling(ctx context.Context) context.Context {
 // makeToolHandler returns an MCP tool handler that dispatches to the agents handler.
 func (s *Server) makeToolHandler(toolName string) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// A chat-only tool (present_data) is not registered here, but the handler
+		// behind this server also serves Studio's chat: refuse it by name too.
+		if !agents.IsModeVisible(toolName, agents.ModeMCP) {
+			return mcp.NewToolResultError(fmt.Sprintf("unknown tool: %q", toolName)), nil
+		}
 		params := make(map[string]any)
 		if args := request.GetArguments(); args != nil {
 			for k, v := range args {
@@ -457,6 +507,7 @@ func (s *Server) makeToolHandler(toolName string) server.ToolHandlerFunc {
 // internal/llm's fantasy tool wrapper also uses, so an MCP client and the
 // Studio wizard see byte-identical schemas (#63 review fix).
 func toolDefToMCPTool(td agents.ToolDef) mcp.Tool {
+	td = agents.ForMCP(td) // the wording for a client with no Studio window
 	opts := []mcp.ToolOption{
 		mcp.WithDescription(td.Description),
 	}

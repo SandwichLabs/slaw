@@ -309,6 +309,9 @@ func (h *Handler) handleListConnections(_ context.Context, req *Request) *Respon
 	infos := sess.ConnectionInfos()
 	out := make([]map[string]any, 0, len(infos)+1)
 	for _, c := range infos {
+		if builtinCatalogName(c.Name) && !strings.EqualFold(c.Name, sess.DefaultCatalog()) {
+			continue // DuckDB's own scratch catalog, not a connection of the workspace
+		}
 		loc := "local"
 		if c.Remote {
 			loc = "remote"

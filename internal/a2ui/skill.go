@@ -29,7 +29,7 @@ func SkillBody() string {
 	b.WriteString("A2UI is the closed, validated component schema for dashboards. A page is\n")
 	b.WriteString("`{\"title\": ..., \"components\": [...]}`. It goes to one of three places, and the set of\n")
 	b.WriteString("valid component types differs:\n\n")
-	b.WriteString("- `present_data` (an inline reply) and `create_dashboard` (a dashboard cell in a notebook)\n")
+	b.WriteString("- `present_data` (an inline reply, Studio chat only) and `create_dashboard` (a dashboard cell in a notebook)\n")
 	b.WriteString("  take the **notebook dashboard** types below: " + codeNames(typeOrder) + ".\n")
 	b.WriteString("  Data comes from inline values or a live `sql` binding.\n")
 	b.WriteString("- `write_artifact` (a data artifact's `view`, view: a2ui) takes the same types with `sql` and\n")

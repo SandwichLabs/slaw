@@ -15,6 +15,11 @@ type ToolDef struct {
 	// ListToolsForMode, which both internal/llm's chat runner and
 	// internal/mcp's server call instead of the unfiltered ListTools/Tools.
 	Modes []string
+	// MCPDescription, when set, replaces Description on the MCP surface (see
+	// ForMCP): a description that names something only the Studio app has (the
+	// notebook open there) says what an MCP client can act on instead. The
+	// in-app agent keeps Description.
+	MCPDescription string
 	// DryRunSafe marks a content tool whose handler honours a dry run: it runs
 	// every check and stops before its write. Only such a tool is validated
 	// ahead of the approval gate; any other is refused at the gate unvalidated.
@@ -27,6 +32,8 @@ type ParamDef struct {
 	Type     string // string | boolean | number | integer | object | array
 	Required bool
 	Desc     string
+	// MCPDesc, when set, replaces Desc on the MCP surface (see ForMCP).
+	MCPDesc string
 	// Items describes the schema of each element when Type == "array". Strict
 	// JSON Schema consumers (notably Gemini) reject a bare {"type":"array"}
 	// with no "items", so every array ParamDef should set this — see
@@ -298,7 +305,9 @@ var Tools = []ToolDef{
 		},
 	},
 
-	// present_data (#67). Validates an A2UI page (internal/a2ui) and hands the
+	// present_data (#67). Chat-only (#221): the Studio chat renders its result
+	// inline; over MCP nothing would display it, so it is not listed there and
+	// an MCP call is refused as an unknown tool. Validates an A2UI page (internal/a2ui) and hands the
 	// validated page straight back as the tool result — it writes nothing, so
 	// it stays in the "introspect" category and is available in every
 	// sandbox, including read-only. The Studio agent panel renders a
@@ -309,6 +318,7 @@ var Tools = []ToolDef{
 	// present_data itself never touches the database.
 	{
 		Name:        "present_data",
+		Modes:       []string{ModeChat},
 		Description: "Render an A2UI page inline in the current reply. Call this WHENEVER you answer a data-driven question with a chart, table, or stat rather than plain prose — do not wait for the user to ask for a chart. This does not save anything; use inline data (rows/value/bars/points) rather than sql, since you already have the values and the reply is a one-off. Call read_skill \"a2ui\" for the full component schema (the in-app prompt also carries it).",
 		Category:    "introspect",
 		Params: []ParamDef{
@@ -474,12 +484,13 @@ var Tools = []ToolDef{
 	// cell to a notebook file.
 
 	{
-		Name:        "add_query_cell",
-		Description: "Append a SQL notebook cell to a notebook. sql must be a single read-only statement (classified the same way a live A2UI binding is — INSERT/UPDATE/DELETE/DDL are rejected). Appends to notebook_id if given, else the notebook currently open in Studio, else creates a new notebook titled from label.",
-		Category:    "content",
-		DryRunSafe:  true,
+		Name:           "add_query_cell",
+		Description:    "Append a SQL notebook cell to a notebook. sql must be a single read-only statement (classified the same way a live A2UI binding is — INSERT/UPDATE/DELETE/DDL are rejected). Appends to notebook_id if given, else the notebook currently open in Studio, else creates a new notebook titled from label.",
+		MCPDescription: "Append a SQL notebook cell to a notebook. sql must be a single read-only statement (classified the same way a live A2UI binding is — INSERT/UPDATE/DELETE/DDL are rejected). Appends to notebook_id if given, else creates a new notebook titled from label (a Studio-hosted server appends to the notebook its user has open there instead).",
+		Category:       "content",
+		DryRunSafe:     true,
 		Params: []ParamDef{
-			{Name: "notebook_id", Type: "string", Required: false, Desc: "Target notebook id. Omit to use the notebook currently open in Studio, or to create a new one if none is open."},
+			{Name: "notebook_id", Type: "string", Required: false, Desc: "Target notebook id. Omit to use the notebook currently open in Studio, or to create a new one if none is open.", MCPDesc: "Target notebook id. Omit to create a new notebook (a Studio-hosted server appends to the notebook its user has open there instead)."},
 			{Name: "sql", Type: "string", Required: true, Desc: "A single read-only SQL statement"},
 			{Name: "connection", Type: "string", Required: false, Desc: "Connection (catalog) the cell runs on; must be a registered connection (see list_connections). Defaults to the workspace default."},
 			{Name: "view", Type: "string", Required: false, Desc: "table | bar | line | stat | area | columns | rings | radar | sankey | heatmap (default: auto-fit to the result shape the first time it runs)"},
@@ -487,13 +498,14 @@ var Tools = []ToolDef{
 		},
 	},
 	{
-		Name:        "add_markdown_cell",
-		Description: "Append a markdown cell (prose, headings, notes) to a notebook, or insert it after_cell_id. Goes into notebook_id if given, else the notebook currently open in Studio, else a new notebook titled from the first line. To change or remove a cell you already wrote, use update_cell or delete_cell.",
-		Category:    "content",
-		DryRunSafe:  true,
+		Name:           "add_markdown_cell",
+		Description:    "Append a markdown cell (prose, headings, notes) to a notebook, or insert it after_cell_id. Goes into notebook_id if given, else the notebook currently open in Studio, else a new notebook titled from the first line. To change or remove a cell you already wrote, use update_cell or delete_cell.",
+		MCPDescription: "Append a markdown cell (prose, headings, notes) to a notebook, or insert it after_cell_id. Goes into notebook_id if given, else a new notebook titled from the first line (a Studio-hosted server uses the notebook its user has open there instead). To change or remove a cell you already wrote, use update_cell or delete_cell.",
+		Category:       "content",
+		DryRunSafe:     true,
 		Params: []ParamDef{
 			{Name: "markdown", Type: "string", Required: true, Desc: "The cell's markdown text (at most 256 KB)"},
-			{Name: "notebook_id", Type: "string", Required: false, Desc: "Target notebook id. Omit to use the notebook currently open in Studio, or to create a new one if none is open."},
+			{Name: "notebook_id", Type: "string", Required: false, Desc: "Target notebook id. Omit to use the notebook currently open in Studio, or to create a new one if none is open.", MCPDesc: "Target notebook id. Omit to create a new notebook (a Studio-hosted server appends to the notebook its user has open there instead)."},
 			{Name: "after_cell_id", Type: "string", Required: false, Desc: "Insert after this cell (needs an existing notebook); omit to append at the end."},
 		},
 	},
@@ -539,12 +551,13 @@ var Tools = []ToolDef{
 		},
 	},
 	{
-		Name:        "create_dashboard",
-		Description: "Append an A2UI dashboard (a page of one or more live/inline components) as a new cell in a notebook. Call read_skill \"a2ui\" for the component schema (the in-app prompt also carries it). Every sql binding is vetted like add_query_cell (read-only, binds against the schema) and failures are reported by component path. Appends to notebook_id if given, else the notebook currently open in Studio, else creates a new notebook titled from page.title. This is a dashboard cell in a notebook, not a live-view artifact; for a saved live view use write_artifact.",
-		Category:    "content",
-		DryRunSafe:  true,
+		Name:           "create_dashboard",
+		Description:    "Append an A2UI dashboard (a page of one or more live/inline components) as a new cell in a notebook. Call read_skill \"a2ui\" for the component schema (the in-app prompt also carries it). Every sql binding is vetted like add_query_cell (read-only, binds against the schema) and failures are reported by component path. Appends to notebook_id if given, else the notebook currently open in Studio, else creates a new notebook titled from page.title. This is a dashboard cell in a notebook, not a live-view artifact; for a saved live view use write_artifact.",
+		MCPDescription: "Append an A2UI dashboard (a page of one or more live/inline components) as a new cell in a notebook. Call read_skill \"a2ui\" for the component schema. Every sql binding is vetted like add_query_cell (read-only, binds against the schema) and failures are reported by component path. Appends to notebook_id if given, else creates a new notebook titled from page.title (a Studio-hosted server appends to the notebook its user has open there instead). This is a dashboard cell in a notebook, not a live-view artifact; for a saved live view use write_artifact.",
+		Category:       "content",
+		DryRunSafe:     true,
 		Params: []ParamDef{
-			{Name: "notebook_id", Type: "string", Required: false, Desc: "Target notebook id. Omit to use the notebook currently open in Studio, or to create a new one if none is open."},
+			{Name: "notebook_id", Type: "string", Required: false, Desc: "Target notebook id. Omit to use the notebook currently open in Studio, or to create a new one if none is open.", MCPDesc: "Target notebook id. Omit to create a new notebook (a Studio-hosted server appends to the notebook its user has open there instead)."},
 			{Name: "page", Type: "object", Required: true, Desc: `An A2UI page: {"title": "...", "components": [...]}. See the a2ui skill (read_skill "a2ui") for the component schema.`},
 		},
 	},
@@ -570,6 +583,35 @@ func ListTools() []ToolDef {
 	result := make([]ToolDef, len(Tools))
 	copy(result, Tools)
 	return result
+}
+
+// ForMCP returns td as an MCP client sees it: MCPDescription and each
+// parameter's MCPDesc replace the wording written for Studio's chat. The
+// registry entry is not modified.
+func ForMCP(td ToolDef) ToolDef {
+	if td.MCPDescription != "" {
+		td.Description = td.MCPDescription
+	}
+	params := make([]ParamDef, len(td.Params))
+	copy(params, td.Params)
+	for i := range params {
+		if params[i].MCPDesc != "" {
+			params[i].Desc = params[i].MCPDesc
+		}
+	}
+	td.Params = params
+	return td
+}
+
+// TierAllows reports whether a session at mode could ever have td dispatched:
+// the sandbox's category gate (Check). run_query always counts as allowed: its
+// SQL is classified per statement, so a read is fine at every tier. Whether a
+// given call is approved is not decided here; Handle gates every call as ever.
+func TierAllows(td ToolDef, mode SandboxMode) bool {
+	if td.Name == "run_query" {
+		return true
+	}
+	return categoryPermissions[mode][td.Category]
 }
 
 // Mode names for ListToolsForMode / ToolDef.Modes.
@@ -645,6 +687,12 @@ func IsModeVisible(name, mode string) bool {
 	td := GetTool(name)
 	if td == nil {
 		return false
+	}
+	if mode == "" {
+		// A Handler nobody put in a mode serves the chat and MCP surfaces (the
+		// task loop sets ModeTask): chat-only tools are reachable on it, and
+		// internal/mcp refuses them itself.
+		mode = ModeChat
 	}
 	if mode == ModeTask {
 		return TaskAllowedToolNames[td.Name]
