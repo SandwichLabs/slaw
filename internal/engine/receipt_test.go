@@ -82,6 +82,14 @@ func TestColumnNamesFromData(t *testing.T) {
 		"SELECT * FROM t UNPIVOT (v FOR k IN (a, b))":          true,
 		"SELECT * FROM read_csv('x.csv')":                      true,
 		"SELECT * FROM parquet_scan('x.parquet')":              true,
+		"SELECT * FROM t JOIN 'x.csv' USING (id)":              true,
+		"SELECT * FROM t, 'x.csv'":                             true,
+		`SELECT * FROM "x.csv"`:                                true,
+		`SELECT * FROM "data/x"`:                               true,
+		`SELECT * FROM t JOIN "y.parquet" ON t.id = y.id`:      true,
+		"SELECT * FROM t JOIN u ON t.k = 'a' WHERE u.k = 'b'":  false,
+		`SELECT * FROM "orders" JOIN "line_items" USING (id)`:  false,
+		"SELECT * FROM t WHERE a = 'x.csv'":                    false,
 		"SELECT * FROM 'data/x.csv'":                           true,
 		"SELECT 'pivot' AS word, \"PIVOT\" FROM t":             false, // a string and a quoted name are not the keyword
 		"SELECT 1 -- pivot\nFROM t":                            false,
@@ -106,6 +114,8 @@ func TestRunFacts_TheCallersKindIsUsedAndNamesFromDataAreFlagged(t *testing.T) {
 	assert.Equal(t, receipts.StmtSelect, ReadKind("WITH a AS (SELECT 1) SELECT * FROM a"))
 	assert.Equal(t, receipts.StmtExplain, ReadKind("EXPLAIN SELECT 1"))
 	assert.Equal(t, receipts.StmtOther, ReadKind("EXPLAIN ANALYZE SELECT 1"))
+	assert.Equal(t, receipts.StmtOther, ReadKind("PRAGMA show_tables"))
+	assert.Equal(t, receipts.StmtOther, ReadKind("pragma table_info('t')"))
 }
 
 func TestStatementKind(t *testing.T) {

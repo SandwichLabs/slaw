@@ -426,3 +426,40 @@ func TestMock_StoreContract(t *testing.T) {
 	require.NoError(t, m.Prune(Policy{MaxCount: 100}))
 	assert.Len(t, m.All(), 100)
 }
+
+// Close never races a prune being started: pruneAsync, Put and SetPolicy run in
+// a loop beside Close (run with -race), and after Close no prune starts.
+func TestFileStore_CloseDoesNotRacePruneAsync(t *testing.T) {
+	root := t.TempDir()
+	s := openStore(t, root, DefaultPolicy())
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for g := 0; g < 3; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; ; i++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				switch (i + g) % 3 {
+				case 0:
+					s.pruneAsync()
+				case 1:
+					_ = s.Put(sealed(t, g*1000+i%50))
+				default:
+					s.SetPolicy(DefaultPolicy())
+				}
+			}
+		}(g)
+	}
+	time.Sleep(30 * time.Millisecond)
+	require.NoError(t, s.Close())
+	close(stop)
+	wg.Wait()
+	s.pruneAsync()
+	assert.False(t, s.running.Load(), "after Close no prune starts")
+	require.NoError(t, s.Close(), "Close twice is fine")
+}

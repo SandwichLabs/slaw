@@ -103,8 +103,13 @@ func (m *Manager) recordRunFacts(ctx context.Context, connection string, start t
 // policy's verdict, or a console's own parse): an explain when it says EXPLAIN,
 // otherwise a select. A caller sets it as Intent.Kind to spare the engine a parse.
 func ReadKind(text string) receipts.StmtKind {
-	if stmts := usersql.Tokens(text); len(stmts) == 1 && len(stmts[0]) > 0 && stmts[0][0].Kind == usersql.TokWord && stmts[0][0].Text == "EXPLAIN" {
-		return explainKind(stmts[0])
+	if stmts := usersql.Tokens(text); len(stmts) == 1 && len(stmts[0]) > 0 && stmts[0][0].Kind == usersql.TokWord {
+		switch stmts[0][0].Text {
+		case "EXPLAIN":
+			return explainKind(stmts[0])
+		case "PRAGMA": // a read-style PRAGMA is a read, but never a receipt
+			return receipts.StmtOther
+		}
 	}
 	return receipts.StmtSelect
 }
@@ -172,14 +177,52 @@ func explainKind(toks []usersql.Token) receipts.StmtKind {
 func columnNamesFromData(text string) bool {
 	for _, stmt := range usersql.Tokens(text) {
 		for i, t := range stmt {
+			if t.Kind != usersql.TokWord {
+				continue
+			}
 			switch {
-			case t.Kind == usersql.TokWord && (t.Text == "PIVOT" || t.Text == "PIVOT_WIDER" || t.Text == "UNPIVOT"):
+			case t.Text == "PIVOT" || t.Text == "PIVOT_WIDER" || t.Text == "UNPIVOT":
 				return true
-			case t.Kind == usersql.TokWord && (strings.HasPrefix(t.Text, "READ_") || strings.HasSuffix(t.Text, "_SCAN") || t.Text == "SNIFF_CSV"):
+			case strings.HasPrefix(t.Text, "READ_") || strings.HasSuffix(t.Text, "_SCAN") || t.Text == "SNIFF_CSV":
 				return true
-			case t.Kind == usersql.TokWord && t.Text == "FROM" && i+1 < len(stmt) && stmt[i+1].Kind == usersql.TokString:
+			case (t.Text == "FROM" || t.Text == "JOIN") && fileInFromClause(stmt[i+1:]):
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// fromClauseEnds are the words that end a FROM clause's table list (and ON and
+// USING, whose strings are conditions and column names, and JOIN, which starts
+// its own scan).
+var fromClauseEnds = map[string]bool{
+	"WHERE": true, "GROUP": true, "ORDER": true, "HAVING": true, "LIMIT": true, "OFFSET": true, "QUALIFY": true,
+	"UNION": true, "INTERSECT": true, "EXCEPT": true, "WINDOW": true, "ON": true, "USING": true, "JOIN": true,
+}
+
+// fileInFromClause reports a table named by a file in the clause that starts
+// right after a FROM or JOIN: a string literal (FROM 'x.csv', FROM t, 'x.csv',
+// JOIN 'x.csv'), or a quoted name that looks like a path or has an extension
+// (FROM "x.csv": the replacement scan takes it). Only the clause's own level is
+// read, up to a word that ends it or the paren that closes it.
+func fileInFromClause(toks []usersql.Token) bool {
+	depth := 0
+	for _, t := range toks {
+		switch {
+		case t.Kind == usersql.TokParen && t.Text == "(":
+			depth++
+		case t.Kind == usersql.TokParen:
+			if depth--; depth < 0 {
+				return false
+			}
+		case depth > 0:
+		case t.Kind == usersql.TokWord && fromClauseEnds[t.Text]:
+			return false
+		case t.Kind == usersql.TokString:
+			return true
+		case t.Kind == usersql.TokIdent && strings.ContainsAny(t.Text, "/."):
+			return true
 		}
 	}
 	return false

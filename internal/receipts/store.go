@@ -106,6 +106,11 @@ type FileStore struct {
 	running atomic.Bool
 	pending atomic.Bool
 	wg      sync.WaitGroup
+
+	// closeMu guards closed and the wg.Add that starts a prune, so a Close never
+	// races an Add: after Close no prune starts.
+	closeMu sync.Mutex
+	closed  bool
 }
 
 var _ Store = (*FileStore)(nil)
@@ -130,21 +135,37 @@ func (s *FileStore) Wait() { s.wg.Wait() }
 
 // Close waits for the background prune; the store holds nothing else open.
 func (s *FileStore) Close() error {
+	s.closeMu.Lock()
+	s.closed = true
+	s.closeMu.Unlock()
 	s.wg.Wait()
 	return nil
+}
+
+func (s *FileStore) isClosed() bool {
+	s.closeMu.Lock()
+	defer s.closeMu.Unlock()
+	return s.closed
 }
 
 // pruneAsync asks for a background prune by the current policy. At most one runs
 // at a time; a request made while one runs makes it go round once more.
 func (s *FileStore) pruneAsync() {
+	s.closeMu.Lock()
+	if s.closed {
+		s.closeMu.Unlock()
+		return
+	}
 	s.pending.Store(true)
 	if !s.running.CompareAndSwap(false, true) {
+		s.closeMu.Unlock()
 		return
 	}
 	s.wg.Add(1)
+	s.closeMu.Unlock()
 	go func() {
 		defer s.wg.Done()
-		for s.pending.Swap(false) {
+		for !s.isClosed() && s.pending.Swap(false) {
 			s.mu.Lock()
 			p := s.policy
 			s.mu.Unlock()
