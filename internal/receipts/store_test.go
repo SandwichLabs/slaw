@@ -13,6 +13,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/SandwichLabs/slaw/internal/filelock"
 )
 
 func recDir(root string) string { return filepath.Join(root, ".slaw-local", "receipts") }
@@ -21,6 +23,7 @@ func openStore(t *testing.T, root string, p Policy) *FileStore {
 	t.Helper()
 	s, err := NewFileStore(root, p)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -216,7 +219,8 @@ func TestNewFileStore_ALoweredCapPrunesOnTheNextOpen(t *testing.T) {
 	}
 	n, _ := count(t, dir)
 	require.Equal(t, 150, n)
-	openStore(t, root, Policy{KeepParams: true, MaxCount: 100})
+	s2 := openStore(t, root, Policy{KeepParams: true, MaxCount: 100})
+	s2.Wait() // the open-time prune runs in the background
 	n, _ = count(t, dir)
 	assert.Equal(t, 100, n)
 }
@@ -228,8 +232,66 @@ func TestFileStore_PrunesEveryFiveHundredPuts(t *testing.T) {
 	for i := 0; i < PruneEvery; i++ {
 		require.NoError(t, s.Put(sealed(t, i)))
 	}
+	s.Wait() // the periodic prune runs in the background
 	n, _ := count(t, dir)
 	assert.LessOrEqual(t, n, 100, "the 500th Put pruned to the cap")
+}
+
+// A prune never holds a Put up: with prune.lock held by another process the
+// background round is skipped, and neither the 500th Put (which asks for one)
+// nor a Put made at the same time waits for the lock, nor does an explicit
+// Prune that is waiting for it.
+func TestFileStore_PruneNeverBlocksAPut(t *testing.T) {
+	root := t.TempDir()
+	dir := recDir(root)
+	s := openStore(t, root, Policy{KeepParams: true, MaxCount: 100})
+	s.Wait()
+
+	d, err := os.Open(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Close() })
+	held, err := filelock.AcquirePersistentAt(d, lockName)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = held.Release() })
+
+	explicit := make(chan error, 1)
+	go func() { explicit <- s.Prune(DefaultPolicy()) }() // waits on the lock, up to 5 s
+	time.Sleep(50 * time.Millisecond)
+
+	for i := 0; i < PruneEvery-1; i++ {
+		require.NoError(t, s.Put(sealed(t, i)))
+	}
+	timed := func(n int) time.Duration {
+		start := time.Now()
+		require.NoError(t, s.Put(sealed(t, n)))
+		return time.Since(start)
+	}
+	done := make(chan time.Duration, 1)
+	go func() { done <- timed(100000) }()
+	assert.Less(t, timed(PruneEvery), 100*time.Millisecond, "the 500th Put does not wait for the prune lock")
+	assert.Less(t, <-done, 100*time.Millisecond, "a Put made meanwhile does not either")
+	s.Wait()
+	n, _ := count(t, dir)
+	assert.Greater(t, n, 100, "the round was skipped while the lock was held")
+
+	require.NoError(t, held.Release())
+	require.NoError(t, <-explicit)
+}
+
+// A policy lowered through the store prunes by it.
+func TestFileStore_SetPolicyPrunes(t *testing.T) {
+	root := t.TempDir()
+	dir := recDir(root)
+	s := openStore(t, root, DefaultPolicy())
+	for i := 0; i < 150; i++ {
+		require.NoError(t, s.Put(sealed(t, i)))
+	}
+	n, _ := count(t, dir)
+	require.Equal(t, 150, n)
+	s.SetPolicy(Policy{KeepParams: true, MaxCount: 100})
+	s.Wait()
+	n, _ = count(t, dir)
+	assert.Equal(t, 100, n)
 }
 
 func TestPrune_LeavesOtherFilesAndSweepsStaleTemps(t *testing.T) {

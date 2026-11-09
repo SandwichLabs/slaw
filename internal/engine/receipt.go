@@ -3,9 +3,8 @@ package engine
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
-
-	duckdb "github.com/duckdb/duckdb-go/v2"
 
 	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/session"
@@ -66,7 +65,7 @@ func recordExecuted(ctx context.Context, query, expanded string, rw *storageglob
 	if _, vetted := storageglob.FromContext(ctx); !vetted && rw.Changed() {
 		executed = expanded
 	}
-	summary, _, _ := rw.Summarize(executed)
+	summary, _ := rw.Summarize(executed)
 	cols := make([]receipts.Column, len(rs.Columns))
 	for i, c := range rs.Columns {
 		cols[i] = receipts.Column{Name: c.Name, Type: c.Type}
@@ -77,9 +76,9 @@ func recordExecuted(ctx context.Context, query, expanded string, rw *storageglob
 }
 
 // recordRunFacts completes the facts after a successful run: when it started,
-// how long it took, which statement type DuckDB reports and which connections
-// its names resolve to. pin is the connection a console holds (nil otherwise).
-func (m *Manager) recordRunFacts(ctx context.Context, connection string, pin *session.Conn, start time.Time) {
+// how long it took, which statement kind it is (the caller's word for it, or a
+// parse of the text) and which connections its names resolve to.
+func (m *Manager) recordRunFacts(ctx context.Context, connection string, start time.Time) {
 	run := receipts.RunFrom(ctx)
 	if run == nil {
 		return
@@ -89,11 +88,25 @@ func (m *Manager) recordRunFacts(ctx context.Context, connection string, pin *se
 	if executed == "" {
 		return
 	}
-	kind := m.statementKind(ctx, connection, pin, executed)
+	kind := run.Kind()
+	if kind == "" {
+		kind = m.statementKind(ctx, executed)
+	}
 	conns := receiptConnections(session.ReferencedConnections(m.sess, connection, executed))
+	fromData := columnNamesFromData(executed)
 	run.Record(func(f *receipts.Facts) {
-		f.At, f.Duration, f.Stmt, f.Connections = start, dur, kind, conns
+		f.At, f.Duration, f.Stmt, f.Connections, f.NamesFromData = start, dur, kind, conns, fromData
 	})
+}
+
+// ReadKind is the kind of a statement a caller knows is a single read (the agent
+// policy's verdict, or a console's own parse): an explain when it says EXPLAIN,
+// otherwise a select. A caller sets it as Intent.Kind to spare the engine a parse.
+func ReadKind(text string) receipts.StmtKind {
+	if stmts := usersql.Tokens(text); len(stmts) == 1 && len(stmts[0]) > 0 && stmts[0][0].Kind == usersql.TokWord && stmts[0][0].Text == "EXPLAIN" {
+		return explainKind(stmts[0])
+	}
+	return receipts.StmtSelect
 }
 
 // receiptConnections is what a receipt keeps of a connection: its name, type and
@@ -115,13 +128,13 @@ func receiptConnections(infos []session.ConnectionInfo) []receipts.Connection {
 }
 
 // statementKind says whether text is a single select or explain, which are the
-// only statements a receipt is made for. A script is other, whatever its first
-// statement is. The plain forms are read from the first word, as the console
-// does, without preparing them (which would bind their remote tables a second
-// time); WITH is prepared (a WITH can lead an INSERT or a DELETE), and so is
-// everything else, and DuckDB's own type decides. EXPLAIN ANALYZE runs the
-// statement it explains, so it is other.
-func (m *Manager) statementKind(ctx context.Context, connection string, pin *session.Conn, text string) receipts.StmtKind {
+// only statements a receipt is made for, by parsing alone: nothing is prepared
+// or bound, so no remote table is bound a second time. A script is other,
+// whatever its first statement is. SELECT, FROM, VALUES, TABLE and EXPLAIN are
+// read from the first word; anything else (WITH, a parenthesised query) must be
+// a single SELECT by DuckDB's own parser (json_serialize_sql), so a WITH that
+// leads a DELETE is other. EXPLAIN ANALYZE runs what it explains, so it is other.
+func (m *Manager) statementKind(ctx context.Context, text string) receipts.StmtKind {
 	stmts := usersql.Tokens(text)
 	if len(stmts) != 1 || len(stmts[0]) == 0 {
 		return receipts.StmtOther
@@ -135,16 +148,10 @@ func (m *Manager) statementKind(ctx context.Context, connection string, pin *ses
 			return explainKind(stmts[0])
 		}
 	}
-	typ, err := m.parsedType(ctx, connection, pin, text)
-	switch {
-	case err != nil:
+	if m.sess == nil || m.sess.DB() == nil || usersql.RequireSelect(ctx, m.sess.DB(), text) != nil {
 		return receipts.StmtOther
-	case typ == duckdb.STATEMENT_TYPE_SELECT:
-		return receipts.StmtSelect
-	case typ == duckdb.STATEMENT_TYPE_EXPLAIN:
-		return explainKind(stmts[0])
 	}
-	return receipts.StmtOther
+	return receipts.StmtSelect
 }
 
 // explainKind is an explain unless it analyzes, which runs what it explains.
@@ -157,20 +164,23 @@ func explainKind(toks []usersql.Token) receipts.StmtKind {
 	return receipts.StmtExplain
 }
 
-// parsedType prepares text (never runs it) on the connection the run used, or on
-// a pooled one pinned to connection's catalog, and returns DuckDB's own type.
-func (m *Manager) parsedType(ctx context.Context, connection string, pin *session.Conn, text string) (duckdb.StmtType, error) {
-	if pin != nil {
-		return usersql.ParsedType(pin.SQLConn(), text)
+// columnNamesFromData reports a statement whose result columns are named by data,
+// not by the statement: PIVOT, PIVOT_WIDER and UNPIVOT (names from row values),
+// a file reader (a header row names the columns: read_csv, read_json, ...,
+// *_scan) and a table read by file name (FROM 'x.csv'). Keywords are found by
+// the lexer, never by substring. Such names are never kept in a receipt.
+func columnNamesFromData(text string) bool {
+	for _, stmt := range usersql.Tokens(text) {
+		for i, t := range stmt {
+			switch {
+			case t.Kind == usersql.TokWord && (t.Text == "PIVOT" || t.Text == "PIVOT_WIDER" || t.Text == "UNPIVOT"):
+				return true
+			case t.Kind == usersql.TokWord && (strings.HasPrefix(t.Text, "READ_") || strings.HasSuffix(t.Text, "_SCAN") || t.Text == "SNIFF_CSV"):
+				return true
+			case t.Kind == usersql.TokWord && t.Text == "FROM" && i+1 < len(stmt) && stmt[i+1].Kind == usersql.TokString:
+				return true
+			}
+		}
 	}
-	var opts []session.QueryOption
-	if connection != "" {
-		opts = append(opts, session.WithCatalog(connection))
-	}
-	c, err := m.sess.Conn(ctx, opts...)
-	if err != nil {
-		return 0, err
-	}
-	defer c.Close() //nolint:errcheck
-	return usersql.ParsedType(c.SQLConn(), text)
+	return false
 }

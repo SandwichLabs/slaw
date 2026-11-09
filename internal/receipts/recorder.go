@@ -47,7 +47,7 @@ func (r *Recorder) Store() Store {
 	return r.store
 }
 
-// SetPolicy changes the policy new receipts are made under.
+// SetPolicy changes the policy new receipts are made under and the store prunes by.
 func (r *Recorder) SetPolicy(p Policy) {
 	if r == nil {
 		return
@@ -55,6 +55,21 @@ func (r *Recorder) SetPolicy(p Policy) {
 	r.mu.Lock()
 	r.policy = p.Clamp()
 	r.mu.Unlock()
+	// The store prunes by the same policy: one owner, forwarded, so a lowered
+	// limit prunes.
+	if ps, ok := r.store.(interface{ SetPolicy(Policy) }); ok {
+		ps.SetPolicy(p)
+	}
+}
+
+// Close waits for the store's background prune, if it has one. Safe on nil.
+func (r *Recorder) Close() {
+	if r == nil {
+		return
+	}
+	if c, ok := r.store.(interface{ Close() error }); ok {
+		_ = c.Close()
+	}
 }
 
 func (r *Recorder) currentPolicy() Policy {
@@ -103,7 +118,7 @@ func (r *Recorder) build(in Intent, f Facts, shown [][]any, truncated bool, tota
 		At: f.At, DurationMS: f.Duration.Milliseconds(),
 		Surface: in.Surface, Actor: in.Actor, AgentSession: in.AgentSession,
 		Source:  in.Source,
-		Verdict: in.Verdict, Columns: f.Columns, Connections: f.Connections,
+		Verdict: in.Verdict, Connections: f.Connections,
 		Rows: Rows{Returned: int64(len(shown)), Total: int64(max(total, len(shown))), Truncated: truncated},
 	}
 	if !ValidRef(rec.Source.Ref) {
@@ -111,6 +126,7 @@ func (r *Recorder) build(in Intent, f Facts, shown [][]any, truncated bool, tota
 	}
 	r.fillText(&rec, in, f)
 	r.fillParams(&rec, in)
+	rec.Columns = r.keptColumns(f, rec.SQLWithheld || rec.RunSQLWithheld)
 	h := NewResultHasher(r.key, f.Columns)
 	for _, row := range shown {
 		if err := h.AddRow(row); err != nil {
@@ -139,6 +155,24 @@ func (r *Recorder) fillText(rec *Receipt, in Intent, f Facts) {
 	} else {
 		rec.RunSQLWithheld = true
 	}
+}
+
+// keptColumns is the columns a receipt may keep. A name is kept only when it
+// passes the value check; every name is withheld when the statement's text was
+// (a name can quote the text) or the names come from data (a PIVOT). The types
+// and the count always stay. The result fingerprint still covers the real names.
+func (r *Recorder) keptColumns(f Facts, textWithheld bool) []Column {
+	out := make([]Column, len(f.Columns))
+	for i, c := range f.Columns {
+		out[i] = Column{Type: c.Type}
+		keep := c.Name == "" || (!textWithheld && !f.NamesFromData && r.checks.Value != nil && r.checks.Value(c.Name))
+		if keep {
+			out[i].Name = c.Name
+		} else {
+			out[i].Withheld = true
+		}
+	}
+	return out
 }
 
 // fillParams sets the bound values, each through the value check, and the keyed

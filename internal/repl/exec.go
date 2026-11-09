@@ -95,7 +95,7 @@ func (s *Session) runStatement(text string) {
 	before := session.StatusSnapshot(s.o.Sess)
 	start := s.clock()
 
-	ictx := s.withReceiptIntent(runCtx, text, params)
+	ictx := s.withReceiptIntent(runCtx, text, params, typ, prepErr)
 	rs, total, err := s.o.Engine.ExecuteOn(ictx, s.conn, s.current, runText, params, fetchCap)
 	if s.o.Hooks.AfterRun != nil {
 		s.o.Hooks.AfterRun(before, text) // always after a run, as RunQuery does
@@ -122,11 +122,22 @@ func (s *Session) runStatement(text string) {
 // withReceiptIntent puts the receipt intent of a statement on ctx while
 // .receipts is on: what was typed, with the values bound, and no policy verdict
 // (the console is the person's own). Off, it is ctx as it was.
-func (s *Session) withReceiptIntent(ctx context.Context, text string, params map[string]any) context.Context {
+func (s *Session) withReceiptIntent(ctx context.Context, text string, params map[string]any, typ duckdb.StmtType, prepErr error) context.Context {
 	if !s.st.receipts || s.o.Receipts == nil {
 		return ctx
 	}
+	// The console has already had DuckDB's word for the statement type; the
+	// engine need not parse it again.
+	kind := receipts.StmtOther
+	switch {
+	case prepErr != nil:
+	case typ == duckdb.STATEMENT_TYPE_SELECT:
+		kind = receipts.StmtSelect
+	case typ == duckdb.STATEMENT_TYPE_EXPLAIN:
+		kind = engine.ReadKind(text) // an explain, unless it analyzes
+	}
 	return receipts.WithIntent(ctx, receipts.Intent{
+		Kind:    kind,
 		Surface: receipts.SurfaceConsole, Actor: receipts.ActorPerson,
 		Source: receipts.Source{Kind: receipts.SourceSQL}, SQL: text,
 		Params: receipts.ParamStrings(params), Verdict: receipts.VerdictUnchecked,

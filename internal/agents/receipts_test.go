@@ -3,6 +3,7 @@ package agents
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -341,6 +342,56 @@ func TestReceipts_RedactionAtTheCallers(t *testing.T) {
 	assert.Equal(t, receipts.ParamValue{Withheld: true}, par.Params["v"])
 	assert.Equal(t, receipts.ParamValue{Value: "plain"}, par.Params["w"])
 	assert.Equal(t, receipts.HashParams(receiptKey, map[string]string{"v": "api_key=sk-abc123def456", "w": "plain"}), par.ParamsHash)
+
+	// A column named after its expression quotes a literal: the name is withheld
+	// with the text, the type stays.
+	m2 := recordTo(fx.h)
+	resp = fx.call("run_query", map[string]any{"sql": "SELECT 'password=hunter2', 1 AS n"})
+	require.NotEmpty(t, receiptID(t, resp))
+	r := only(t, m2)
+	assert.True(t, r.SQLWithheld)
+	assert.Equal(t, []receipts.Column{{Type: "VARCHAR", Withheld: true}, {Type: "INTEGER", Withheld: true}}, r.Columns,
+		"with the text withheld every name is")
+	b2, err := receipts.Encode(r)
+	require.NoError(t, err)
+	assert.NotContains(t, string(b2), "hunter2")
+
+	// The text is kept, but a column name that passes no check is withheld alone.
+	m3 := recordTo(fx.h)
+	resp = fx.call("run_query", map[string]any{"sql": `SELECT 1 AS "token=abcdef0123456789", 2 AS fine`})
+	require.Nil(t, resp.Error, errMsg(resp))
+	require.NotEmpty(t, receiptID(t, resp))
+	r = only(t, m3)
+	for _, c := range r.Columns {
+		assert.NotContains(t, c.Name, "abcdef0123456789")
+	}
+
+	// A PIVOT names columns from row values: no name is kept, the count and
+	// types are.
+	m4 := recordTo(fx.h)
+	resp = fx.call("run_query", map[string]any{"sql": "FROM (SELECT 'top-secret-region' AS k, 1 AS v) PIVOT (sum(v) FOR k IN ('top-secret-region'))"})
+	require.Nil(t, resp.Error, errMsg(resp))
+	require.NotEmpty(t, receiptID(t, resp))
+	r = only(t, m4)
+	require.Len(t, r.Columns, 1)
+	assert.True(t, r.Columns[0].Withheld)
+	assert.Empty(t, r.Columns[0].Name)
+	assert.NotEmpty(t, r.Columns[0].Type)
+	cols, err := json.Marshal(r.Columns)
+	require.NoError(t, err)
+	assert.NotContains(t, string(cols), "top-secret-region")
+}
+
+func TestReceipts_ARowClippedByTheBudgetIsTruncated(t *testing.T) {
+	fx := newPolicyFixture(t, ModeReadOnly)
+	m := recordTo(fx.h)
+	// One row, over the result budget on its own: its long value is clipped.
+	resp := fx.call("run_query", map[string]any{"sql": "SELECT repeat('z', 30000) AS s"})
+	require.NotEmpty(t, receiptID(t, resp))
+	require.NotNil(t, mapOf(t, resp.Result)["truncated"])
+	r := only(t, m)
+	assert.EqualValues(t, 1, r.Rows.Returned)
+	assert.True(t, r.Rows.Truncated, "a clipped row is not the whole result")
 }
 
 func TestReceipts_SQLCannotReadTheReceiptsOrTheKey(t *testing.T) {

@@ -468,20 +468,26 @@ func (h *Handler) runQuery(ctx context.Context, req *Request, tgt runTarget) *Re
 	// a large SELECT never floods the model's (or MCP client's) context.
 	// Applied here at the handler layer so chat, task mode, and MCP all get
 	// it uniformly — see budget.go.
+	h.budgetAndReceipt(runCtx, result, rows, total)
+
+	return NewResponse(req.ID, result)
+}
+
+// budgetAndReceipt applies the result budget to the rows, and finishes the
+// receipt over the rows as the caller gets them: after the row cap and the
+// budget, so its count and result_hmac match what was shown.
+func (h *Handler) budgetAndReceipt(ctx context.Context, result map[string]any, rows [][]any, total int) {
 	shown := rows
+	budgetCut := false
 	if budgeted, truncated := budgetRows(rows); truncated != nil {
 		result["rows"] = budgeted
 		result["truncated"] = truncated
 		shown = budgeted
+		budgetCut = true // also when it only clipped the one row's long values
 	}
-
-	// The receipt covers the rows as the caller gets them: after the row cap and
-	// the budget, so its count and result_hmac match what was shown.
-	if id := h.finishReceipt(runCtx, shown, len(shown) < total, total); id != "" {
+	if id := h.finishReceipt(ctx, shown, budgetCut || len(shown) < total, total); id != "" {
 		result["receipt_id"] = id
 	}
-
-	return NewResponse(req.ID, result)
 }
 
 // requireWriteStatement classifies a fully-built SQL statement (identifiers

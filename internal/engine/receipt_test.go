@@ -73,6 +73,41 @@ func TestRunFacts_AFailedRunLeavesNoFacts(t *testing.T) {
 	assert.False(t, receipts.RunFrom(ctx).Facts().Mintable())
 }
 
+func TestColumnNamesFromData(t *testing.T) {
+	for text, want := range map[string]bool{
+		"SELECT 1 AS a":                                        false,
+		"SELECT * FROM t":                                      false,
+		"PIVOT t ON region USING sum(x)":                       true,
+		"pivot_wider t ON region":                              true,
+		"SELECT * FROM t UNPIVOT (v FOR k IN (a, b))":          true,
+		"SELECT * FROM read_csv('x.csv')":                      true,
+		"SELECT * FROM parquet_scan('x.parquet')":              true,
+		"SELECT * FROM 'data/x.csv'":                           true,
+		"SELECT 'pivot' AS word, \"PIVOT\" FROM t":             false, // a string and a quoted name are not the keyword
+		"SELECT 1 -- pivot\nFROM t":                            false,
+		"SELECT pivoted, unpivot_count FROM t":                 false,
+		"SELECT a FROM t WHERE c = 'FROM' AND d = 'read_csv('": false,
+	} {
+		assert.Equal(t, want, columnNamesFromData(text), text)
+	}
+}
+
+func TestRunFacts_TheCallersKindIsUsedAndNamesFromDataAreFlagged(t *testing.T) {
+	m := NewManager(lazySession(t))
+	ctx := receipts.WithIntent(context.Background(), receipts.Intent{
+		Surface: receipts.SurfaceCLIQuery, Actor: receipts.ActorPerson, SQL: "x", Verdict: receipts.VerdictUnchecked,
+		Kind: receipts.StmtOther,
+	})
+	_, _, err := m.ExecuteCappedIn(ctx, "", "SELECT * FROM (PIVOT (SELECT 'a' AS k, 1 AS v) ON k USING sum(v))", nil, 0)
+	require.NoError(t, err)
+	f := receipts.RunFrom(ctx).Facts()
+	assert.Equal(t, receipts.StmtOther, f.Stmt, "the declared kind is not worked out again")
+	assert.True(t, f.NamesFromData)
+	assert.Equal(t, receipts.StmtSelect, ReadKind("WITH a AS (SELECT 1) SELECT * FROM a"))
+	assert.Equal(t, receipts.StmtExplain, ReadKind("EXPLAIN SELECT 1"))
+	assert.Equal(t, receipts.StmtOther, ReadKind("EXPLAIN ANALYZE SELECT 1"))
+}
+
 func TestStatementKind(t *testing.T) {
 	m := NewManager(lazySession(t))
 	ctx := context.Background()
@@ -98,7 +133,7 @@ func TestStatementKind(t *testing.T) {
 		"SET threads = 1":                               receipts.StmtOther,
 		"":                                              receipts.StmtOther,
 	} {
-		assert.Equal(t, want, m.statementKind(ctx, "", nil, text), text)
+		assert.Equal(t, want, m.statementKind(ctx, text), text)
 	}
 }
 

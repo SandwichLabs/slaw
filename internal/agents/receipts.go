@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/receipts"
 )
 
@@ -42,6 +43,8 @@ func (h *Handler) withIntent(ctx context.Context, surface receipts.Surface, src 
 	in := receipts.Intent{
 		Surface: surface, Actor: receipts.ActorPerson, Source: src,
 		SQL: written, Params: receipts.ParamStrings(params), Verdict: receipts.VerdictRead,
+		// The policy has judged this a single read, so the engine need not.
+		Kind: engine.ReadKind(written),
 	}
 	if agentSurface(surface) {
 		in.Actor, in.AgentSession = receipts.ActorAgent, receipts.AgentSessionFrom(ctx)

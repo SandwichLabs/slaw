@@ -237,7 +237,8 @@ func (s *Server) Start(addr string) error {
 		if v := r.Header.Get(SandboxHeader); v != "" {
 			mode, err := agents.ParseSandboxMode(v)
 			if err != nil {
-				return "", err // authMiddleware already rejected this; fail closed anyway
+				s.sseSessions.Delete(id) // no session was made
+				return "", err           // authMiddleware already rejected this; fail closed anyway
 			}
 			s.sessionCeil.Store(id, mode)
 		}

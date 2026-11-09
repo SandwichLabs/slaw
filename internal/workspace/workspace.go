@@ -620,6 +620,10 @@ func (w *workspace) Close() error {
 			first = err
 		}
 	}
+	// Let the receipts' background prune finish; a recorder asked for after the
+	// close is nil (never opened, never started).
+	w.rcOnce.Do(func() {})
+	w.rc.Close()
 	return first
 }
 

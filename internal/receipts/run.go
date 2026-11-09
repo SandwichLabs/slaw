@@ -26,6 +26,10 @@ type Intent struct {
 	SQL     string
 	Params  map[string]string
 	Verdict Verdict
+	// Kind, when the caller already knows the statement is a single read (a
+	// policy-gated path, or the console after its own parse), spares the engine
+	// working it out. Empty: the engine parses the text (never preparing it).
+	Kind StmtKind
 }
 
 // StmtKind is the statement type DuckDB reported for what ran. Only a select
@@ -49,10 +53,13 @@ type Facts struct {
 	Executed string
 	// Summary is Executed with each expanded key list put back as its pattern
 	// (storageglob.Rewrite.Summarize).
-	Summary     string
-	Stmt        StmtKind
-	Columns     []Column
-	Connections []Connection
+	Summary string
+	// NamesFromData says the result's column names come from data (a PIVOT, a
+	// file's header row): they are never kept.
+	NamesFromData bool
+	Stmt          StmtKind
+	Columns       []Column
+	Connections   []Connection
 }
 
 // Mintable reports whether the run is one a receipt is made for: the engine
@@ -179,6 +186,16 @@ func ParamStrings(params map[string]any) map[string]string {
 		}
 	}
 	return out
+}
+
+// Kind is the statement kind the caller declared, or "".
+func (r *Run) Kind() StmtKind {
+	if r == nil {
+		return ""
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.intent.Kind
 }
 
 // Facts is a copy of the facts recorded so far. It is the zero Facts on a nil Run.

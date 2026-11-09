@@ -243,3 +243,22 @@ func TestParamStrings(t *testing.T) {
 	got := ParamStrings(map[string]any{"s": "x", "f": 1000000.0, "i": 7, "b": true, "n": nil, "d": 1.5})
 	assert.Equal(t, map[string]string{"s": "x", "f": "1000000", "i": "7", "b": "true", "n": "NULL", "d": "1.5"}, got)
 }
+
+// The recorder's policy has one owner: a lowered policy set through it reaches
+// the store, which prunes by it.
+func TestRecorder_SetPolicyReachesTheStoreAndPrunes(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewFileStore(root, DefaultPolicy())
+	require.NoError(t, err)
+	rec := NewRecorder(store, testKey, DefaultPolicy(), plainChecks(), nil)
+	t.Cleanup(rec.Close)
+	for i := 0; i < 150; i++ {
+		require.NoError(t, store.Put(sealed(t, i)))
+	}
+	rec.SetPolicy(Policy{KeepParams: true, MaxCount: 100})
+	store.Wait()
+	n, _ := count(t, recDir(root))
+	assert.Equal(t, 100, n)
+	var nilRec *Recorder
+	nilRec.Close()
+}

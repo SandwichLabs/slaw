@@ -139,10 +139,14 @@ type Rows struct {
 	Truncated bool  `json:"truncated"`
 }
 
-// Column is a result column's name and type; never a value.
+// Column is a result column's name and type; never a value. A column name can
+// carry one (an unaliased SELECT 'password=x' is named after its expression, a
+// PIVOT names columns from row values), so a name that may not be kept is
+// withheld: Name is empty and Withheld set, and the type stays.
 type Column struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Withheld bool   `json:"withheld,omitempty"`
 }
 
 // Receipt is the record of one run. Build one, apply a Policy to its
@@ -443,6 +447,9 @@ func (r Receipt) validateResult() error {
 	for _, c := range r.Columns {
 		if len(c.Name) > MaxNameBytes || len(c.Type) > MaxNameBytes {
 			return invalid("a column name or type is too long")
+		}
+		if c.Withheld && c.Name != "" {
+			return invalid("a column is withheld but its name is present")
 		}
 	}
 	return nil

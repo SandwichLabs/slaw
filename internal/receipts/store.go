@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/SandwichLabs/slaw/internal/filelock"
@@ -89,39 +90,83 @@ func Decode(data []byte) (Receipt, error) {
 // atomic, so Studio, `slaw mcp serve` and the CLI read one another's receipts
 // without a shared index. Prune runs under a cross-process file lock
 // (prune.lock in the folder) and an in-process mutex.
+//
+// Pruning never blocks a Put. The open-time and periodic prunes run in one
+// background goroutine (single-flight) that only try-locks prune.lock and skips
+// the round when it is busy; an explicit Prune waits for the lock, on its own
+// mutex, which a Put never takes. Wait and Close wait for the goroutine.
 type FileStore struct {
-	dir    string
-	mu     sync.Mutex
+	dir string
+
+	mu     sync.Mutex // guards puts and policy; never held across I/O
 	puts   int
 	policy Policy
+
+	pruneMu sync.Mutex // one prune at a time in this process
+	running atomic.Bool
+	pending atomic.Bool
+	wg      sync.WaitGroup
 }
 
 var _ Store = (*FileStore)(nil)
 
 // NewFileStore opens the store of the workspace at root (its receipts folder
-// is made and checked by Dir: no symbolic link) and prunes it by policy, so a
-// limit lowered since the last run takes effect on the next open. Later Puts
-// prune by the same policy every PruneEvery writes.
+// is made and checked by Dir: no symbolic link) and starts a background prune by
+// policy, so a limit lowered since the last run takes effect soon after the open
+// without delaying the first Put. Later Puts prune by the same policy every
+// PruneEvery writes, also in the background.
 func NewFileStore(root string, p Policy) (*FileStore, error) {
 	dir, err := Dir(root)
 	if err != nil {
 		return nil, err
 	}
 	s := &FileStore{dir: dir, policy: p.Clamp()}
-	if err := s.Prune(s.policy); err != nil {
-		return nil, err
-	}
+	s.pruneAsync()
 	return s, nil
+}
+
+// Wait returns once the background prune, if one is running, has finished.
+func (s *FileStore) Wait() { s.wg.Wait() }
+
+// Close waits for the background prune; the store holds nothing else open.
+func (s *FileStore) Close() error {
+	s.wg.Wait()
+	return nil
+}
+
+// pruneAsync asks for a background prune by the current policy. At most one runs
+// at a time; a request made while one runs makes it go round once more.
+func (s *FileStore) pruneAsync() {
+	s.pending.Store(true)
+	if !s.running.CompareAndSwap(false, true) {
+		return
+	}
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		for s.pending.Swap(false) {
+			s.mu.Lock()
+			p := s.policy
+			s.mu.Unlock()
+			_ = s.prune(p, false)
+		}
+		s.running.Store(false)
+		if s.pending.Load() { // asked for again as it finished
+			s.pruneAsync()
+		}
+	}()
 }
 
 // Dir is the store's folder.
 func (s *FileStore) Dir() string { return s.dir }
 
-// SetPolicy changes the policy the periodic prune uses; it does not prune.
+// SetPolicy changes the policy the prunes use, and prunes by it in the
+// background, so a lowered limit takes effect without waiting for the next open.
 func (s *FileStore) SetPolicy(p Policy) {
 	s.mu.Lock()
 	s.policy = p.Clamp()
 	s.mu.Unlock()
+	s.pruneAsync()
 }
 
 func (s *FileStore) path(id string) string {
@@ -129,7 +174,7 @@ func (s *FileStore) path(id string) string {
 }
 
 // Put writes r atomically (0600, folder 0700). Every PruneEvery writes it
-// also prunes; that housekeeping never fails the Put.
+// also starts a background prune; that housekeeping never fails or delays the Put.
 func (s *FileStore) Put(r Receipt) error {
 	data, err := Encode(r)
 	if err != nil {
@@ -145,10 +190,9 @@ func (s *FileStore) Put(r Receipt) error {
 	s.mu.Lock()
 	s.puts++
 	due := s.puts%PruneEvery == 0
-	p := s.policy
 	s.mu.Unlock()
 	if due {
-		_ = s.Prune(p)
+		s.pruneAsync()
 	}
 	return nil
 }
@@ -199,10 +243,13 @@ type entry struct {
 // the count and the total size are within MaxCount and MaxBytes. The policy is
 // clamped first. A receipt's age is its file's modification time. Files that
 // are not receipt files are left alone, except stale temp files.
-func (s *FileStore) Prune(p Policy) error {
-	p = p.Clamp()
-	unlock, err := s.lock()
-	if err != nil {
+func (s *FileStore) Prune(p Policy) error { return s.prune(p.Clamp(), true) }
+
+// prune is Prune under a clamped policy. With wait false it only try-locks, and
+// a busy lock skips the round (nil).
+func (s *FileStore) prune(p Policy, wait bool) error {
+	unlock, err := s.lock(wait)
+	if err != nil || unlock == nil {
 		return err
 	}
 	defer unlock()
@@ -235,23 +282,34 @@ func (s *FileStore) Prune(p Policy) error {
 	return nil
 }
 
-// lock takes the cross-process prune lock, waiting up to lockTimeout.
-func (s *FileStore) lock() (func(), error) {
-	s.mu.Lock()
+// lock takes the in-process mutex and the cross-process prune lock. With wait
+// it waits up to lockTimeout; without, a lock that is busy returns a nil unlock
+// and no error. It never takes s.mu, so a Put is never held up by a prune.
+func (s *FileStore) lock(wait bool) (func(), error) {
+	if wait {
+		s.pruneMu.Lock()
+	} else if !s.pruneMu.TryLock() {
+		return nil, nil
+	}
 	d, err := os.Open(s.dir)
 	if err != nil {
-		s.mu.Unlock()
+		s.pruneMu.Unlock()
 		return nil, fmt.Errorf("failed to open the receipts folder: %w", err)
 	}
 	deadline := time.Now().Add(lockTimeout)
 	for {
 		l, err := filelock.AcquirePersistentAt(d, lockName)
 		if err == nil {
-			return func() { _ = l.Release(); _ = d.Close(); s.mu.Unlock() }, nil
+			return func() { _ = l.Release(); _ = d.Close(); s.pruneMu.Unlock() }, nil
+		}
+		if !wait {
+			_ = d.Close()
+			s.pruneMu.Unlock()
+			return nil, nil
 		}
 		if errors.Is(err, filelock.ErrUnsafe) || time.Now().After(deadline) {
 			_ = d.Close()
-			s.mu.Unlock()
+			s.pruneMu.Unlock()
 			return nil, fmt.Errorf("failed to lock the receipts folder: %w", err)
 		}
 		time.Sleep(5 * time.Millisecond)

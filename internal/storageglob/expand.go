@@ -25,8 +25,6 @@ package storageglob
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -123,17 +121,14 @@ func (r *Rewrite) carriesKeys(line string) bool {
 // Summarize is the statement as a record may keep it: text with each expanded
 // key list put back as the pattern the person wrote, followed by a comment
 // saying how many objects it expanded to, so 10,000 keys never land in a
-// receipt. n is the number of objects the patterns expanded to and listHash a
-// SHA-256 (hex) over the lists that were replaced, in statement order, so two
-// runs that matched the same objects can be told from two that did not. Unlike
-// Redact it never clips and never rewrites an error's "LINE n:" excerpt. sql is
-// the text the rewrite produced (what ran); text with nothing rewritten comes
-// back unchanged with n 0 and no hash.
-func (r *Rewrite) Summarize(sql string) (text string, n int, listHash string) {
+// receipt. n is the number of objects the patterns expanded to. Unlike Redact it
+// never clips and never rewrites an error's "LINE n:" excerpt. sql is the text
+// the rewrite produced (what ran); text with nothing rewritten comes back
+// unchanged with n 0. The keyed hash of what ran (run_sql_hash) is the caller's.
+func (r *Rewrite) Summarize(sql string) (text string, n int) {
 	if !r.Changed() {
-		return sql, 0, ""
+		return sql, 0
 	}
-	h := sha256.New()
 	text = sql
 	changed := false
 	for _, s := range r.subs {
@@ -141,15 +136,13 @@ func (r *Rewrite) Summarize(sql string) (text string, n int, listHash string) {
 			continue
 		}
 		changed = true
-		h.Write([]byte(s.repl))
-		h.Write([]byte{0})
 		n += s.n
 		text = strings.Replace(text, s.repl, s.orig+fmt.Sprintf(" /* expanded to %d objects */", s.n), 1)
 	}
 	if !changed {
-		return sql, 0, ""
+		return sql, 0
 	}
-	return text, n, hex.EncodeToString(h.Sum(nil))
+	return text, n
 }
 
 type ctxKey struct{}
