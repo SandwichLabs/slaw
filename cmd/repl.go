@@ -78,7 +78,7 @@ func runREPL(cmd *cobra.Command, _ []string) error {
 		Engine: o.Eng, Sess: o.Sess,
 		Workspace: o.WS.Name(), Root: o.WS.Root(), Queries: o.WS.Queries(),
 		Connection: conn, Cols: cols, Rows: rows, Color: true, Logger: logger, Limiter: repl.NewLimiter(1),
-		Expand: hub.PersonExpander(o.WS, o.Sess, logger),
+		Expand: hub.PersonExpander(o.WS, o.Sess, logger), Receipts: o.WS.Receipts(),
 	})
 	if err != nil {
 		return err

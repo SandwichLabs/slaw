@@ -26,11 +26,13 @@ This is the one place your data can leave your computer by design, so be clear a
 
 Credentials stay in your OS keychain or environment variables. They never appear in the workspace folder, a `.slaw` bundle, log lines, error messages shown to the UI or the agent, or anything the agent can read.
 
-## Proposed definitions stay on this machine
+## Proposals, watch history and receipts stay on this machine
 
 When an agent proposes a semantic definition (`propose_definition`), the proposal is a file in `.slaw-local/proposals/` in the workspace folder. That folder is git-ignored and is never read into a `.slaw` bundle, so a proposal, its rationale and its evidence are not committed, shared or exported. Nothing is sent anywhere because of it. Only when you accept a proposal does its definition become a file under `semantics/`, which git and bundles do carry.
 
 Checking a watch (`slaw watch check`) appends the outcome to `.slaw-local/watches/history.jsonl`: the watch name, the time, ok, alert or error, the value or row count and a one-line reason. It never holds result rows, and for an error outcome the reason is only the database error's class (`could not run: Conversion Error`), because a database error can quote a value of the row it failed on; the check's own report on your screen shows the full message. The file is git-ignored, is never read into a `.slaw` bundle and nothing is sent anywhere because of it.
+
+When a query reads data (Studio's Query Explorer, a notebook cell or A2UI component, an artifact or a metric's Try it, `slaw query`, an assertion or a watch check, an agent's `run_query`, `run_saved_query` or `preview_query`, and the console after `.receipts on`), Slaw keeps a receipt of the run as one small file in `.slaw-local/receipts/` in the workspace folder: when it ran, from which surface and for whom (you or an agent session), the statement as written and as it ran, the values you passed, the connections it touched, the columns, how many rows were shown and a keyed fingerprint of them. A receipt never holds a result row, a credential or a connection's host or status message: text that looks like a credential (a `password=...`, a token, a DSN) is replaced by a keyed hash, as the console's history does, and a wildcard on `s3://` is kept as its pattern with a count, not the list of files. The fingerprint is keyed with a random key kept beside the receipts (`.slaw-local/receipts/key`, readable only by you), so nobody can guess a small result from it. The folder is git-ignored, is never read into a `.slaw` bundle and nothing is sent anywhere because of it; the agent's SQL cannot read it. Receipts are pruned after 30 days, past 20,000 files or past 64 MB, whichever comes first. A receipt that cannot be written never fails the query.
 
 ## HTML pages that ask the model
 

@@ -65,6 +65,7 @@ func commandTable() []dotCommand {
 		{"maxwidth", ".maxwidth [COUNT]", "columns to draw within (0: the terminal width)", (*Session).dotMaxwidth},
 		{"nullvalue", ".nullvalue STRING", "how NULL is written", (*Session).dotNullvalue},
 		{"headers", ".headers on|off", "csv header row", (*Session).dotHeaders},
+		{"receipts", ".receipts on|off", "keep a receipt for each read in this session", (*Session).dotReceipts},
 		{"columns", ".columns", "draw one line per column, one column per row", func(s *Session, _ []string, _ string) error { s.st.columns = true; return nil }},
 		{"rows", ".rows", "draw rows as rows (the default)", func(s *Session, _ []string, _ string) error { s.st.columns = false; return nil }},
 		{"tables", ".tables [PATTERN]", "tables and views of the current connection", (*Session).dotTables},
@@ -155,6 +156,29 @@ func (s *Session) dotTimer(args []string, _ string) error {
 		s.st.timer = on
 	}
 	return err
+}
+
+// dotReceipts turns run receipts on or off for this console session only: the
+// choice is not remembered, and the prompt shows [receipts] while it is on.
+func (s *Session) dotReceipts(args []string, _ string) error {
+	if len(args) == 0 {
+		if s.st.receipts {
+			s.printf("receipts are on\n")
+		} else {
+			s.printf("receipts are off\n")
+		}
+		return nil
+	}
+	on, err := onOff(args, "receipts")
+	if err != nil {
+		return err
+	}
+	if on && s.o.Receipts == nil {
+		return failf("receipts are not available here (the receipts folder could not be opened)")
+	}
+	s.st.receipts = on
+	s.makePrompts()
+	return nil
 }
 
 func (s *Session) dotHeaders(args []string, _ string) error {

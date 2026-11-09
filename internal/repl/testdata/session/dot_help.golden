@@ -7,6 +7,7 @@ ws ▸ D .help
 .maxwidth [COUNT]                          columns to draw within (0: the terminal width)
 .nullvalue STRING                          how NULL is written
 .headers on|off                            csv header row
+.receipts on|off                           keep a receipt for each read in this session
 .columns                                   draw one line per column, one column per row
 .rows                                      draw rows as rows (the default)
 .tables [PATTERN]                          tables and views of the current connection

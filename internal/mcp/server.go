@@ -23,6 +23,7 @@ import (
 
 	"github.com/SandwichLabs/slaw/internal/agents"
 	"github.com/SandwichLabs/slaw/internal/jsonenc"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -71,6 +72,14 @@ type Server struct {
 	// connection time and applied tighten-only to every call on that session,
 	// so a later request cannot drop it.
 	sessionCeil sync.Map // string -> agents.SandboxMode
+
+	// sseSessions holds the ids of the live SSE sessions, and stdioSession is
+	// the one id every stdio call of this process shares (random, made once). A
+	// run receipt names the session that asked (receipts.WithAgentSession), so
+	// get_receipt can later tell one client's receipts from another's even though
+	// one handler serves every client.
+	sseSessions  sync.Map // string -> struct{}
+	stdioSession string
 }
 
 // SandboxHeader is the request header a proxying `slaw mcp serve --sandbox X`
@@ -116,10 +125,11 @@ const DefaultServerName = "Slaw"
 // New creates a new MCP server backed by the given tool-dispatch Handler.
 func New(handler Handler, logger *slog.Logger, opts ...Option) *Server {
 	s := &Server{
-		handler: handler,
-		logger:  logger,
-		name:    DefaultServerName,
-		version: "dev",
+		handler:      handler,
+		logger:       logger,
+		name:         DefaultServerName,
+		version:      "dev",
+		stdioSession: receipts.NewSessionID(),
 	}
 	for _, o := range opts {
 		o(s)
@@ -211,6 +221,7 @@ func (s *Server) Start(addr string) error {
 	hooks := &server.Hooks{}
 	hooks.AddOnUnregisterSession(func(_ context.Context, sess server.ClientSession) {
 		s.sessionCeil.Delete(sess.SessionID())
+		s.sseSessions.Delete(sess.SessionID())
 	})
 	s.mcpServer = s.buildMCPServer(hooks)
 
@@ -222,6 +233,7 @@ func (s *Server) Start(addr string) error {
 
 	sseServer := server.NewSSEServer(s.mcpServer, server.WithSessionIDGenerator(func(_ context.Context, r *http.Request) (string, error) {
 		id := uuid.New().String()
+		s.sseSessions.Store(id, struct{}{})
 		if v := r.Header.Get(SandboxHeader); v != "" {
 			mode, err := agents.ParseSandboxMode(v)
 			if err != nil {
@@ -465,6 +477,18 @@ func (s *Server) withSessionCeiling(ctx context.Context) context.Context {
 	return ctx
 }
 
+// withAgentSession binds the session that is calling to ctx, for the receipt of
+// any read the call makes: the SSE transport session id, or, on stdio, the one
+// random id of this process.
+func (s *Server) withAgentSession(ctx context.Context) context.Context {
+	if sess := server.ClientSessionFromContext(ctx); sess != nil {
+		if _, ok := s.sseSessions.Load(sess.SessionID()); ok {
+			return receipts.WithAgentSession(ctx, sess.SessionID())
+		}
+	}
+	return receipts.WithAgentSession(ctx, s.stdioSession)
+}
+
 // makeToolHandler returns an MCP tool handler that dispatches to the agents handler.
 func (s *Server) makeToolHandler(toolName string) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -487,7 +511,7 @@ func (s *Server) makeToolHandler(toolName string) server.ToolHandlerFunc {
 			Params:  params,
 		}
 
-		resp := s.handler.Handle(s.withSessionCeiling(ctx), req)
+		resp := s.handler.Handle(s.withAgentSession(s.withSessionCeiling(ctx)), req)
 
 		if resp.Error != nil {
 			return errorResult(resp.Error), nil

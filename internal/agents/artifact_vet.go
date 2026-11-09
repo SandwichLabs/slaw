@@ -10,6 +10,7 @@ import (
 	"github.com/SandwichLabs/slaw/internal/artifacts"
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/queries"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 )
 
 // This file is the save-time vet of a data artifact (D5, epic #162). The
@@ -196,5 +197,6 @@ func (h *Handler) RunManifestQuery(ctx context.Context, name string, m *artifact
 		h.logger.Debug("artifact query refused", "artifact", name, "query", query, "reason", engine.ErrorForLog(err))
 		return nil, false, err
 	}
-	return h.RunReadOnlySQLIn(ArtifactQueryContext(ctx), runConn, sqlText, params, artifactQueryRowCap)
+	origin := ArtifactOrigin(name, query)
+	return h.RunReadOnlySQLIn(receipts.WithOrigin(ArtifactQueryContext(ctx), origin), runConn, sqlText, params, artifactQueryRowCap)
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/SandwichLabs/slaw/internal/session"
 )
@@ -97,14 +98,14 @@ func (m *Manager) ExecuteCappedIn(ctx context.Context, connection, query string,
 // per call. connection is the catalog unqualified names resolve against on
 // conn (the lazy attach needs it; a USE on conn moves it).
 func (m *Manager) ExecuteOn(ctx context.Context, conn *session.Conn, connection, query string, params map[string]any, maxRows int) (*ResultSet, int, error) {
-	return m.run(ctx, connection, query, func() (*ResultSet, int, error) {
+	return m.run(ctx, connection, query, conn, func() (*ResultSet, int, error) {
 		return m.duckdb.executeOn(ctx, conn, query, params, maxRows)
 	})
 }
 
 // execute is the shared implementation behind Execute and ExecuteCapped.
 func (m *Manager) execute(ctx context.Context, connection, query string, params map[string]any, maxRows int) (*ResultSet, int, error) {
-	return m.run(ctx, connection, query, func() (*ResultSet, int, error) {
+	return m.run(ctx, connection, query, nil, func() (*ResultSet, int, error) {
 		return m.duckdb.executeIn(ctx, connection, query, params, maxRows)
 	})
 }
@@ -112,11 +113,13 @@ func (m *Manager) execute(ctx context.Context, connection, query string, params 
 // run is the one run path behind every Manager entry point: the "duckdb engine
 // is not available" guard, the debug logging, the lazy attach, the
 // missing-catalog substitution and the wrap text. exec is the only part that
-// differs: which connection the statement runs on.
-func (m *Manager) run(ctx context.Context, connection, query string, exec func() (*ResultSet, int, error)) (*ResultSet, int, error) {
+// differs: which connection the statement runs on. pin is the connection a
+// console holds across statements (nil otherwise).
+func (m *Manager) run(ctx context.Context, connection, query string, pin *session.Conn, exec func() (*ResultSet, int, error)) (*ResultSet, int, error) {
 	if m.duckdb == nil {
 		return nil, 0, fmt.Errorf("duckdb engine is not available")
 	}
+	start := time.Now()
 
 	// Statement text is never logged (#276): a literal in a statement can be a
 	// credential, and the console runs statements a person typed. The log
@@ -156,6 +159,9 @@ func (m *Manager) run(ctx context.Context, connection, query string, exec func()
 		slog.String("engine", "duckdb"),
 		slog.Int("rows", rs.RowCount()),
 	)
+	// A caller that asked for a receipt finishes it after its own trimming;
+	// here only what the engine knows is noted (receipt.go).
+	m.recordRunFacts(ctx, connection, pin, start)
 
 	return rs, total, nil
 }

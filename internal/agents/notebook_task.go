@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/SandwichLabs/slaw/internal/notebooks"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/semantics"
 )
 
@@ -57,7 +58,12 @@ func (h *Handler) handlePreviewQuery(ctx context.Context, req *Request) *Respons
 	if cerr != nil {
 		return NewErrorResponse(req.ID, ErrInvalidParams, cerr.Error())
 	}
-	rs, rowsTruncated, err := h.RunReadOnlySQLIn(ctx, connection, sqlStr, nil, previewQueryRowCap)
+	// The receipt is finished below, over the sample the result carries, not over
+	// everything the run fetched: so the run is the internal one that hands back
+	// the context holding the intent.
+	rs, rowsTruncated, rctx, err := h.runReadOnlySQL(receipts.WithOrigin(ctx, receipts.Origin{
+		Surface: receipts.SurfaceAgentPreview, Source: receipts.Source{Kind: receipts.SourceSQL},
+	}), connection, sqlStr, nil, previewQueryRowCap)
 	if err != nil {
 		var dr *definitionRefusal
 		if errors.As(err, &dr) {
@@ -114,7 +120,7 @@ func (h *Handler) handlePreviewQuery(ctx context.Context, req *Request) *Respons
 	// and handleWriteCell's check (review fix, finding 4).
 	h.markPreviewed(connection, sqlStr)
 
-	return NewResponse(req.ID, map[string]any{
+	out := map[string]any{
 		"rowCount":      len(rs.Rows),
 		"columns":       columns,
 		"rows":          previewRows,
@@ -122,7 +128,12 @@ func (h *Handler) handlePreviewQuery(ctx context.Context, req *Request) *Respons
 		"suggestedView": suggestedView,
 		"viewFit":       viewFit,
 		"note":          note,
-	})
+	}
+	// previewRows is a prefix of rs.Rows: that prefix is what was shown.
+	if id := h.finishReceipt(rctx, rs.Rows[:len(previewRows)], truncated, len(rs.Rows)); id != "" {
+		out["receipt_id"] = id
+	}
+	return NewResponse(req.ID, out)
 }
 
 // rowObjects converts positional rows into name-keyed objects, the shape the

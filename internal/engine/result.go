@@ -10,6 +10,10 @@ type Column struct {
 type ResultSet struct {
 	Columns []Column
 	Rows    [][]any
+	// ReceiptID is the run's receipt (receipts.Finish), set by a caller that
+	// finished one after trimming its rows. The engine never sets it; it rides on
+	// the result so a surface can forward it on its own wire type.
+	ReceiptID string `json:"-"`
 }
 
 // RowCount returns the number of rows in the result set.

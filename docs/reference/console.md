@@ -60,6 +60,7 @@ Statements end with `;` and may span lines (the prompt changes to `·`). Dot com
 | `.maxwidth [COUNT]` | columns to draw within (0: the terminal width) |
 | `.nullvalue STRING` | how NULL is written |
 | `.headers on\|off` | csv header row |
+| `.receipts on\|off` | keep a [run receipt](#run-receipts) for each read in this session (off when the console opens) |
 | `.columns` / `.rows` | one line per column, or rows as rows (the default) |
 | `.tables [PATTERN]` | tables and views of the current connection |
 | `.schema [PATTERN]` | CREATE statements of the current connection |
@@ -70,6 +71,10 @@ Statements end with `;` and may span lines (the prompt changes to `·`). Dot com
 | `.exit`, `.quit` | leave the console |
 
 Some DuckDB CLI commands (for example `.shell`) are refused with an explanation. `.conn` is a dot command, so it only works at a fresh prompt, not in the middle of a multi-line statement.
+
+## Run receipts
+
+A receipt is a small file that says a question was asked and what it touched: the statement, the connections, the columns, how many rows and a fingerprint of them. It never holds a row. A console does not keep receipts until you type `.receipts on`; the choice is for that console only and is not remembered, so a new console starts off. While it is on the prompt shows `[receipts]` (`ws ▸ D [receipts] `), and each plain read (a `SELECT`, `WITH ... SELECT`, `FROM`, `VALUES`, `TABLE` or `EXPLAIN`, one statement) ends with a dim `receipt r_...` line. A write, a script, `EXPLAIN ANALYZE`, a dot command (`.schema`, `.tables`) and a failed statement keep none. The receipt covers the rows the statement returned to the console (up to 10,000), not the lines drawn. A statement that looks like a credential is kept as its hash only. Receipts live in `.slaw-local/receipts/` (machine-local, git-ignored, never bundled); see [privacy](../privacy.md). `.receipts` alone says whether they are on, and the command answers "not available here" when the receipts folder could not be opened.
 
 ## History
 

@@ -166,5 +166,5 @@ export function useArtifactRuns(o: ArtifactRunsOptions) {
 }
 
 function toResult(res: A2UIQueryResult | undefined): LiveQueryResult {
-  return { columns: res?.columns ?? [], types: res?.types ?? [], rows: res?.rows ?? [] }
+  return { columns: res?.columns ?? [], types: res?.types ?? [], rows: res?.rows ?? [], receipt_id: res?.receipt_id }
 }
