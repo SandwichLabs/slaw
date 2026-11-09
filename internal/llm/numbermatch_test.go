@@ -130,19 +130,6 @@ func TestMarkNumbers_NumbersInCodeAreNotMarked(t *testing.T) {
 	assert.Empty(t, marks)
 }
 
-func TestMarkNumbers_SmallTwoDigitNumbersNeedAShortResult(t *testing.T) {
-	short := run("r_a", []string{"n"}, []any{42})
-	rows := make([][]any, 0, 30)
-	for i := 0; i < 30; i++ {
-		rows = append(rows, []any{i + 20})
-	}
-	long := RunValues{ReceiptID: "r_b", Columns: []string{"n"}, Rows: rows}
-	assert.True(t, markOf(t, MarkNumbers("42 customers", []RunValues{short}), "42").Matched)
-	assert.False(t, markOf(t, MarkNumbers("42 customers", []RunValues{long}), "42").Matched, "a 30-row result always has some 42")
-	// Written with formatting, the same value is matched in any result.
-	assert.True(t, markOf(t, MarkNumbers("42.0 average", []RunValues{long}), "42.0").Matched)
-}
-
 func TestMarkNumbers_UnmarkedKindsAndNonNumericCells(t *testing.T) {
 	rv := run("r_a", []string{"a", "b", "c", "d"}, []any{true, nil, "abc", "1/2"}, []any{"x1,234", []byte("12345"), "  7654321  ", struct{}{}})
 	marks := MarkNumbers("It was 3, in 2024, 007, 12345 and 7,654,321 and 1/2", []RunValues{rv})

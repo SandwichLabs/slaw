@@ -63,7 +63,7 @@ describe('AgentTranscript number marks', () => {
     // Code and links are never decorated.
     expect(md.find('code .num-ok, a .num-ok, code button, a button').exists()).toBe(false)
     const legend = w.get('[data-testid="agent-number-legend"]').text()
-    expect(legend).toContain('matches a query result')
+    expect(legend).toContain('matches a value in a query result')
     expect(legend).toContain('not from a query')
   })
 

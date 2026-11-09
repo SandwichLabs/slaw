@@ -12,7 +12,7 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
     - the statement as written and as run, and the parameter values;
     - the connections, each with a snapshot fact (replayable, live only or not recorded);
     - the columns, the rows shown and a keyed fingerprint of them.
-  - It never holds a result row, a credential, a path, a bucket or a host. It stays on this computer, and is never in git or a bundle.
+  - It never holds a result row or a credential, and its connection facts never hold a path, a bucket or a host. The statement is kept as you wrote it, so a file path you typed stays in it. It stays on this computer, and is never in git or a bundle.
   - **Evidence** opens a drawer with the receipt from the Query Explorer, notebook SQL cells, metric Try it and every A2UI stat, table and chart. `slaw receipts show` and `slaw receipts list` print the same.
   - Settings > Workspace > Receipts and `slaw receipts settings` control whether parameter values are kept and how long receipts are kept (30 days, 20,000 or 64 MB by default). **Delete all receipts** and `slaw receipts clear` remove them.
   - The agent's read tools return a `receipt_id` to cite, and `get_receipt` returns the agent's own receipts.

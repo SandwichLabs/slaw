@@ -10,7 +10,7 @@ import ToolStepChip from './ToolStepChip.vue'
 import A2UIPage from '../a2ui/A2UIPage.vue'
 import { computed } from 'vue'
 import { renderMarkdown, type ChatMessage, type ToolStep } from '../composables/useAgentChat'
-import { decorateNumbers } from '../lib/numberMarks'
+import { decorateNumbers, type Decorated } from '../lib/numberMarks'
 import { openEvidence } from '../composables/useEvidenceDrawer'
 
 const props = defineProps<{ messages: ChatMessage[]; compact?: boolean }>()
@@ -20,11 +20,23 @@ const emit = defineEmits<{ resolve: [step: ToolStep, ok: boolean]; openNotebook:
 // numbers drawn over the text: a check after a number a read of this turn showed,
 // a dotted mark under one that is not from a query (lib/numberMarks.ts). Nothing
 // is decorated while the answer streams.
-const answers = computed(() => props.messages.map((m) => {
+// A finished message is rendered once, keyed on its text and the identity of its
+// numbers, so a streaming delta re-renders only the message that is streaming.
+const rendered = new WeakMap<object, { text: string; numbers: unknown; view: Decorated }>()
+function answerOf(m: ChatMessage): Decorated {
   if (m.role === 'user' || m.role === 'error' || !m.text) return { html: '', matched: 0, unmatched: 0 }
-  const html = renderMarkdown(m.text)
-  return m.streaming || !m.numbers?.length ? { html, matched: 0, unmatched: 0 } : decorateNumbers(html, m.numbers)
-}))
+  const draw = (): Decorated => {
+    const html = renderMarkdown(m.text)
+    return m.streaming || !m.numbers?.length ? { html, matched: 0, unmatched: 0 } : decorateNumbers(html, m.numbers)
+  }
+  if (m.streaming) return draw()
+  const hit = rendered.get(m)
+  if (hit && hit.text === m.text && hit.numbers === m.numbers) return hit.view
+  const view = draw()
+  rendered.set(m, { text: m.text, numbers: m.numbers, view })
+  return view
+}
+const answers = computed(() => props.messages.map(answerOf))
 
 // A check opens the evidence of the read that showed the number.
 function onAnswerClick(e: MouseEvent) {
@@ -48,8 +60,8 @@ function onAnswerClick(e: MouseEvent) {
       <template v-else-if="m.text">
         <div class="agent-text agent-md slaw-content slaw-md-content" data-testid="agent-answer" @click="onAnswerClick" v-html="answers[i].html"></div>
         <p v-if="answers[i].matched || answers[i].unmatched" class="agent-legend" data-testid="agent-number-legend">
-          <span v-if="answers[i].matched"><span class="legend-check" aria-hidden="true">&#10003;</span> matches a query result</span>
-          <span v-if="answers[i].unmatched"><span class="legend-dot" aria-hidden="true">12</span> not from a query</span>
+          <span v-if="answers[i].matched"><span class="legend-check" aria-hidden="true">&#10003;</span> matches a value in a query result</span>
+          <span v-if="answers[i].unmatched"><span class="legend-dot" aria-hidden="true">n</span> not from a query</span>
         </p>
       </template>
       <p v-else-if="m.streaming && !m.cancelled" class="agent-text agent-dim">Thinking…</p>

@@ -112,7 +112,7 @@ function textNodes(root: Node): Text[] {
 /** The tooltip of a matched number: where it was found. */
 function matchTitle(mark: NumberMark): string {
   const col = (mark.column ?? '').slice(0, 80)
-  return col ? `Matches a query result (column ${col}). Open evidence.` : 'Matches a query result. Open evidence.'
+  return col ? `Matches a value in a query result (column ${col}). Open evidence.` : 'Matches a value in a query result. Open evidence.'
 }
 
 /**
@@ -152,7 +152,7 @@ export function decorateNumbers(html: string, marks: NumberMark[] | undefined): 
         btn.className = 'num-check'
         btn.textContent = '✓'
         btn.title = matchTitle(mark)
-        btn.setAttribute('aria-label', `${t.text} matches a query result. Open evidence`)
+        btn.setAttribute('aria-label', `${t.text} matches a value in a query result. Open evidence`)
         btn.setAttribute('data-receipt', mark.receiptId as string)
         frag.append(btn)
         matched++

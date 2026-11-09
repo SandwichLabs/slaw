@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"math"
 	"math/big"
 	"regexp"
 	"strings"
@@ -35,11 +36,22 @@ import (
 // 1233.5 up to 1234.5; 1.2M is 1,150,000 up to 1,250,000; 12.5% is 12.45 up to
 // 12.55). The unit of a suffixed number is its last digit times the suffix, and
 // its tolerance is also capped at 5% of T, so "1M" is not every value from half
-// a million up. A % number matches v as written (12% is 12) or as a fraction
-// (12% is 0.12). The sign must agree. A number of two digits and no other
-// formatting matches only in a read that showed at most 10 rows, since in a
-// longer result some cell is always that number. Only numeric cells count: a
-// number, or text that is wholly a plain decimal number.
+// a million up. A % number matches v as written (12% is 12) or, for a cell
+// that is a fraction (|v| < 1 and not 0), as that fraction times 100 (12% is
+// 0.12). The sign must agree. Only numeric cells count: a number, or text that
+// is wholly a plain decimal number. Three guards keep a coincidence from
+// reading as evidence:
+//   - Identifier columns are never matched: a column named id or ending in
+//     _id, _key or _pk (any case), or an integer column whose shown values
+//     (three or more) are all distinct and consecutive, which is a row number
+//     or a key, whatever it is called.
+//   - The value must be unique: a read with two or more cells a number
+//     matches does not vouch for it.
+//   - In a read that showed more than 10 rows, only a specific number can
+//     match: four or more significant digits (1,843,210) or a decimal with two
+//     or more places as written (12.47, 3.25%). Shorter numbers, `214` or
+//     `45%` or `$87`, are in any long result by chance. In a read of 10 rows
+//     or fewer a number of any length can match, if it is unique.
 //
 // The numbers are tokenised by the same rules in the panel (lib/numberMarks.ts);
 // testdata/number_tokens.json pins both.
@@ -64,16 +76,29 @@ type NumberMark struct {
 const (
 	maxMarks        = 200
 	maxCellsPerRun  = 20000
-	smallResultRows = 10
+	shortResultRows = 10
 )
 
 // number is one written number the rules above recognise.
 type number struct {
-	text      string
-	value     *big.Rat // T, with its sign and its suffix applied
-	half      *big.Rat // the tolerance
-	percent   bool
-	smallBare bool // two digits, nothing else: needs a short result
+	text     string
+	value    *big.Rat // T, with its sign and its suffix applied
+	half     *big.Rat // the tolerance
+	percent  bool
+	specific bool // enough digits to match in a long result
+	valueF   float64
+	halfF    float64
+}
+
+// specificNumber reports whether a number is specific enough to match in a read
+// of more than shortResultRows rows: four or more significant digits, or two or
+// more decimal places as written.
+func specificNumber(intPart, frac string) bool {
+	if len(frac) >= 3 { // ".dd"
+		return true
+	}
+	digits := strings.TrimLeft(intPart+strings.TrimPrefix(frac, "."), "0")
+	return len(digits) >= 4
 }
 
 var numberRE = regexp.MustCompile(`[-+\x{2212}]?[$\x{20AC}\x{00A3}\x{00A5}]?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?( ?(?i:thousand|million|billion|trillion)|[KkMBT]|bn)?%?`)
@@ -140,7 +165,9 @@ func parseNumber(text string, m []int) (number, bool) {
 			half = fifth
 		}
 	}
-	return number{text: whole, value: v, half: half, percent: percent, smallBare: bare && len(intPart) == 2}, true
+	vf, _ := v.Float64()
+	hf, _ := half.Float64()
+	return number{text: whole, value: v, half: half, percent: percent, specific: specificNumber(intPart, frac), valueF: vf, halfF: hf}, true
 }
 
 // ignoredBare reports whether a number written with no formatting at all is
@@ -195,10 +222,11 @@ func rightBoundaryOK(text string, end int) bool {
 }
 
 // matches reports whether number n is the value v (in one reading) within n's
-// tolerance.
-func (n number) matches(v *big.Rat) bool {
+// tolerance. frac says v is a fraction (|v| < 1, not 0), the only kind of cell a
+// % number reads times 100.
+func (n number) matches(v *big.Rat, frac bool) bool {
 	readings := []*big.Rat{v}
-	if n.percent {
+	if n.percent && frac {
 		readings = append(readings, new(big.Rat).Mul(v, big.NewRat(100, 1)))
 	}
 	for _, c := range readings {
@@ -264,12 +292,113 @@ func floatRat(f float64) *big.Rat {
 	return r
 }
 
+// cell is one numeric cell of a read, converted once for the whole answer.
+type cell struct {
+	v    *big.Rat
+	f    float64
+	frac bool // |v| < 1 and not 0
+	col  int
+}
+
+// preparedRun is a read with its numeric, non-identifier cells converted.
+type preparedRun struct {
+	id      string
+	columns []string
+	rows    int
+	cells   []cell
+}
+
+// identifierSuffixes end the name of a column that holds a key, not a measure.
+var identifierSuffixes = []string{"_id", "_key", "_pk"}
+
+func identifierName(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	if n == "id" {
+		return true
+	}
+	for _, s := range identifierSuffixes {
+		if strings.HasSuffix(n, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// consecutiveInts reports whether every row of column ci is an integer, there are
+// at least three, and together they are distinct and consecutive: a row number
+// or a key whatever it is called.
+func consecutiveInts(rows [][]any, ci int) bool {
+	if len(rows) < 3 {
+		return false
+	}
+	seen := make(map[int64]struct{}, len(rows))
+	lo, hi := int64(0), int64(0)
+	for i, row := range rows {
+		if ci >= len(row) {
+			return false
+		}
+		v := cellValue(row[ci])
+		if v == nil || !v.IsInt() || !v.Num().IsInt64() {
+			return false
+		}
+		n := v.Num().Int64()
+		if i == 0 || n < lo {
+			lo = n
+		}
+		if i == 0 || n > hi {
+			hi = n
+		}
+		seen[n] = struct{}{}
+	}
+	return len(seen) == len(rows) && hi-lo == int64(len(rows)-1)
+}
+
+// prepareRuns converts each read's cells once.
+func prepareRuns(runs []RunValues) []preparedRun {
+	out := make([]preparedRun, 0, len(runs))
+	for _, run := range runs {
+		if run.ReceiptID == "" {
+			continue
+		}
+		pr := preparedRun{id: run.ReceiptID, columns: run.Columns, rows: len(run.Rows)}
+		width := len(run.Columns)
+		for _, row := range run.Rows {
+			if len(row) > width {
+				width = len(row)
+			}
+		}
+		skip := make([]bool, width)
+		for ci := 0; ci < width; ci++ {
+			skip[ci] = (ci < len(run.Columns) && identifierName(run.Columns[ci])) || consecutiveInts(run.Rows, ci)
+		}
+		for _, row := range run.Rows {
+			for ci, c := range row {
+				if len(pr.cells) >= maxCellsPerRun {
+					break
+				}
+				if skip[ci] {
+					continue
+				}
+				v := cellValue(c)
+				if v == nil {
+					continue
+				}
+				f, _ := v.Float64()
+				pr.cells = append(pr.cells, cell{v: v, f: f, frac: v.Sign() != 0 && new(big.Rat).Abs(v).Cmp(big.NewRat(1, 1)) < 0, col: ci})
+			}
+		}
+		out = append(out, pr)
+	}
+	return out
+}
+
 // MarkNumbers marks each distinct number of answer: matched, with the first
 // read of the turn (in the order they ran) that showed a value it matches and
 // that value's column, or not matched. runs are this turn's reads only.
 func MarkNumbers(answer string, runs []RunValues) []NumberMark {
 	var marks []NumberMark
 	seen := map[string]bool{}
+	var prepared []preparedRun
 	for _, n := range tokenize(maskMarkdown(answer)) {
 		if seen[n.text] {
 			continue
@@ -278,8 +407,11 @@ func MarkNumbers(answer string, runs []RunValues) []NumberMark {
 			break
 		}
 		seen[n.text] = true
+		if prepared == nil {
+			prepared = prepareRuns(runs)
+		}
 		mk := NumberMark{Text: n.text}
-		if id, col, ok := firstMatch(n, runs); ok {
+		if id, col, ok := firstMatch(n, prepared); ok {
 			mk.Matched, mk.ReceiptID, mk.Column = true, id, col
 		}
 		marks = append(marks, mk)
@@ -287,29 +419,38 @@ func MarkNumbers(answer string, runs []RunValues) []NumberMark {
 	return marks
 }
 
-// firstMatch is the first run, in order, with a cell n matches.
-func firstMatch(n number, runs []RunValues) (receiptID, column string, ok bool) {
-	for _, run := range runs {
-		if run.ReceiptID == "" || (n.smallBare && len(run.Rows) > smallResultRows) {
+// count is how many cells of run n matches, and the column of the first.
+func (n number) count(run preparedRun) (count, firstCol int) {
+	tol := n.halfF*(1+1e-9) + math.Abs(n.valueF)*1e-12
+	for _, c := range run.cells {
+		near := math.Abs(c.f-n.valueF) <= tol || (n.percent && c.frac && math.Abs(c.f*100-n.valueF) <= tol)
+		if !near || !n.matches(c.v, c.frac) {
 			continue
 		}
-		cells := 0
-		for _, row := range run.Rows {
-			for ci, c := range row {
-				if cells++; cells > maxCellsPerRun {
-					break
-				}
-				v := cellValue(c)
-				if v == nil || !n.matches(v) {
-					continue
-				}
-				col := ""
-				if ci < len(run.Columns) {
-					col = run.Columns[ci]
-				}
-				return run.ReceiptID, col, true
-			}
+		if count == 0 {
+			firstCol = c.col
 		}
+		count++
+	}
+	return count, firstCol
+}
+
+// firstMatch is the first run, in order, whose shown cells vouch for n: exactly
+// one cell matches it, and in a long read n is specific.
+func firstMatch(n number, runs []preparedRun) (receiptID, column string, ok bool) {
+	for _, run := range runs {
+		if run.rows > shortResultRows && !n.specific {
+			continue
+		}
+		count, ci := n.count(run)
+		if count != 1 {
+			continue
+		}
+		col := ""
+		if ci < len(run.columns) {
+			col = run.columns[ci]
+		}
+		return run.id, col, true
 	}
 	return "", "", false
 }
