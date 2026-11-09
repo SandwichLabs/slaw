@@ -16,6 +16,9 @@ type walkState struct {
 	readers readerCount
 	reason  string
 	summary int // inside SUMMARIZE
+	// definition marks reason as about the statement itself (a table or
+	// connection that does not exist), true in every tier: see sqlVerdict.Definition.
+	kind defKind
 }
 
 func (st *walkState) fail(format string, args ...any) {
@@ -415,6 +418,9 @@ func (a *analyzer) resolveRef(catalogName, schema, table string, st *walkState) 
 	if catalogName == "" && schema == "" && pgViewNames[strings.ToLower(table)] {
 		st.fail("%s", pgCatalogMsg)
 		return
+	}
+	if st.reason == "" && unresolvedTableIsMissing(catalogName, schema, table) {
+		st.kind = kindMissing
 	}
 	st.fail("%s", unresolvedTableDeniedMsg(catalogName, schema, table))
 }

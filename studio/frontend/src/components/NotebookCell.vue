@@ -113,7 +113,7 @@ const emit = defineEmits<{
                 :title="shapeOf(cell) && !viewFit(v, shapeOf(cell)!).ok ? viewFit(v, shapeOf(cell)!).why : VIEW_HINTS[v]"
               >{{ VIEW_LABELS[v] }}{{ shapeOf(cell) && !viewFit(v, shapeOf(cell)!).ok ? ' (won\'t fit)' : '' }}</option>
             </select>
-            <button @click="emit('run')" :disabled="cell.running" class="btn btn-primary btn-sm" data-testid="run-cell">
+            <button @click="emit('run')" :disabled="cell.running || !cell.source.trim()" :title="cell.source.trim() ? undefined : 'Write a query first'" class="btn btn-primary btn-sm" data-testid="run-cell">
               <Icon name="play" :size="12" /> {{ cell.running ? 'Running…' : 'Run' }}
             </button>
           </template>

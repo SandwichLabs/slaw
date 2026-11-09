@@ -8,7 +8,7 @@
  */
 import { ref, nextTick, type Ref } from 'vue'
 import { App } from '../lib/bindings'
-import { runLiveQuery } from '../a2ui/query'
+import { runLiveQuery, EMPTY_QUERY_MESSAGE } from '../a2ui/query'
 import { createSlawEditor } from './useSlawEditor'
 import { useAiCellDialog, type EnvelopeCell } from './useAiCellDialog'
 import { bestView, describeShape } from '../lib/notebookViews'
@@ -105,6 +105,12 @@ export function useNotebookCells(opts: { onDelete: (id: string) => void }) {
 
   async function runCell(cell: CellState) {
     if (cell.type !== 'sql') return
+    // An empty cell has nothing to run: say so here instead of sending a blank
+    // statement through the read-only gate (which would refuse it, #3).
+    if (!cell.source.trim()) {
+      cell.result = { columns: [], types: [], rows: [], error: EMPTY_QUERY_MESSAGE }
+      return
+    }
     cell.running = true
     const signal = loadAbort?.signal
     // 'high' priority (review fix, step 4a round 2 #5): a notebook sql cell's

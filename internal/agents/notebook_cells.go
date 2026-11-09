@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/SandwichLabs/slaw/internal/a2ui"
+	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/notebooks"
 )
 
@@ -121,12 +122,14 @@ func (h *Handler) vetNotebookSQL(ctx context.Context, rawConnection, sqlStr, wha
 	if verr != nil {
 		return "", &sqlVetFailure{ErrInternal, verr.Error()}
 	}
-	if err := h.sandboxFor(ctx).checkSQLClassReadOnly(v.Class, v.Reason); err != nil {
-		h.logger.Debug("notebook sql denied", "reason", v.Reason)
-		msg := fmt.Sprintf("%s are read-only queries: %v", what, withConnectError(err, connectErr))
-		if v.Reason != "" {
-			msg += ": " + v.Reason
+	if err := h.sandboxFor(ctx).checkSQLClassReadOnly(v); err != nil {
+		// A statement-level reason can quote the statement: log only the digest.
+		if v.Kind&defStatement != 0 {
+			h.logger.Debug("notebook sql denied", "query_sha256", engine.QueryDigest(sqlStr))
+		} else {
+			h.logger.Debug("notebook sql denied", "reason", v.Reason)
 		}
+		msg := fmt.Sprintf("%s are read-only queries: %s", what, denialWithReason(withConnectError(err, connectErr), v.Reason))
 		return "", &sqlVetFailure{ErrPermission, msg}
 	}
 	if v.Statements > 1 {

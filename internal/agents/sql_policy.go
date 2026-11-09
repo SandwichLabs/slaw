@@ -183,7 +183,7 @@ func (a *analyzer) defaultCatalog() string { return strings.ToLower(a.catalog().
 func (a *analyzer) script(bound string, args []any) *sqlVerdict {
 	stmts := lexStatements(bound)
 	if len(stmts) == 0 {
-		return deny("the statement is empty")
+		return denyDefinition("the statement is empty")
 	}
 	// Heads first, before DuckDB's parser sees the text: some statements do
 	// work at parse time (IMPORT DATABASE reads its schema file), and the
@@ -195,7 +195,7 @@ func (a *analyzer) script(bound string, args []any) *sqlVerdict {
 	}
 	n, err := countStatements(bound)
 	if err != nil {
-		return deny(fmt.Sprintf("%s: %s", couldntVerifyMsg, parseFailure(err, bound)))
+		return parseDenial(err, bound)
 	}
 	if n != len(stmts) {
 		for _, toks := range stmts {
@@ -478,7 +478,7 @@ func (a *analyzer) readOrWith(toks []lexTok, args []any) *sqlVerdict {
 	text := a.textOf(toks)
 	doc, err := serializeSQL(a.ctx, text)
 	if err != nil {
-		return deny(fmt.Sprintf("%s: %s", couldntVerifyMsg, parseFailure(err, text)))
+		return parseDenial(err, text)
 	}
 	if !doc.Error && len(doc.Statements) == 1 {
 		return a.read(doc.Statements[0], toks, text, args)
@@ -499,13 +499,13 @@ func (a *analyzer) read(stmt map[string]any, toks []lexTok, text string, args []
 	collectCTENames(stmt, w.cte)
 	a.walk(stmt, w)
 	if w.reason != "" {
-		return deny(w.reason)
+		return planDenial(w.reason, w.kind)
 	}
 	// No string net here: the AST is authoritative for sources (BASE_TABLE and
 	// TABLE_FUNCTION nodes; a VALUE_CONSTANT is never a source), so a read-only
 	// query may carry path- or URL-looking values.
-	if r := planCheck(a.ctx, a.db, text, args, w.readers); r != "" {
-		return deny(r)
+	if r, kind := planCheck(a.ctx, a.db, text, args, w.readers); r != "" {
+		return planDenial(r, kind)
 	}
 	return &sqlVerdict{Class: sqlClassRead, readers: w.readers}
 }
