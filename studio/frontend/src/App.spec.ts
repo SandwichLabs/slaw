@@ -8,9 +8,20 @@ import { router } from './router/index'
 import { register, _resetForTests as resetSaves } from './composables/usePendingSaves'
 
 const handlers: Record<string, (p?: any) => void> = {}
+const listeners: Record<string, Array<(p?: any) => void>> = {}
 let eventsBroken = false
 vi.mock('./wailsjs/runtime/runtime', () => ({
-  EventsOn: (name: string, cb: (p?: any) => void) => { if (eventsBroken) throw new Error('no runtime'); handlers[name] = cb; return () => { delete handlers[name] } },
+  EventsOn: (name: string, cb: (p?: any) => void) => {
+    if (eventsBroken) throw new Error('no runtime')
+    // Several listeners per event, as in the app (the shell's Evidence drawer listens too).
+    const list = (listeners[name] ??= [])
+    list.push(cb)
+    handlers[name] = (p?: any) => list.slice().forEach((f) => f(p))
+    return () => {
+      list.splice(list.indexOf(cb), 1)
+      if (list.length === 0) delete handlers[name]
+    }
+  },
   EventsOff: () => {},
   WindowSetTitle: () => {},
 }))
@@ -54,6 +65,7 @@ describe('App.vue', () => {
     _resetForTests()
     resetSaves()
     for (const k of Object.keys(handlers)) delete handlers[k]
+    for (const k of Object.keys(listeners)) delete listeners[k]
     await router.push('/')
     await router.isReady()
   })

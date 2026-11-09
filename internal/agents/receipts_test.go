@@ -193,6 +193,7 @@ func TestReceipts_RenderSurfaceThroughRunReadOnlySQLIn(t *testing.T) {
 	require.True(t, truncated)
 	require.Len(t, rs.Rows, 4)
 	require.NotEmpty(t, rs.ReceiptID)
+	assert.Empty(t, rs.ReceiptNote, "a kept receipt needs no note")
 
 	r := only(t, m)
 	assert.Equal(t, rs.ReceiptID, r.ID)
@@ -297,11 +298,16 @@ func TestReceipts_AFailingStoreStillReturnsTheResult(t *testing.T) {
 	rs, _, err := fx.h.RunReadOnlySQLIn(context.Background(), "", "SELECT 1 AS a", nil, 10)
 	require.NoError(t, err)
 	assert.Empty(t, rs.ReceiptID)
+	assert.Equal(t, string(receipts.NoteNotKept), rs.ReceiptNote, "the drawer says why: a reason class, not the error")
 	assert.Len(t, rs.Rows, 1)
 }
 
 func TestReceipts_NoRecorderMeansNoReceiptID(t *testing.T) {
 	fx := newPolicyFixture(t, ModeReadOnly)
+	rs, _, err := fx.h.RunReadOnlySQLIn(context.Background(), "", "SELECT 1 AS a", nil, 10)
+	require.NoError(t, err)
+	assert.Empty(t, rs.ReceiptID)
+	assert.Equal(t, string(receipts.NoteUnavailable), rs.ReceiptNote)
 	resp := fx.call("run_query", map[string]any{"sql": "SELECT 1 AS a"})
 	require.Nil(t, resp.Error)
 	assert.NotContains(t, mapOf(t, resp.Result), "receipt_id")

@@ -13,7 +13,7 @@ import { heatLevel, toMatrix } from './series'
 import { formatNumber } from '../lib/formatCell'
 
 const props = defineProps<{ component: A2UIComponentT }>()
-const { loading, error, table } = useChartData(() => props.component)
+const { loading, error, table, result } = useChartData(() => props.component)
 const m = computed(() => toMatrix(table.value))
 const ncols = computed(() => m.value.colLabels.length)
 const flat = computed(() => m.value.cells.flat().map((v) => v ?? 0))
@@ -50,7 +50,7 @@ const readout = computed(() => {
 </script>
 
 <template>
-  <A2UIChartFrame kind="heatmap" :label="component.label" :sql="isBound(component)" :loading="loading" :error="error" :empty="m.rowLabels.length === 0" :animated="enabled" @replay="replay">
+  <A2UIChartFrame :result="result" :title="component.label || component.id" kind="heatmap" :label="component.label" :sql="isBound(component)" :loading="loading" :error="error" :empty="m.rowLabels.length === 0" :animated="enabled" @replay="replay">
     <div class="a2ui-kchart__readout" aria-live="polite">{{ readout }}</div>
     <div class="a2ui-heatmap" :style="gridStyle" role="img" :aria-label="ariaLabel">
       <template v-for="(rl, r) in m.rowLabels" :key="'r' + r">

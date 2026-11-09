@@ -40,7 +40,7 @@ export function useNotebookEditor() {
   // click-to-dismiss shape as infoMessage, plus a 4s auto-dismiss timeout.
   const statusMessage = ref('')
 
-  const nb = useNotebookCells({ onDelete: (id) => save.tombstone(id) })
+  const nb = useNotebookCells({ onDelete: (id) => save.tombstone(id), notebookId: () => save.id() })
   const { cells } = nb
   const save = useNotebookSave({
     title, cells,

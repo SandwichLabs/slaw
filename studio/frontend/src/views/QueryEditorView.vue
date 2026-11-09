@@ -23,7 +23,7 @@ const {
   qp, queries, selectedId, sqlText, result, loading, running, cancelled, error, showSaveModal, saveTitle, errorMessage,
   statusMessage, showConfirmDelete, pendingDeleteId, hoveredId, conflict, conflictBusy,
   lastRunAt, lastRunOk, ranOn, conn, dirty, currentTitle, truncated, formattedRows,
-  selectQuery, runQuery, stopQuery, saveQuery, resolveConflict, exportResults, askAgent, deleteQuery,
+  selectQuery, runQuery, showEvidence, stopQuery, saveQuery, resolveConflict, exportResults, askAgent, deleteQuery,
   confirmDeleteQuery, newQuery,
 } = useQueryEditor()
 
@@ -156,6 +156,7 @@ useModalKeys(showSaveModal, () => { showSaveModal.value = false }, saveModalEl)
           <span v-else class="badge badge--error" data-testid="run-badge"><span class="dot"></span> Error</span>
           <span v-if="result"><span class="big ok">{{ result.total_rows.toLocaleString() }}</span> rows</span>
           <span v-if="result"><span class="big">{{ result.duration }}</span></span>
+          <span v-if="result && (result.receipt_id || result.receipt_note)"><button type="button" class="ev-link" data-testid="query-evidence" aria-label="Show evidence for this result" @click="showEvidence">Evidence</button></span>
           <span data-testid="run-engine"><Icon name="zap" :size="11" style="color: var(--sh-success); vertical-align: middle;" /> DuckDB<template v-if="ranOn"> · {{ ranOn }}</template></span>
           <span class="spacer"></span>
           <span data-testid="run-last">Last run · {{ lastRunAt }}</span>

@@ -262,6 +262,8 @@ sandbox-gated classifier as a notebook sql cell. An optional `connection`
 (v2) sets the default catalog for the binding's unqualified names, exactly as
 on a sql cell.
 
+Each `sql`-bound component, and each sql cell, has an **Evidence** button once its run has a receipt: a small document icon (**Show evidence for TITLE**) on a `stat`, `table`, `barChart`, `lineChart` and the KINETIC charts, and an **Evidence** link in a sql cell's footer. It opens the Evidence drawer ([receipts](receipts.md#evidence-reading-a-receipt)); inline data has no run and no button. A notebook's runs tell Go which cell and component asked, so the receipt's ref names them.
+
 ### Chart axes
 
 `lineChart`, `areaChart`, `barChart` and `columnChart` draw a value axis with

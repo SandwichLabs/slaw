@@ -18,12 +18,13 @@ import (
 
 var receiptsCmd = &cobra.Command{
 	Use:   "receipts",
-	Short: "Settings for run receipts, and deleting them",
+	Short: "Read run receipts, set how long they are kept, delete them",
 	Long: `A receipt records that a question was asked and what it touched: the SQL, the
 connections, the shape of the result and a fingerprint of it, never a result
 value. Receipts stay in .slaw-local/receipts/ on this computer and never go
 into git or a .slaw bundle.
 
+"show" and "list" read them, the same sections Studio's Evidence drawer shows.
 "settings" shows or changes how long they are kept (your own setting for this
 workspace, kept outside the folder); "clear" deletes them all. These mirror
 Settings > Workspace > Receipts in Studio.`,

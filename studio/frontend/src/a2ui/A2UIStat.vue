@@ -6,6 +6,7 @@ import type { A2UIComponentT } from './types'
 import { colorClass, isBound } from './query'
 import { useLiveQuery } from './useLiveQuery'
 import { formatCell } from '../lib/formatCell'
+import A2UIEvidence from './A2UIEvidence.vue'
 
 const props = defineProps<{ component: A2UIComponentT }>()
 const { loading, error, fetched, data } = useLiveQuery(() => props.component)
@@ -35,7 +36,7 @@ const displayValue = computed(() => {
 
 <template>
   <div class="a2ui-stat" :class="colorClass(component.color)">
-    <div class="a2ui-stat__label">{{ component.label }}</div>
+    <div class="a2ui-stat__label">{{ component.label }}<A2UIEvidence :result="data" :title="component.label || component.id" /></div>
     <div class="a2ui-stat__value">{{ displayValue }}</div>
     <div v-if="component.detail" class="a2ui-stat__detail">{{ component.detail }}</div>
     <div v-if="isBound(component) && error" class="a2ui-error">QUERY ERROR: {{ error }}</div>

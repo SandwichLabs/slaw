@@ -42,7 +42,8 @@ export interface CellState {
   page: A2UIPageT | null
   // Runtime-only (never saved):
   lastRunSource: string | null
-  result: { columns: string[]; types: string[]; rows: any[][]; error?: string } | null
+  // receipt_id / receipt_note: the run's receipt, or why it has none (the Evidence button)
+  result: { columns: string[]; types: string[]; rows: any[][]; error?: string; receipt_id?: string; receipt_note?: ReceiptNote } | null
   running: boolean
   mdPreview: boolean
   // SQL drawer / a2ui card definition open. Runtime-only, never saved (not

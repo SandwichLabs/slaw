@@ -55,7 +55,7 @@ describe('useLiveQuery', () => {
     setApp({ RunA2UIQueryIn: inCatalog, RunA2UIQuery: plain })
     host({ id: 'a', type: 'table', sql: 'SELECT 1', connection: 'prod_pg' } as A2UIComponentT)
     await flushPromises()
-    expect(inCatalog).toHaveBeenCalledWith('SELECT 1', 'prod_pg')
+    expect(inCatalog).toHaveBeenCalledWith('SELECT 1', 'prod_pg', { kind: '' })
     expect(plain).not.toHaveBeenCalled()
   })
 

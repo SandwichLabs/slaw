@@ -5,6 +5,7 @@
 // or a bundle. Text interpolation only.
 import { onMounted, onUnmounted } from 'vue'
 import Icon from './Icon.vue'
+import RecentReceipts from './RecentReceipts.vue'
 import { useReceiptSettings, usageLine } from '../composables/useReceiptSettings'
 import { hasWailsRuntime } from '../lib/wails'
 import { EventsOn } from '../wailsjs/runtime/runtime'
@@ -78,6 +79,8 @@ onUnmounted(() => off?.())
           <button class="btn btn-destructive" type="button" :disabled="busy || info.usage.count === 0" data-testid="receipt-clear" @click="clearAll">Delete all receipts…</button>
           <span v-if="message" class="sh-body" role="status" style="font-weight: 600; color: var(--sh-teal-lo);" data-testid="receipt-message">{{ message }}</span>
         </div>
+
+        <RecentReceipts :count="info.usage.count" />
 
         <div class="note info">
           <Icon name="info" :size="16" />

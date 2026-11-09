@@ -73,7 +73,9 @@ func (h *Handler) RunReadOnlySQLIn(ctx context.Context, connection, sqlStr strin
 	}
 	// The rows are final here: the probe row, DuckLake internal rows and the cap
 	// are already gone, so the receipt describes what the caller shows.
-	rs.ReceiptID = h.finishReceipt(rctx, rs.Rows, truncated, len(rs.Rows))
+	var note receipts.Note
+	rs.ReceiptID, note = h.finishReceiptNote(rctx, rs.Rows, truncated, len(rs.Rows))
+	rs.ReceiptNote = string(note)
 	return rs, truncated, nil
 }
 

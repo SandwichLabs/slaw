@@ -13,7 +13,7 @@ import { polar, seriesClass, toSeries } from './series'
 import { formatNumber } from '../lib/formatCell'
 
 const props = defineProps<{ component: A2UIComponentT }>()
-const { loading, error, table } = useChartData(() => props.component)
+const { loading, error, table, result } = useChartData(() => props.component)
 const data = computed(() => toSeries(table.value))
 const n = computed(() => data.value.labels.length)
 const flat = computed(() => data.value.series.flatMap((s) => s.values))
@@ -54,7 +54,7 @@ const ariaLabel = computed(() => `Radar chart over ${n.value} axes (${data.value
 </script>
 
 <template>
-  <A2UIChartFrame
+  <A2UIChartFrame :result="result" :title="component.label || component.id"
     kind="radar" :label="component.label" :sql="isBound(component)" :loading="loading" :error="error"
     :empty="n < 3 || data.series.length === 0" :animated="enabled" :legend="data.series.map((s) => s.name)"
     @replay="replay"

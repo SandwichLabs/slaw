@@ -56,8 +56,15 @@ func (h *Handler) withIntent(ctx context.Context, surface receipts.Surface, src 
 // returns its id ("" when none was made). It never fails a run: a store that
 // cannot be written was logged and the result goes out without an id.
 func (h *Handler) finishReceipt(ctx context.Context, shown [][]any, truncated bool, total int) string {
-	id, _ := receipts.Finish(ctx, h.receipts, shown, truncated, total)
+	id, _ := h.finishReceiptNote(ctx, shown, truncated, total)
 	return id
+}
+
+// finishReceiptNote is finishReceipt that also says why there is no receipt
+// when one was due (the render-time reads' drawer shows it).
+func (h *Handler) finishReceiptNote(ctx context.Context, shown [][]any, truncated bool, total int) (string, receipts.Note) {
+	id, err := receipts.Finish(ctx, h.receipts, shown, truncated, total)
+	return id, receipts.NoteFor(h.receipts, id, err)
 }
 
 // ArtifactOrigin is the origin of an artifact's query run: the artifact surface

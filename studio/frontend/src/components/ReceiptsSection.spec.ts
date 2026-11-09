@@ -25,6 +25,7 @@ function makeApp(first: ReceiptSettingsInfo, after?: ReceiptSettingsInfo) {
     GetReceiptSettings: vi.fn(async () => current),
     SetReceiptSettings: vi.fn(async () => { if (after) current = after }),
     ClearReceipts: vi.fn(async () => { current = info({ usage: { count: 0, bytes: 0, oldest: '' } }) }),
+    ListReceipts: vi.fn(async () => []),
   }
   ;(globalThis as any).window = (globalThis as any).window || {}
   ;(window as any).go = { main: { App: app } }

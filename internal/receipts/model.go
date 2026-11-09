@@ -17,13 +17,16 @@ import (
 // Surface is where a run came from.
 type Surface string
 
-// The surfaces. "render" is an A2UI component or a notebook SQL cell: Go cannot
-// tell them apart until a later slice passes a source.
+// The surfaces. "render" is an A2UI component or a notebook SQL cell that came
+// with no source (chat, say); with one, RunA2UIQueryIn says which: a notebook
+// cell is "notebook_cell", an A2UI component "a2ui".
 const (
 	SurfaceQueryEditor     Surface = "query_editor"
 	SurfaceConsole         Surface = "console"
 	SurfaceCLIQuery        Surface = "cli_query"
 	SurfaceRender          Surface = "render"
+	SurfaceNotebookCell    Surface = "notebook_cell"
+	SurfaceA2UI            Surface = "a2ui"
 	SurfaceArtifact        Surface = "artifact"
 	SurfaceMetric          Surface = "metric"
 	SurfaceAssertion       Surface = "assertion"
@@ -52,6 +55,7 @@ const (
 	SourceMetric        SourceKind = "metric"
 	SourceArtifactQuery SourceKind = "artifact_query"
 	SourceCell          SourceKind = "cell"
+	SourceComponent     SourceKind = "component"
 )
 
 // Verdict is what the SQL policy said: read for a policy-gated run, unchecked
@@ -190,7 +194,7 @@ func invalid(format string, a ...any) error {
 // Valid reports whether s is a known surface.
 func (s Surface) Valid() bool {
 	switch s {
-	case SurfaceQueryEditor, SurfaceConsole, SurfaceCLIQuery, SurfaceRender, SurfaceArtifact, SurfaceMetric,
+	case SurfaceQueryEditor, SurfaceConsole, SurfaceCLIQuery, SurfaceRender, SurfaceNotebookCell, SurfaceA2UI, SurfaceArtifact, SurfaceMetric,
 		SurfaceAssertion, SurfaceWatch, SurfaceAgentRunQuery, SurfaceAgentSavedQuery, SurfaceAgentPreview:
 		return true
 	}
@@ -203,7 +207,7 @@ func (a Actor) Valid() bool { return a == ActorPerson || a == ActorAgent }
 // Valid reports whether k is a known source kind or empty.
 func (k SourceKind) Valid() bool {
 	switch k {
-	case "", SourceSQL, SourceSavedQuery, SourceMetric, SourceArtifactQuery, SourceCell:
+	case "", SourceSQL, SourceSavedQuery, SourceMetric, SourceArtifactQuery, SourceCell, SourceComponent:
 		return true
 	}
 	return false

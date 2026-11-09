@@ -2,6 +2,27 @@ package main
 
 import "github.com/SandwichLabs/slaw/internal/workspace"
 
+// --- Evidence (the drawer, and `slaw receipts show|list`) ---
+
+// GetReceipt returns one receipt by id: what was asked and what it touched,
+// never a result value. An id with no receipt is an error.
+func (a *App) GetReceipt(id string) (Receipt, error) {
+	ws, _, _, err := a.snapshot()
+	if err != nil {
+		return Receipt{}, err
+	}
+	return getReceipt(ws, id)
+}
+
+// ListReceipts returns the newest receipts, one line each, newest first.
+func (a *App) ListReceipts(filter ReceiptFilter) (ReceiptListing, error) {
+	ws, _, _, err := a.snapshot()
+	if err != nil {
+		return ReceiptListing{}, err
+	}
+	return listReceipts(ws, filter)
+}
+
 // --- Receipts settings (Settings > Workspace > Receipts) ---
 
 // GetReceiptSettings returns this person's receipt settings, the values in

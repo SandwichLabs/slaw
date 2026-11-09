@@ -103,3 +103,19 @@ func (m *Mock) Clear() error {
 	m.byID = map[string]Receipt{}
 	return nil
 }
+
+// List returns the newest receipts, newest first, narrowed by the filter.
+func (m *Mock) List(f ListFilter) ([]Summary, bool, error) {
+	all := m.All()
+	out := make([]Summary, 0, len(all))
+	for _, r := range all {
+		if f.Surface == "" || r.Surface == f.Surface {
+			out = append(out, Summarize(r))
+		}
+	}
+	sortNewest(out)
+	if lim := f.limit(); len(out) > lim {
+		out = out[:lim]
+	}
+	return out, false, nil
+}
