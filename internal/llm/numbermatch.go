@@ -67,8 +67,11 @@ type RunValues struct {
 // NumberMark is the verdict on one distinct number as written in an answer.
 // Every occurrence of the same text has the same verdict.
 type NumberMark struct {
-	Text      string `json:"text"`
-	Matched   bool   `json:"matched"`
+	Text    string `json:"text"`
+	Matched bool   `json:"matched"`
+	// Withheld: a shown value is this number, but it could be a coincidence (a
+	// long read, a repeated value, an identifier column), so it is left unmarked.
+	Withheld  bool   `json:"withheld,omitempty"`
 	ReceiptID string `json:"receiptId,omitempty"`
 	Column    string `json:"column,omitempty"`
 }
@@ -294,13 +297,14 @@ func floatRat(f float64) *big.Rat {
 
 // cell is one numeric cell of a read, converted once for the whole answer.
 type cell struct {
-	v    *big.Rat
-	f    float64
-	frac bool // |v| < 1 and not 0
-	col  int
+	v     *big.Rat
+	f     float64
+	frac  bool // |v| < 1 and not 0
+	col   int
+	ident bool // in an identifier column: it never vouches, but it is a shown value
 }
 
-// preparedRun is a read with its numeric, non-identifier cells converted.
+// preparedRun is a read with its numeric cells converted.
 type preparedRun struct {
 	id      string
 	columns []string
@@ -376,15 +380,12 @@ func prepareRuns(runs []RunValues) []preparedRun {
 				if len(pr.cells) >= maxCellsPerRun {
 					break
 				}
-				if skip[ci] {
-					continue
-				}
 				v := cellValue(c)
 				if v == nil {
 					continue
 				}
 				f, _ := v.Float64()
-				pr.cells = append(pr.cells, cell{v: v, f: f, frac: v.Sign() != 0 && new(big.Rat).Abs(v).Cmp(big.NewRat(1, 1)) < 0, col: ci})
+				pr.cells = append(pr.cells, cell{v: v, f: f, frac: v.Sign() != 0 && new(big.Rat).Abs(v).Cmp(big.NewRat(1, 1)) < 0, col: ci, ident: skip[ci]})
 			}
 		}
 		out = append(out, pr)
@@ -394,7 +395,9 @@ func prepareRuns(runs []RunValues) []preparedRun {
 
 // MarkNumbers marks each distinct number of answer: matched, with the first
 // read of the turn (in the order they ran) that showed a value it matches and
-// that value's column, or not matched. runs are this turn's reads only.
+// that value's column; withheld (a shown value is that number, but a guard keeps
+// the check back, so it is left unmarked); or unmatched (no shown cell is it:
+// "not from a query"). runs are this turn's reads only.
 func MarkNumbers(answer string, runs []RunValues) []NumberMark {
 	var marks []NumberMark
 	seen := map[string]bool{}
@@ -411,20 +414,38 @@ func MarkNumbers(answer string, runs []RunValues) []NumberMark {
 			prepared = prepareRuns(runs)
 		}
 		mk := NumberMark{Text: n.text}
-		if id, col, ok := firstMatch(n, prepared); ok {
+		id, col, v := firstMatch(n, prepared)
+		switch v {
+		case verdictMatched:
 			mk.Matched, mk.ReceiptID, mk.Column = true, id, col
+		case verdictWithheld:
+			mk.Withheld = true
 		}
 		marks = append(marks, mk)
 	}
 	return marks
 }
 
-// count is how many cells of run n matches, and the column of the first.
-func (n number) count(run preparedRun) (count, firstCol int) {
+// verdict is what a number's reads say of it.
+type verdict int
+
+const (
+	verdictUnmatched verdict = iota // no shown cell is this number
+	verdictWithheld                 // a shown cell is, but a guard keeps the check back
+	verdictMatched
+)
+
+// count is how many cells outside identifier columns of run n matches, the
+// column of the first, and whether any cell at all (an identifier's too) does.
+func (n number) count(run preparedRun) (count, firstCol int, any bool) {
 	tol := n.halfF*(1+1e-9) + math.Abs(n.valueF)*1e-12
 	for _, c := range run.cells {
 		near := math.Abs(c.f-n.valueF) <= tol || (n.percent && c.frac && math.Abs(c.f*100-n.valueF) <= tol)
 		if !near || !n.matches(c.v, c.frac) {
+			continue
+		}
+		any = true
+		if c.ident {
 			continue
 		}
 		if count == 0 {
@@ -432,27 +453,31 @@ func (n number) count(run preparedRun) (count, firstCol int) {
 		}
 		count++
 	}
-	return count, firstCol
+	return count, firstCol, any
 }
 
 // firstMatch is the first run, in order, whose shown cells vouch for n: exactly
-// one cell matches it, and in a long read n is specific.
-func firstMatch(n number, runs []preparedRun) (receiptID, column string, ok bool) {
+// one cell outside an identifier column matches it, and in a long read n is
+// specific. When no run vouches but some shown cell is n, the verdict is
+// withheld, not unmatched.
+func firstMatch(n number, runs []preparedRun) (receiptID, column string, v verdict) {
+	v = verdictUnmatched
 	for _, run := range runs {
-		if run.rows > shortResultRows && !n.specific {
+		count, ci, any := n.count(run)
+		if !any {
 			continue
 		}
-		count, ci := n.count(run)
-		if count != 1 {
+		if (run.rows > shortResultRows && !n.specific) || count != 1 {
+			v = verdictWithheld
 			continue
 		}
 		col := ""
 		if ci < len(run.columns) {
 			col = run.columns[ci]
 		}
-		return run.id, col, true
+		return run.id, col, verdictMatched
 	}
-	return "", "", false
+	return "", "", v
 }
 
 // RunValuesFrom reads a read tool call's result (run_query, run_saved_query

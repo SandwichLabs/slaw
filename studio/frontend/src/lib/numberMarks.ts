@@ -13,6 +13,8 @@
 export interface NumberMark {
   text: string
   matched: boolean
+  /** A shown value is this number but could be a coincidence: no mark at all. */
+  withheld?: boolean
   receiptId?: string
   column?: string
 }
@@ -124,7 +126,7 @@ function matchTitle(mark: NumberMark): string {
  */
 export function decorateNumbers(html: string, marks: NumberMark[] | undefined): Decorated {
   const byText = new Map<string, NumberMark>()
-  for (const m of marks ?? []) if (m && typeof m.text === 'string') byText.set(m.text, m)
+  for (const m of marks ?? []) if (m && typeof m.text === 'string' && !m.withheld) byText.set(m.text, m)
   if (byText.size === 0) return { html, matched: 0, unmatched: 0 }
   const tpl = document.createElement('template')
   tpl.innerHTML = html

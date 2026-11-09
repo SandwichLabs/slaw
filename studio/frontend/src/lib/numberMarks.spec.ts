@@ -90,6 +90,21 @@ describe('decorateNumbers', () => {
     expect(box.querySelector('button')!.title).toContain('"><b>x</b>')
   })
 
+  it('leaves a withheld number with no mark, and dots only the unmatched', () => {
+    const html = '<p>R3 sold 121 units, the top was 233, not 4,567.</p>'
+    const d = decorateNumbers(html, [
+      { text: '121', matched: false, withheld: true },
+      { text: '233', matched: false, withheld: true },
+      none('4,567'),
+    ])
+    expect(d.matched).toBe(0)
+    expect(d.unmatched).toBe(1)
+    const box = document.createElement('div')
+    box.innerHTML = d.html
+    expect(Array.from(box.querySelectorAll('.num-none')).map((e) => e.textContent)).toEqual(['4,567'])
+    expect(box.textContent).toBe('R3 sold 121 units, the top was 233, not 4,567.')
+  })
+
   it('returns the html untouched with no marks', () => {
     expect(decorateNumbers('<p>1,234</p>', undefined)).toEqual({ html: '<p>1,234</p>', matched: 0, unmatched: 0 })
     expect(decorateNumbers('<p>1,234</p>', [])).toEqual({ html: '<p>1,234</p>', matched: 0, unmatched: 0 })
