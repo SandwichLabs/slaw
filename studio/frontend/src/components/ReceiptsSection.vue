@@ -9,7 +9,7 @@ import { useReceiptSettings, usageLine } from '../composables/useReceiptSettings
 import { hasWailsRuntime } from '../lib/wails'
 import { EventsOn } from '../wailsjs/runtime/runtime'
 
-const { info, keepParams, days, maxCount, maxMB, busy, message, error, dirty, refresh, save, clearAll } = useReceiptSettings()
+const { info, keepParams, days, maxCount, maxMB, busy, message, error, clamped, dirty, refresh, save, clearAll } = useReceiptSettings()
 
 let off: (() => void) | null = null
 onMounted(() => {
@@ -43,28 +43,31 @@ onUnmounted(() => off?.())
           <div>
             <label class="field-label" for="receipt-days">Keep for</label>
             <div class="row" style="gap: var(--sh-space-2);">
-              <input id="receipt-days" v-model="days" class="field-input" type="number" inputmode="numeric" min="1" style="width: 7rem;" aria-describedby="receipt-limits-h" data-testid="receipt-days" />
+              <input id="receipt-days" v-model="days" class="field-input" type="number" inputmode="numeric" min="1" :placeholder="String(info.defaults.days)" style="width: 7rem;" aria-describedby="receipt-limits-h" data-testid="receipt-days" />
               <span class="sh-meta">days</span>
             </div>
           </div>
           <div>
             <label class="field-label" for="receipt-count">At most</label>
             <div class="row" style="gap: var(--sh-space-2);">
-              <input id="receipt-count" v-model="maxCount" class="field-input" type="number" inputmode="numeric" min="1" style="width: 8rem;" aria-describedby="receipt-limits-h" data-testid="receipt-count" />
+              <input id="receipt-count" v-model="maxCount" class="field-input" type="number" inputmode="numeric" min="1" :placeholder="String(info.defaults.maxCount)" style="width: 8rem;" aria-describedby="receipt-limits-h" data-testid="receipt-count" />
               <span class="sh-meta">receipts</span>
             </div>
           </div>
           <div>
             <label class="field-label" for="receipt-mb">Using at most</label>
             <div class="row" style="gap: var(--sh-space-2);">
-              <input id="receipt-mb" v-model="maxMB" class="field-input" type="number" inputmode="numeric" min="1" style="width: 7rem;" aria-describedby="receipt-limits-h" data-testid="receipt-mb" />
+              <input id="receipt-mb" v-model="maxMB" class="field-input" type="number" inputmode="numeric" min="1" :placeholder="String(info.defaults.maxMB)" style="width: 7rem;" aria-describedby="receipt-limits-h" data-testid="receipt-mb" />
               <span class="sh-meta">MB</span>
             </div>
           </div>
         </div>
         <div id="receipt-limits-h" class="help" data-testid="receipt-limits-help">
-          Defaults: {{ info.defaults.days }} days, {{ info.defaults.maxCount.toLocaleString() }} receipts, {{ info.defaults.maxMB }} MB. Allowed: {{ info.floors.days }} to {{ info.ceilings.days }} days, {{ info.floors.maxCount.toLocaleString() }} to {{ info.ceilings.maxCount.toLocaleString() }} receipts, {{ info.floors.maxMB }} to {{ info.ceilings.maxMB.toLocaleString() }} MB. A number outside its range is moved to the nearest one when you save.
+          Defaults: {{ info.defaults.days }} days, {{ info.defaults.maxCount.toLocaleString() }} receipts, {{ info.defaults.maxMB }} MB. Allowed: {{ info.floors.days }} to {{ info.ceilings.days }} days, {{ info.floors.maxCount.toLocaleString() }} to {{ info.ceilings.maxCount.toLocaleString() }} receipts, {{ info.floors.maxMB }} to {{ info.ceilings.maxMB.toLocaleString() }} MB. A blank box is the default; a number outside its range is moved to the nearest one when you save. Zero and negative numbers are refused.
         </div>
+
+        <div class="help" data-testid="receipt-effective">In force: {{ info.effective.days }} days, {{ info.effective.maxCount.toLocaleString() }} receipts, {{ info.effective.maxMB }} MB, parameter values {{ info.effective.keepParams ? 'kept' : 'not kept' }}.</div>
+        <div v-for="n in clamped" :key="n" class="help" role="status" style="font-weight: 600;" data-testid="receipt-clamped">{{ n }}.</div>
 
         <div class="sh-body" role="status" style="font-weight: 600;" data-testid="receipt-usage">{{ usageLine(info.usage) }}</div>
 

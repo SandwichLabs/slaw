@@ -18,13 +18,17 @@ export function useReceiptSettings() {
   const busy = ref(false)
   const message = ref('')
   const error = ref('')
+  // Which limits Go moved to a bound on the last save.
+  const clamped = ref<string[]>([])
 
+  // The boxes show what is saved: a blank one is "the default" (the placeholder
+  // names it), so saving one change never pins the others to today's defaults.
   function fill(i: ReceiptSettingsInfo) {
     info.value = i
-    keepParams.value = i.effective.keepParams
-    days.value = String(i.effective.days)
-    maxCount.value = String(i.effective.maxCount)
-    maxMB.value = String(i.effective.maxMB)
+    keepParams.value = i.settings.keepParams
+    days.value = i.settings.days ? String(i.settings.days) : ''
+    maxCount.value = i.settings.maxCount ? String(i.settings.maxCount) : ''
+    maxMB.value = i.settings.maxMB ? String(i.settings.maxMB) : ''
   }
 
   async function refresh() {
@@ -37,16 +41,35 @@ export function useReceiptSettings() {
     }
   }
 
-  // A blank or non-numeric box means "the default" (0 is unset in Go).
-  const num = (v: string) => { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n > 0 ? n : 0 }
+  // A blank box is the default (0 in Go). Anything else must be a positive whole
+  // number; null says it is not (0 and negatives are refused, never the default).
+  const num = (raw: string | number): number | null => {
+    const v = String(raw ?? '')
+    if (v.trim() === '') return 0
+    const n = Number(v)
+    return Number.isInteger(n) && n > 0 ? n : null
+  }
 
   async function save() {
+    const d = num(days.value), c = num(maxCount.value), m = num(maxMB.value)
+    if (d === null || c === null || m === null) {
+      error.value = 'Each limit must be a positive whole number, or blank for the default.'
+      message.value = ''
+      return
+    }
     busy.value = true
     error.value = ''
     message.value = ''
     try {
-      await App.SetReceiptSettings({ keepParams: keepParams.value, days: num(days.value), maxCount: num(maxCount.value), maxMB: num(maxMB.value) })
+      await App.SetReceiptSettings({ keepParams: keepParams.value, days: d, maxCount: c, maxMB: m })
       await refresh()
+      const st = info.value?.settings
+      const rows: Array<[string, number, number, string]> = st
+        ? [['Keep for', d, st.days, 'days'], ['At most', c, st.maxCount, 'receipts'], ['Using at most', m, st.maxMB, 'MB']]
+        : []
+      clamped.value = rows
+        .filter(([, typed, saved]) => typed !== 0 && typed !== saved)
+        .map(([label, typed, saved, unit]) => `${label} ${typed} was outside the allowed range; ${saved} ${unit} is in force`)
       message.value = 'Saved. A lower limit removes the oldest receipts now.'
     } catch (e) {
       error.value = errorText(e)
@@ -77,12 +100,12 @@ export function useReceiptSettings() {
 
   // Unsaved edits, compared with what is in force.
   const dirty = computed(() => {
-    const e = info.value?.effective
+    const e = info.value?.settings
     if (!e) return false
     return keepParams.value !== e.keepParams || num(days.value) !== e.days || num(maxCount.value) !== e.maxCount || num(maxMB.value) !== e.maxMB
   })
 
-  return { info, keepParams, days, maxCount, maxMB, busy, message, error, dirty, refresh, save, clearAll }
+  return { info, keepParams, days, maxCount, maxMB, busy, message, error, clamped, dirty, refresh, save, clearAll }
 }
 
 /** "12.3 MB", "4.0 KB" or "512 bytes". */

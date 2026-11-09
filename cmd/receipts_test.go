@@ -94,7 +94,10 @@ func TestReceiptsSettings_RefusesBadFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "on or off")
 	_, _, err = runSlaw("receipts", "settings", "--workspace", root, "--days", "0")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "positive")
+	assert.Contains(t, err.Error(), "positive whole number")
+	assert.Contains(t, err.Error(), "default")
+	_, _, err = runSlaw("receipts", "settings", "--workspace", root, "--max-mb", "lots")
+	require.Error(t, err)
 	_, _, err = runSlaw("receipts", "settings", "--workspace", root, "--days", "-3")
 	require.Error(t, err)
 }

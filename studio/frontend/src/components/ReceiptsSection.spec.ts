@@ -10,7 +10,7 @@ import { resolveConfirmChoice, confirmVisible, confirmMessage } from '../composa
 function info(over: Partial<ReceiptSettingsInfo> = {}): ReceiptSettingsInfo {
   const d = { keepParams: true, days: 30, maxCount: 20000, maxMB: 64 }
   return {
-    settings: { ...d }, effective: { ...d }, defaults: { ...d },
+    settings: { keepParams: true, days: 0, maxCount: 0, maxMB: 0 }, effective: { ...d }, defaults: { ...d },
     floors: { keepParams: true, days: 1, maxCount: 100, maxMB: 1 },
     ceilings: { keepParams: true, days: 365, maxCount: 200000, maxMB: 1024 },
     usage: { count: 12, bytes: 3 << 20, oldest: '2026-10-20T10:00:00Z' },
@@ -46,9 +46,14 @@ describe('ReceiptsSection', () => {
     expect(w.text()).toContain('This computer')
     expect(w.text()).toContain('.slaw-local/receipts/')
     expect((w.find('[data-testid="receipt-keep-params"]').element as HTMLInputElement).checked).toBe(true)
-    expect((w.find('[data-testid="receipt-days"]').element as HTMLInputElement).value).toBe('30')
-    expect((w.find('[data-testid="receipt-count"]').element as HTMLInputElement).value).toBe('20000')
-    expect((w.find('[data-testid="receipt-mb"]').element as HTMLInputElement).value).toBe('64')
+    // Nothing saved: blank boxes whose placeholders name the defaults, and the
+    // value in force is shown beside them.
+    for (const [id, def] of [['receipt-days', '30'], ['receipt-count', '20000'], ['receipt-mb', '64']]) {
+      const el = w.find(`[data-testid="${id}"]`).element as HTMLInputElement
+      expect(el.value).toBe('')
+      expect(el.placeholder).toBe(def)
+    }
+    expect(w.find('[data-testid="receipt-effective"]').text()).toContain('In force: 30 days, 20,000 receipts, 64 MB, parameter values kept')
     const help = w.find('[data-testid="receipt-limits-help"]').text()
     expect(help).toContain('Defaults: 30 days')
     expect(help).toContain('1 to 365 days')
@@ -58,7 +63,7 @@ describe('ReceiptsSection', () => {
   })
 
   it('saves what was typed, then shows the value Go put in force', async () => {
-    const app = makeApp(info(), info({ effective: { keepParams: false, days: 365, maxCount: 100, maxMB: 8 } }))
+    const app = makeApp(info(), info({ settings: { keepParams: false, days: 365, maxCount: 100, maxMB: 8 }, effective: { keepParams: false, days: 365, maxCount: 100, maxMB: 8 } }))
     const w = await mountIt()
     expect(w.find('[data-testid="receipt-save"]').attributes('disabled')).toBeDefined()
     await w.find('[data-testid="receipt-keep-params"]').setValue(false)
@@ -70,16 +75,40 @@ describe('ReceiptsSection', () => {
     expect(app.SetReceiptSettings).toHaveBeenCalledWith({ keepParams: false, days: 9999, maxCount: 5, maxMB: 8 })
     expect((w.find('[data-testid="receipt-days"]').element as HTMLInputElement).value).toBe('365')
     expect((w.find('[data-testid="receipt-count"]').element as HTMLInputElement).value).toBe('100')
+    const notes = w.findAll('[data-testid="receipt-clamped"]').map((n) => n.text())
+    expect(notes).toHaveLength(2)
+    expect(notes[0]).toContain('Keep for 9999 was outside the allowed range; 365 days is in force')
     expect(w.find('[data-testid="receipt-message"]').text()).toContain('Saved')
   })
 
   it('a blank box saves as the default (0), not as a mistake', async () => {
-    const app = makeApp(info())
+    const app = makeApp(info({ settings: { keepParams: true, days: 7, maxCount: 0, maxMB: 0 } }))
     const w = await mountIt()
     await w.find('[data-testid="receipt-days"]').setValue('')
     await w.find('[data-testid="receipt-save"]').trigger('click')
     await flushPromises()
-    expect(app.SetReceiptSettings).toHaveBeenCalledWith({ keepParams: true, days: 0, maxCount: 20000, maxMB: 64 })
+    expect(app.SetReceiptSettings).toHaveBeenCalledWith({ keepParams: true, days: 0, maxCount: 0, maxMB: 0 })
+  })
+
+  it('a zero, negative or fractional limit is refused, not turned into the default', async () => {
+    const app = makeApp(info())
+    const w = await mountIt()
+    for (const bad of ['0', '-3', '2.5']) {
+      await w.find('[data-testid="receipt-days"]').setValue(bad)
+      await w.find('[data-testid="receipt-save"]').trigger('click')
+      await flushPromises()
+      expect(w.find('[data-testid="receipt-error"]').text()).toContain('positive whole number')
+    }
+    expect(app.SetReceiptSettings).not.toHaveBeenCalled()
+  })
+
+  it('saving one change keeps the other limits blank, not pinned to the defaults', async () => {
+    const app = makeApp(info())
+    const w = await mountIt()
+    await w.find('[data-testid="receipt-mb"]').setValue('8')
+    await w.find('[data-testid="receipt-save"]').trigger('click')
+    await flushPromises()
+    expect(app.SetReceiptSettings).toHaveBeenCalledWith({ keepParams: true, days: 0, maxCount: 0, maxMB: 8 })
   })
 
   it('Delete all receipts asks first and does nothing on Cancel', async () => {

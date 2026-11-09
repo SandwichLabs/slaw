@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,8 +41,10 @@ save it (the others keep their value) and print the result.
   --max-count N          keep at most N receipts (100 to 200000; default 20000)
   --max-mb N             keep at most N megabytes (1 to 1024; default 64)
 
-A value outside its range is moved to the nearest bound and the result says so.
-Lowering a limit deletes the oldest receipts above it. The consoles keep no
+Each number must be positive; pass the word "default" to go back to the default
+(0 and negative numbers are refused). A positive value outside its range is moved
+to the nearest bound and the result says so. Lowering a limit deletes the oldest
+receipts above it before the command returns. The consoles keep no
 receipts unless you type .receipts on. See ` + docRef("receipts"),
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
@@ -62,9 +65,9 @@ to skip the question (needed when there is no terminal).`,
 func init() {
 	f := receiptsSettingsCmd.Flags()
 	f.String("keep-params", "", "keep bound parameter values: on or off")
-	f.Int("days", 0, "keep a receipt for this many days")
-	f.Int("max-count", 0, "keep at most this many receipts")
-	f.Int("max-mb", 0, "keep at most this many megabytes")
+	f.String("days", "", "keep a receipt for this many days, or default")
+	f.String("max-count", "", "keep at most this many receipts, or default")
+	f.String("max-mb", "", "keep at most this many megabytes, or default")
 	f.Bool("json", false, "output as JSON")
 	receiptsClearCmd.Flags().Bool("yes", false, "delete without asking")
 	for _, c := range []*cobra.Command{receiptsSettingsCmd, receiptsClearCmd} {
@@ -90,7 +93,7 @@ func runReceiptsSettings(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	defer ws.Close()
-	next, changed, err := receiptsFlagsApplied(cmd, workspace.StoredReceiptSettings(ws.Local()))
+	next, changed, err := receiptsFlagsApplied(cmd, workspace.ReceiptSettingsNow(ws))
 	if err != nil {
 		return err
 	}
@@ -100,9 +103,10 @@ func runReceiptsSettings(cmd *cobra.Command, _ []string) error {
 		if err := workspace.SetLocalReceipts(ws, next); err != nil {
 			return err
 		}
+		notes = append(notes, pruneNow(ws)...)
 	}
 	out := receiptsSettingsOut{
-		Settings:  workspace.StoredReceiptSettings(ws.Local()),
+		Settings:  workspace.ReceiptSettingsNow(ws),
 		Effective: workspace.SettingsOf(workspace.ReceiptPolicy(ws.Local())),
 		Notes:     notes,
 	}
@@ -144,14 +148,54 @@ func receiptsFlagsApplied(cmd *cobra.Command, cur workspace.ReceiptSettings) (wo
 		if !fl.Changed(p.flag) {
 			continue
 		}
-		n, _ := fl.GetInt(p.flag)
-		if n <= 0 {
-			return cur, false, fmt.Errorf("--%s must be a positive number", p.flag)
+		v, _ := fl.GetString(p.flag)
+		n, err := parseLimit(v)
+		if err != nil {
+			return cur, false, fmt.Errorf("--%s: %w", p.flag, err)
 		}
 		*p.to = n
 		changed = true
 	}
 	return cur, changed, nil
+}
+
+// parseLimit reads a limit flag: a positive whole number, or "default" (0 in
+// the settings, which means unset). 0 and negatives are refused, so a typo is
+// never silently the default.
+func parseLimit(v string) (int, error) {
+	if strings.EqualFold(strings.TrimSpace(v), "default") {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("%q is not a positive whole number; use \"default\" to go back to the default", v)
+	}
+	return n, nil
+}
+
+// pruneWait bounds how long `settings` waits to delete receipts a lowered
+// limit no longer allows.
+const pruneWait = 5 * time.Second
+
+// pruneNow applies the policy in force to the store before the command exits (a
+// short-lived process would otherwise close before the background prune ran).
+// It waits at most pruneWait; a timeout or failure is a note, never an error.
+func pruneNow(ws workspace.Workspace) []string {
+	rec := ws.Receipts()
+	if rec == nil {
+		return nil
+	}
+	done := make(chan error, 1)
+	go func() { done <- rec.Store().Prune(workspace.ReceiptPolicy(ws.Local())) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			return []string{"older receipts will be removed the next time Slaw prunes (" + err.Error() + ")"}
+		}
+	case <-time.After(pruneWait):
+		return []string{"older receipts were not removed yet; they will be the next time Slaw prunes"}
+	}
+	return nil
 }
 
 // clampNotes names each limit that Go moved to a bound.

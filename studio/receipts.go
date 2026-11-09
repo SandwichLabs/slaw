@@ -39,7 +39,7 @@ type ReceiptSettingsInfo struct {
 // receiptSettingsInfo reads the saved settings, the recorder's policy and usage.
 func receiptSettingsInfo(ws workspace.Workspace) ReceiptSettingsInfo {
 	info := ReceiptSettingsInfo{
-		Settings:  workspace.StoredReceiptSettings(ws.Local()),
+		Settings:  workspace.ReceiptSettingsNow(ws),
 		Effective: workspace.SettingsOf(workspace.ReceiptPolicy(ws.Local())),
 		Defaults:  workspace.ReceiptDefaults(),
 		Floors:    workspace.ReceiptFloors(),
@@ -50,6 +50,7 @@ func receiptSettingsInfo(ws workspace.Workspace) ReceiptSettingsInfo {
 		return info
 	}
 	info.Available = true
+	info.Effective = workspace.SettingsOf(rec.Policy()) // asks the settings file first
 	n, size, oldest := rec.Store().Usage()
 	info.Usage = ReceiptUsage{Count: n, Bytes: size}
 	if !oldest.IsZero() {

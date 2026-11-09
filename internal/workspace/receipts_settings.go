@@ -3,6 +3,7 @@ package workspace
 import (
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/SandwichLabs/slaw/internal/receipts"
@@ -118,4 +119,77 @@ func SetLocalReceipts(ws Workspace, s ReceiptSettings) error {
 	}
 	ws.Receipts().SetPolicy(ReceiptPolicy(ws.Local()))
 	return nil
+}
+
+// localReceiptsCache remembers the last good read of the settings file, keyed by
+// its modification time and size, so asking before every receipt is one stat.
+type localReceiptsCache struct {
+	mod  time.Time
+	size int64
+	lr   LocalReceipts
+	ok   bool
+}
+
+// freshLocalReceipts reads this person's receipt settings from the settings file
+// on disk, not from the copy loaded at open, so a change another process made
+// shows. ok is false when there is no usable file: none, unreadable, invalid, or
+// not made for this folder (untrusted); callers then keep what they have.
+func (w *workspace) freshLocalReceipts() (LocalReceipts, bool) {
+	w.mu.RLock()
+	id, untrusted := w.cfg.ID, w.localUntrusted
+	w.mu.RUnlock()
+	if untrusted || w.configDir == "" {
+		return LocalReceipts{}, false
+	}
+	path := w.localPath(id)
+	fi, err := os.Stat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return LocalReceipts{}, false
+	}
+	w.rsMu.Lock()
+	defer w.rsMu.Unlock()
+	if c := w.rsCache; c.ok && c.mod.Equal(fi.ModTime()) && c.size == fi.Size() {
+		return c.lr, true
+	}
+	data, found, err := readOptional(path)
+	if err != nil || !found {
+		return LocalReceipts{}, false
+	}
+	l, err := ParseLocalConfig(data)
+	if err != nil || (l.Nonce != "" && l.Nonce != w.readNonce()) {
+		return LocalReceipts{}, false
+	}
+	w.rsCache = localReceiptsCache{mod: fi.ModTime(), size: fi.Size(), lr: l.Receipts, ok: true}
+	return l.Receipts, true
+}
+
+// receiptPolicySource is the receipts.PolicySource of this workspace.
+func (w *workspace) receiptPolicySource() (receipts.Policy, bool) {
+	lr, ok := w.freshLocalReceipts()
+	if !ok {
+		return receipts.Policy{}, false
+	}
+	return ReceiptPolicy(LocalConfig{Receipts: lr}), true
+}
+
+// reapplyReceiptPolicy hands an open recorder the policy after a reload
+// (TrustLocal, Reload). An untrusted file keeps the policy in force: a reload
+// that cannot trust the file must not drop a running process to the defaults.
+func (w *workspace) reapplyReceiptPolicy(untrusted bool) {
+	rc := w.openRecorder()
+	if rc == nil || untrusted {
+		return
+	}
+	rc.SetPolicy(ReceiptPolicy(w.Local()))
+}
+
+// ReceiptSettingsNow is what this person has saved, read from disk now when ws
+// can (a change made by another process shows); otherwise the loaded copy.
+func ReceiptSettingsNow(ws Workspace) ReceiptSettings {
+	if f, ok := ws.(interface{ freshLocalReceipts() (LocalReceipts, bool) }); ok {
+		if lr, ok := f.freshLocalReceipts(); ok {
+			return StoredReceiptSettings(LocalConfig{Receipts: lr})
+		}
+	}
+	return StoredReceiptSettings(ws.Local())
 }

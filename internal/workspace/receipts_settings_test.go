@@ -120,3 +120,36 @@ func TestSetLocalReceipts_NeverReachesTheFolder(t *testing.T) {
 		return nil
 	}))
 }
+
+// Two handles on one workspace (Studio and the CLI): a change one saves reaches
+// the other's recorder before its next receipt or prune.
+func TestReceiptSettings_AnotherHandlesChangeReachesARunningRecorder(t *testing.T) {
+	a, root := newWorkspace(t)
+	b, err := Open(root, WithConfigDir(configDirOf(t, a)), WithUserConfig(UserConfig{Version: ConfigVersion}))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = b.Close() })
+	require.Equal(t, receipts.DefaultPolicy(), a.Receipts().Policy())
+
+	require.NoError(t, SetLocalReceipts(b, ReceiptSettings{KeepParams: false, Days: 365}))
+	got := a.Receipts().Policy()
+	assert.Equal(t, 365*24*time.Hour, got.MaxAge, "A's next prune keeps 31-day-old receipts")
+	assert.False(t, got.KeepParams)
+	assert.Equal(t, ReceiptSettings{KeepParams: false, Days: 365}, ReceiptSettingsNow(a), "reads fresh from disk, not the loaded copy")
+	assert.Equal(t, ReceiptSettings{KeepParams: true}, StoredReceiptSettings(a.Local()), "the loaded copy is stale until a reload")
+}
+
+// A reload re-applies the policy to an open recorder, and an untrusted file
+// keeps the policy in force instead of dropping to the defaults.
+func TestReceiptSettings_ReloadReappliesAndUntrustedKeepsThePolicy(t *testing.T) {
+	ws, _ := newWorkspace(t)
+	require.NoError(t, SetLocalReceipts(ws, ReceiptSettings{KeepParams: true, Days: 90}))
+	require.Equal(t, 90*24*time.Hour, ws.Receipts().Policy().MaxAge)
+
+	require.NoError(t, ws.Reload())
+	assert.Equal(t, 90*24*time.Hour, ws.Receipts().Policy().MaxAge)
+
+	require.NoError(t, os.Remove(filepath.Join(ws.Root(), ".slaw-local", "nonce")))
+	require.NoError(t, ws.Reload())
+	require.False(t, ws.LocalTrusted())
+	assert.Equal(t, 90*24*time.Hour, ws.Receipts().Policy().MaxAge, "an untrusted file never falls back to stricter defaults mid-run")
+}

@@ -245,7 +245,11 @@ type workspace struct {
 	pr proposals.Store
 
 	rcOnce sync.Once
+	rcMu   sync.Mutex // guards rc, which is set once and read by reload
 	rc     *receipts.Recorder
+
+	rsMu    sync.Mutex // guards rsCache
+	rsCache localReceiptsCache
 
 	mu       sync.RWMutex
 	cfg      Config
@@ -371,7 +375,9 @@ func (w *workspace) reload() error {
 	w.user, w.merged = user, merged
 	w.userRev = w.readUserRev()
 	w.warnings = warnings
+	untrusted := w.localUntrusted
 	w.mu.Unlock()
+	w.reapplyReceiptPolicy(untrusted)
 	return nil
 }
 
@@ -524,7 +530,19 @@ func (w *workspace) WatchHistory() watches.History { return w.wh }
 func (w *workspace) Proposals() proposals.Store { return w.pr }
 
 func (w *workspace) Receipts() *receipts.Recorder {
-	w.rcOnce.Do(func() { w.rc = engine.OpenRecorder(w.root, ReceiptPolicy(w.Local()), w.logger) })
+	w.rcOnce.Do(func() {
+		rc := engine.OpenRecorder(w.root, ReceiptPolicy(w.Local()), w.logger)
+		rc.SetPolicySource(w.receiptPolicySource)
+		w.rcMu.Lock()
+		w.rc = rc
+		w.rcMu.Unlock()
+	})
+	return w.openRecorder()
+}
+
+func (w *workspace) openRecorder() *receipts.Recorder {
+	w.rcMu.Lock()
+	defer w.rcMu.Unlock()
 	return w.rc
 }
 
@@ -623,7 +641,7 @@ func (w *workspace) Close() error {
 	// Let the receipts' background prune finish; a recorder asked for after the
 	// close is nil (never opened, never started).
 	w.rcOnce.Do(func() {})
-	w.rc.Close()
+	w.openRecorder().Close()
 	return first
 }
 
