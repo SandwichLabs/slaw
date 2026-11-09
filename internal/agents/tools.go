@@ -431,6 +431,16 @@ var Tools = []ToolDef{
 		},
 	},
 
+	{
+		Name:           "get_receipt",
+		Description:    "Get the receipt of one of your own reads by its receipt_id (from run_query, run_saved_query or preview_query): the SQL as you wrote it and as it ran, the bound parameters, the connections the statement touched with their snapshot facts, the number of rows shown, the columns, a fingerprint of the result and when it ran. It never holds a row value, so use it to cite or re-check how a figure was produced, not to read the figure back. It only returns a receipt made by this conversation; any other id, including one that does not exist, gets \"no receipt with that id\".",
+		MCPDescription: "Get the receipt of one of your own reads by its receipt_id (from run_query, run_saved_query or preview_query): the SQL as written and as run, the bound parameters, the connections the statement touched with their snapshot facts, the number of rows returned, the columns, a fingerprint of the result and when it ran. It never holds a row value. It only returns a receipt made by this MCP session: after a reconnect you are a new session and the earlier session's receipts are not readable. Any other id, including one that does not exist, gets \"no receipt with that id\".",
+		Category:       "introspect",
+		Params: []ParamDef{
+			{Name: "id", Type: "string", Required: true, Desc: "The receipt_id a read returned, r_ and 20 hex digits"},
+		},
+	},
+
 	// --- Task mode (#66 part B): notebook cell authoring. write_cell and
 	// need_more_info are Modes: []string{"task"} — visible only to
 	// internal/llm's Task() loop, never to chat or MCP (see

@@ -190,7 +190,7 @@ interface AppApi {
   InspectImport(src: ImportSource): Promise<ImportInspection>
   ImportFile(o: ImportOptions): Promise<ImportSummary>
   // Agent chat and task mode (#63, #66)
-  AgentChatStream(turnId: string, message: string, pinnedContext: string, history: { role: string; text: string }[]): Promise<AgentChatResult>
+  AgentChatStream(turnId: string, message: string, pinnedContext: string, history: { role: string; text: string }[], conversationId: string): Promise<AgentChatResult>
   AgentTask(req: { taskId: string; mode: string; description: string; cell?: import('./composables/useAiCellDialog').TaskCellArg; followUp?: { role: string; text: string }[]; tables?: string[]; notebookSummary?: string[] }): Promise<import('./composables/useAiCellDialog').TaskEnvelope>
   CancelAgentTask(taskId: string): Promise<void>
   CancelAgentQuery(turnId: string): Promise<void>
@@ -230,6 +230,9 @@ interface WailsNotebookSummary {
 interface AgentChatResult {
   text: string
   steps: { tool: string; input: string; output: string; isError?: boolean }[]
+  conversationId: string
+  runs?: import('./composables/useAgentChat').ChatRun[]
+  numbers?: import('./lib/numberMarks').NumberMark[]
 }
 
 // WriteResult is returned by the transactional CRUD methods

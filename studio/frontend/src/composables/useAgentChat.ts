@@ -13,6 +13,8 @@ import { renderSafeMarkdown } from '../lib/markdown'
 import { errorText } from '../lib/errors'
 import { App } from '../lib/bindings'
 import { hasWailsRuntime } from '../lib/wails'
+import type { NumberMark } from '../lib/numberMarks'
+import { rememberRun, paramText } from './useReceipt'
 
 // PendingApproval mirrors internal/agents.ApprovalRequest (#79), plus a
 // client-only `state` this composable drives as the user answers the card
@@ -80,6 +82,19 @@ export interface ToolStep {
   // (#79), correlated to it by tool-call id (ApprovalRequest.callId ==
   // ToolStep.id). Undefined for every step that never needed approval.
   approval?: PendingApproval
+  // receipt is the run this call made (run_query, run_saved_query, preview_query):
+  // the receipt id and how many rows the model was shown. The chip offers
+  // "Open evidence" on it.
+  receipt?: ChatRun
+}
+
+// ChatRun mirrors the studio ChatRun: a read of the turn that made a receipt.
+export interface ChatRun {
+  callId: string
+  tool: string
+  receiptId: string
+  rows: number
+  truncated?: boolean
 }
 
 export interface ChatMessage {
@@ -96,6 +111,10 @@ export interface ChatMessage {
   // cancelled marks a turn the person (or a workspace close) stopped: its end
   // state, shown as "Cancelled" instead of an error.
   cancelled?: boolean
+  // numbers is Go's verdict on each distinct number of the finished answer: it
+  // matches a value one of this turn's reads showed (with that read's receipt),
+  // or it is not from a query. The transcript draws them over the text.
+  numbers?: NumberMark[]
 }
 
 // ApprovalRequestPayload is what "agent:approval" carries under its
@@ -126,8 +145,15 @@ interface ApprovalDonePayload {
   outcome: 'approved' | 'declined' | 'expired' | 'cancelled'
 }
 
+interface ReceiptPayload {
+  turnId: string
+  run: ChatRun
+}
+
 interface StreamPayload {
   turnId: string
+  // The conversation this turn belongs to (set on every event).
+  conversationId?: string
   kind: 'delta' | 'tool' | 'tool_done' | 'final' | 'error' | 'verifying' | 'cancelled'
   text?: string
   id?: string
@@ -206,6 +232,10 @@ const pinnedContext = ref('')
 // busyElsewhere: Go refused a send because another turn is still running that this
 // page has no handle on (e.g. after a webview reload). Offers Stop with no turn id.
 const busyElsewhere = ref(false)
+// The conversation the next turn continues: the id Go returned with the last
+// turn, sent back with this one. Go accepts only ids it issued, and "" starts a
+// new conversation (New chat).
+let conversationId = ''
 
 // epoch bumps whenever the chat is wiped for a workspace change. A turn
 // started in an earlier epoch still finishes on the Go side, but it must not
@@ -225,6 +255,7 @@ function scroll() { scrollHandlers.forEach((fn) => fn()) }
 // transcript (their Go-side requests are cancelled by the workspace close).
 function resetAll() {
   epoch += 1
+  conversationId = ''
   activeTurn = null
   messages.value = []
   pinnedContext.value = ''
@@ -240,6 +271,36 @@ function startTracking() {
   tracking = true
   EventsOn('workspace:opened', resetAll)
   EventsOn('workspace:closed', resetAll)
+}
+
+// toolInputMemory is what the run behind a chip had in memory, from the tool's
+// input: the SQL, the connection and the parameter values the agent sent.
+function toolInputMemory(input: string | undefined) {
+  try {
+    const p = JSON.parse(input ?? '')
+    if (!p || typeof p !== 'object') return {}
+    return {
+      sql: typeof p.sql === 'string' ? p.sql : undefined,
+      connection: typeof p.connection === 'string' ? p.connection : undefined,
+      params: p.params && typeof p.params === 'object' ? paramText(p.params as Record<string, unknown>) : undefined,
+    }
+  } catch {
+    return {}
+  }
+}
+
+// applyRun puts a read's receipt on its chip (merged by tool-call id: the event
+// can come before the chip exists) and remembers the run's own side for the drawer.
+function applyRun(msg: ChatMessage, run: ChatRun) {
+  if (!run || !run.callId || !run.receiptId) return
+  let step = msg.steps.find((s) => s.id === run.callId)
+  if (!step) {
+    step = { id: run.callId, tool: run.tool, status: 'running' }
+    msg.steps.push(step)
+    step = msg.steps[msg.steps.length - 1]
+  }
+  step.receipt = run
+  rememberRun(run.receiptId, toolInputMemory(step.input))
 }
 
 // markCancelled ends a turn as "Cancelled": running chips stop, and any
@@ -265,7 +326,7 @@ export function useAgentChat() {
 
   function pin(context: string) { pinnedContext.value = context }
   function unpin() { pinnedContext.value = '' }
-  function reset() { messages.value = [] }
+  function reset() { messages.value = []; conversationId = '' }
 
   async function send(text: string) {
     const msg = text.trim()
@@ -315,8 +376,15 @@ export function useAgentChat() {
       scroll()
     })
 
+    const unsubReceipt = EventsOn('agent:receipt', (p: ReceiptPayload) => {
+      if (!p || p.turnId !== turnId) return
+      applyRun(agentMsg, p.run)
+      scroll()
+    })
+
     const unsub = EventsOn('agent:stream', (p: StreamPayload) => {
       if (!p || p.turnId !== turnId) return
+      if (p.conversationId && myEpoch === epoch) conversationId = p.conversationId
       switch (p.kind) {
         case 'delta':
           agentMsg.text += p.text || ''
@@ -368,12 +436,16 @@ export function useAgentChat() {
     })
 
     try {
-      const res = await App.AgentChatStream(turnId, msg, pinnedContext.value, history)
+      const res = await App.AgentChatStream(turnId, msg, pinnedContext.value, history, conversationId)
       // Authoritative final result (covers non-streaming servers / missed events).
       if (agentMsg.cancelled) {
         // Stopped by the person: whatever streamed so far stays, nothing is overwritten.
       } else if (agentMsg.role !== 'error') {
         agentMsg.text = res?.text || agentMsg.text || '(no response)'
+        if (res?.conversationId && myEpoch === epoch) conversationId = res.conversationId
+        // The authoritative reads and the verdict on the answer's numbers.
+        res?.runs?.forEach((r) => applyRun(agentMsg, r))
+        agentMsg.numbers = res?.numbers?.length ? res.numbers : undefined
         // Mark any still-"running" chips as done now that the turn finished.
         agentMsg.steps.forEach((s) => { if (s.status === 'running') s.status = 'done' })
       }
@@ -401,6 +473,7 @@ export function useAgentChat() {
       unsub()
       unsubApproval()
       unsubApprovalDone()
+      unsubReceipt()
       if (myEpoch === epoch) sending.value = false
       scroll()
     }

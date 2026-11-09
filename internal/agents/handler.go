@@ -575,6 +575,8 @@ func (h *Handler) dispatch(ctx context.Context, req *Request) *Response {
 		return h.handleSaveQuery(ctx, req)
 	case "run_saved_query":
 		return h.handleRunSavedQuery(ctx, req)
+	case "get_receipt":
+		return h.handleGetReceipt(ctx, req)
 
 	// The semantic layer: read it, or propose a change (the person accepts)
 	case "list_definitions":

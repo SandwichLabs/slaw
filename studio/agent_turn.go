@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/SandwichLabs/slaw/internal/receipts"
@@ -17,30 +20,54 @@ type chatTurns struct {
 	mu     sync.Mutex
 	id     string
 	cancel context.CancelFunc
-	// conv is the id of the conversation the next turn continues: the agent
-	// session a run receipt names (receipts.WithAgentSession). The panel names a
-	// turn, not a conversation, so the conversation is what the history says: a
-	// turn with no history starts one, and a turn with history continues it.
-	conv string
+	// issued are the conversation ids this open workspace has handed out, oldest
+	// first: the agent session a run receipt names (receipts.WithAgentSession) is
+	// one of them. Go mints the id and the panel sends it back on the next turn;
+	// an id Go did not issue here starts a new conversation, so a panel (or a
+	// caller of the binding) cannot name its way into another conversation's
+	// receipts.
+	issued []string
 }
 
-// conversation is the id of the conversation a turn with this many prior
-// messages belongs to: a new one for the first turn, the same one after.
-func (c *chatTurns) conversation(historyLen int) string {
+// maxIssuedConversations bounds the ids kept per open workspace: the newest ones.
+const maxIssuedConversations = 32
+
+// conversation is the id of the conversation a turn belongs to: id when Go
+// issued it in this workspace, otherwise a new one (the first turn, a chat the
+// person cleared, a stale panel, an id from elsewhere).
+func (c *chatTurns) conversation(id string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if historyLen == 0 || c.conv == "" {
-		c.conv = receipts.NewSessionID()
+	if id != "" && slices.Contains(c.issued, id) {
+		return id
 	}
-	return c.conv
+	id = receipts.NewSessionID()
+	c.issued = append(c.issued, id)
+	if len(c.issued) > maxIssuedConversations {
+		c.issued = slices.Clone(c.issued[len(c.issued)-maxIssuedConversations:])
+	}
+	return id
 }
 
-// endConversation forgets the conversation (the workspace is closing), so the
-// next turn starts a new one whatever its history says.
+// endConversation forgets every id (the workspace is closing), so no id the
+// panel kept is a conversation any more.
 func (c *chatTurns) endConversation() {
 	c.mu.Lock()
-	c.conv = ""
+	c.issued = nil
 	c.mu.Unlock()
+}
+
+// taskSession is the agent session of the AI cell dialog behind taskID: the
+// dialog mints one id when it opens and every follow-up of that dialog sends it
+// again, so the dialog is one session. It is prefixed, so it can never be a chat
+// conversation's id, and a long id is shortened to fit a receipt.
+func taskSession(taskID string) string {
+	const prefix = "task:"
+	if len(taskID) <= receipts.MaxSessionBytes-len(prefix) {
+		return prefix + taskID
+	}
+	sum := sha256.Sum256([]byte(taskID))
+	return prefix + hex.EncodeToString(sum[:16])
 }
 
 // begin registers turnID with a context derived from parent. It refuses a

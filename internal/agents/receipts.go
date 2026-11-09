@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/SandwichLabs/slaw/internal/engine"
@@ -75,3 +76,37 @@ func ArtifactOrigin(name, query string) receipts.Origin {
 
 // savedQueryRef is the file-relative id of a saved query.
 func savedQueryRef(id string) string { return "queries/" + strings.TrimSpace(id) + ".sql" }
+
+// noSuchReceipt is the one answer get_receipt gives for every id it will not
+// hand over: a missing id, a malformed one, a person's receipt, another
+// session's receipt, a store that cannot be read. Nothing tells them apart, so
+// the tool cannot be used to learn which receipts exist.
+const noSuchReceipt = "no receipt with that id"
+
+// handleGetReceipt returns one of the calling agent session's own receipts
+// (docs/plans/run-receipts.md, R5). It is a read of the agent's own record,
+// so it is available in every tier. The caller's session is on the context
+// (the MCP transport session, the chat conversation or the task run), not on
+// the handler, which serves every client; a receipt is returned only when its
+// actor is the agent and its agent_session is that session. agent_session is
+// never in the answer.
+func (h *Handler) handleGetReceipt(ctx context.Context, req *Request) *Response {
+	refuse := func() *Response { return NewErrorResponse(req.ID, ErrInvalidParams, noSuchReceipt) }
+	id := strings.TrimSpace(stringParam(req.Params["id"]))
+	session := receipts.AgentSessionFrom(ctx)
+	if h.receipts == nil || h.receipts.Store() == nil || session == "" || !receipts.ValidID(id) {
+		return refuse()
+	}
+	rec, err := h.receipts.Store().Get(id)
+	if err != nil {
+		if !errors.Is(err, receipts.ErrNotFound) {
+			h.logger.Warn("get_receipt: could not read a receipt", "error", engine.ErrorForLog(err))
+		}
+		return refuse()
+	}
+	if rec.Actor != receipts.ActorAgent || rec.AgentSession == "" || rec.AgentSession != session {
+		return refuse()
+	}
+	rec.AgentSession = "" // never shown: it is the key to the receipts' ownership
+	return NewResponse(req.ID, rec)
+}

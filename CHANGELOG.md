@@ -6,6 +6,17 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ### Added
 
+- **Run receipts and the evidence drawer (#241).**
+  - Every read that shows a value keeps a receipt in `.slaw-local/receipts/`. This covers the Query Explorer, notebook cells, A2UI components, artifacts, metric Try it, assertions, watches, `slaw query`, the agent's `run_query`, `run_saved_query` and `preview_query`, and the console after `.receipts on`.
+  - A receipt records:
+    - the statement as written and as run, and the parameter values;
+    - the connections, each with a snapshot fact (replayable, live only or not recorded);
+    - the columns, the rows shown and a keyed fingerprint of them.
+  - It never holds a result row, a credential, a path, a bucket or a host. It stays on this computer, and is never in git or a bundle.
+  - **Evidence** opens a drawer with the receipt from the Query Explorer, notebook SQL cells, metric Try it and every A2UI stat, table and chart. `slaw receipts show` and `slaw receipts list` print the same.
+  - Settings > Workspace > Receipts and `slaw receipts settings` control whether parameter values are kept and how long receipts are kept (30 days, 20,000 or 64 MB by default). **Delete all receipts** and `slaw receipts clear` remove them.
+  - The agent's read tools return a `receipt_id` to cite, and `get_receipt` returns the agent's own receipts.
+  - In chat, tool chips open the evidence. A number in an answer that matches a value the query showed gets a ✓. A number that doesn't is underlined as "not from a query".
 - **`run_query` takes an optional `connection`** (#352): the catalog unqualified names resolve against, so the agent can call `metric()` on a saved query pinned to a non-default connection (an `iceberg_catalog`, for one). The same tier, read-only, writable-connection and approval gates apply; an unknown name is refused.
 
 ### Changed
