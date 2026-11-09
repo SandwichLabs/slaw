@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/SandwichLabs/slaw/internal/filestore"
 	"github.com/SandwichLabs/slaw/internal/receipts"
 )
 
@@ -109,9 +110,19 @@ func SetLocalReceipts(ws Workspace, s ReceiptSettings) error {
 	if s.MaxMB != 0 {
 		r.MaxMB = eff.MaxMB
 	}
-	local := ws.Local()
-	local.Receipts = r
-	if err := ws.SaveLocal(local); err != nil {
+	err := saveReceipts(ws, r)
+	if errors.Is(err, filestore.ErrConflict) {
+		// Another process saved the file since this one loaded it. This section
+		// owns only the receipts key: reload, rebuild from the fresh file and
+		// try once more, so the other process's keys are kept.
+		if rerr := ws.Reload(); rerr == nil {
+			err = saveReceipts(ws, r)
+		}
+		if errors.Is(err, filestore.ErrConflict) {
+			return errors.New("Your receipt settings changed elsewhere; the form now shows them. Save again.")
+		}
+	}
+	if err != nil {
 		if errors.Is(err, ErrLocalUntrusted) {
 			return errors.New("Your saved settings for this workspace were made for a different folder. Confirm them first.")
 		}
@@ -121,9 +132,18 @@ func SetLocalReceipts(ws Workspace, s ReceiptSettings) error {
 	return nil
 }
 
+// saveReceipts writes r as the receipts key of the loaded local settings.
+func saveReceipts(ws Workspace, r LocalReceipts) error {
+	local := ws.Local()
+	local.Receipts = r
+	return ws.SaveLocal(local)
+}
+
 // localReceiptsCache remembers the last good read of the settings file, keyed by
-// its modification time and size, so asking before every receipt is one stat.
+// its identity (os.SameFile: an atomic rename makes a new file), modification
+// time and size, so asking before every receipt is one stat.
 type localReceiptsCache struct {
+	fi   os.FileInfo
 	mod  time.Time
 	size int64
 	lr   LocalReceipts
@@ -148,7 +168,7 @@ func (w *workspace) freshLocalReceipts() (LocalReceipts, bool) {
 	}
 	w.rsMu.Lock()
 	defer w.rsMu.Unlock()
-	if c := w.rsCache; c.ok && c.mod.Equal(fi.ModTime()) && c.size == fi.Size() {
+	if c := w.rsCache; c.ok && os.SameFile(c.fi, fi) && c.mod.Equal(fi.ModTime()) && c.size == fi.Size() {
 		return c.lr, true
 	}
 	data, found, err := readOptional(path)
@@ -159,7 +179,7 @@ func (w *workspace) freshLocalReceipts() (LocalReceipts, bool) {
 	if err != nil || (l.Nonce != "" && l.Nonce != w.readNonce()) {
 		return LocalReceipts{}, false
 	}
-	w.rsCache = localReceiptsCache{mod: fi.ModTime(), size: fi.Size(), lr: l.Receipts, ok: true}
+	w.rsCache = localReceiptsCache{fi: fi, mod: fi.ModTime(), size: fi.Size(), lr: l.Receipts, ok: true}
 	return l.Receipts, true
 }
 

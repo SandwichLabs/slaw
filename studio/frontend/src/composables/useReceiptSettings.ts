@@ -73,6 +73,8 @@ export function useReceiptSettings() {
       message.value = 'Saved. A lower limit removes the oldest receipts now.'
     } catch (e) {
       error.value = errorText(e)
+      await refresh() // show what is saved now (it may have changed elsewhere)
+      error.value = errorText(e)
     }
     busy.value = false
   }
