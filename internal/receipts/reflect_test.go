@@ -1,8 +1,10 @@
 package receipts
 
 import (
+	"math"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -60,4 +62,27 @@ func TestResultHasher_ReflectedValuesDoNotCollide(t *testing.T) {
 	n := &node{}
 	n.Next = n
 	assert.True(t, IsHash(h(n)))
+}
+
+func TestResultHasher_TiedMapKeysAndNestedTimes(t *testing.T) {
+	key := make([]byte, 32)
+	sum := func(v any) string {
+		h := NewResultHasher(key, []Column{{Name: "m", Type: "MAP"}})
+		if err := h.AddRow([]any{v}); err != nil {
+			t.Fatal(err)
+		}
+		return h.Sum()
+	}
+	tied := map[any]any{int32(1): "a", int64(1): "b", math.NaN(): "c", math.NaN(): "d"}
+	first := sum(tied)
+	for range 50 {
+		if got := sum(tied); got != first {
+			t.Fatalf("tied keys hash by iteration order: %s != %s", got, first)
+		}
+	}
+	at := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	plus1 := at.In(time.FixedZone("+01", 3600))
+	if sum(map[any]any{"t": at}) != sum(map[any]any{"t": plus1}) {
+		t.Fatal("a nested time hashes by its zone")
+	}
 }

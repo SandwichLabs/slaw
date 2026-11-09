@@ -1,15 +1,20 @@
 package receipts
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
 	"sort"
+	"time"
 )
 
 // maxDepth bounds the nesting appendReflect follows (a pointer cycle).
 const maxDepth = 32
 
-var stringerType = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
+var (
+	stringerType = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
+	timeType     = reflect.TypeOf(time.Time{})
+)
 
 // appendReflect encodes a value the type switch did not name, by its kind, so
 // every part is tagged and delimited: a map is its entries sorted by their
@@ -37,6 +42,10 @@ func appendReflect(b []byte, rv reflect.Value, depth int) []byte {
 	}
 	if !rv.CanInterface() {
 		return appendText(b, rv)
+	}
+	if rv.Type() == timeType {
+		// The same instant encodes the same nested as at the top level.
+		return appendValue(b, rv.Interface())
 	}
 	if rv.Kind() != reflect.Struct && rv.Type().Implements(stringerType) {
 		return appendText(b, rv)
@@ -107,7 +116,14 @@ func appendMap(b []byte, rv reflect.Value, depth int) []byte {
 			v: appendReflect(nil, it.Value(), depth+1),
 		})
 	}
-	sort.Slice(entries, func(i, j int) bool { return string(entries[i].k) < string(entries[j].k) })
+	// Keys that encode alike (int32(1) and int64(1), two NaNs) are ordered by
+	// their values, so the order never depends on map iteration.
+	sort.Slice(entries, func(i, j int) bool {
+		if c := bytes.Compare(entries[i].k, entries[j].k); c != 0 {
+			return c < 0
+		}
+		return bytes.Compare(entries[i].v, entries[j].v) < 0
+	})
 	b = appendUint(append(b, tagMap), uint64(len(entries)))
 	for _, e := range entries {
 		b = append(append(b, e.k...), e.v...)
