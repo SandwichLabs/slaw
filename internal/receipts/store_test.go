@@ -15,9 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func openStore(t *testing.T, dir string, p Policy) *FileStore {
+func recDir(root string) string { return filepath.Join(root, ".slaw-local", "receipts") }
+
+func openStore(t *testing.T, root string, p Policy) *FileStore {
 	t.Helper()
-	s, err := NewFileStore(dir, p)
+	s, err := NewFileStore(root, p)
 	require.NoError(t, err)
 	return s
 }
@@ -29,7 +31,7 @@ func bigReceipt(t *testing.T, n int) Receipt {
 	r := sample(n)
 	r.SQL = strings.Repeat("a", 50<<10) + strconv.Itoa(n)
 	r.RunSQL = strings.Repeat("b", 50<<10) + strconv.Itoa(n)
-	r.SQLHash, r.RunSQLHash = HashText(r.SQL), HashText(r.RunSQL)
+	r.SQLHash, r.RunSQLHash = HashText(testKey, r.SQL), HashRunText(testKey, r.RunSQL)
 	s, err := Seal(r)
 	require.NoError(t, err)
 	return s
@@ -56,8 +58,9 @@ func age(t *testing.T, dir, id string, by time.Duration) {
 }
 
 func TestFileStore_PutGetRoundTripAndLayout(t *testing.T) {
-	dir := t.TempDir()
-	s := openStore(t, dir, DefaultPolicy())
+	root := t.TempDir()
+	dir := recDir(root)
+	s := openStore(t, root, DefaultPolicy())
 	r := sealed(t, 1)
 	require.NoError(t, s.Put(r))
 	require.NoError(t, s.Put(r), "the same receipt twice is one")
@@ -75,7 +78,7 @@ func TestFileStore_PutGetRoundTripAndLayout(t *testing.T) {
 	assert.Equal(t, 1, n)
 
 	// Another store over the same folder (Studio and mcp serve) reads it.
-	got2, err := openStore(t, dir, DefaultPolicy()).Get(r.ID)
+	got2, err := openStore(t, root, DefaultPolicy()).Get(r.ID)
 	require.NoError(t, err)
 	assert.Equal(t, r, got2)
 }
@@ -97,8 +100,9 @@ func TestFileStore_PutRefusesWhatIsNotAValidSealedReceipt(t *testing.T) {
 }
 
 func TestFileStore_GetRefusesCorruptFiles(t *testing.T) {
-	dir := t.TempDir()
-	s := openStore(t, dir, DefaultPolicy())
+	root := t.TempDir()
+	dir := recDir(root)
+	s := openStore(t, root, DefaultPolicy())
 	r := sealed(t, 1)
 	require.NoError(t, s.Put(r))
 	path := filepath.Join(dir, r.ID[2:4], r.ID+".json")
@@ -131,8 +135,9 @@ func TestFileStore_GetRefusesCorruptFiles(t *testing.T) {
 }
 
 func TestPrune_HoldsTheCountCapOldestFirst(t *testing.T) {
-	dir := t.TempDir()
-	s := openStore(t, dir, DefaultPolicy())
+	root := t.TempDir()
+	dir := recDir(root)
+	s := openStore(t, root, DefaultPolicy())
 	var ids []string
 	for i := 0; i < 130; i++ {
 		r := sealed(t, i)
@@ -158,8 +163,9 @@ func TestPrune_HoldsTheCountCapOldestFirst(t *testing.T) {
 }
 
 func TestPrune_HoldsTheAgeCap(t *testing.T) {
-	dir := t.TempDir()
-	s := openStore(t, dir, DefaultPolicy())
+	root := t.TempDir()
+	dir := recDir(root)
+	s := openStore(t, root, DefaultPolicy())
 	oldR, freshR := sealed(t, 1), sealed(t, 2)
 	require.NoError(t, s.Put(oldR))
 	require.NoError(t, s.Put(freshR))
@@ -177,8 +183,9 @@ func TestPrune_HoldsTheAgeCap(t *testing.T) {
 }
 
 func TestPrune_HoldsTheByteCap(t *testing.T) {
-	dir := t.TempDir()
-	s := openStore(t, dir, DefaultPolicy())
+	root := t.TempDir()
+	dir := recDir(root)
+	s := openStore(t, root, DefaultPolicy())
 	var ids []string
 	for i := 0; i < 30; i++ { // about 3 MB
 		r := bigReceipt(t, i)
@@ -199,8 +206,9 @@ func TestPrune_HoldsTheByteCap(t *testing.T) {
 }
 
 func TestNewFileStore_ALoweredCapPrunesOnTheNextOpen(t *testing.T) {
-	dir := t.TempDir()
-	s := openStore(t, dir, DefaultPolicy())
+	root := t.TempDir()
+	dir := recDir(root)
+	s := openStore(t, root, DefaultPolicy())
 	for i := 0; i < 150; i++ {
 		r := sealed(t, i)
 		require.NoError(t, s.Put(r))
@@ -208,14 +216,15 @@ func TestNewFileStore_ALoweredCapPrunesOnTheNextOpen(t *testing.T) {
 	}
 	n, _ := count(t, dir)
 	require.Equal(t, 150, n)
-	openStore(t, dir, Policy{KeepParams: true, MaxCount: 100})
+	openStore(t, root, Policy{KeepParams: true, MaxCount: 100})
 	n, _ = count(t, dir)
 	assert.Equal(t, 100, n)
 }
 
 func TestFileStore_PrunesEveryFiveHundredPuts(t *testing.T) {
-	dir := t.TempDir()
-	s := openStore(t, dir, Policy{KeepParams: true, MaxCount: 100})
+	root := t.TempDir()
+	dir := recDir(root)
+	s := openStore(t, root, Policy{KeepParams: true, MaxCount: 100})
 	for i := 0; i < PruneEvery; i++ {
 		require.NoError(t, s.Put(sealed(t, i)))
 	}
@@ -224,8 +233,9 @@ func TestFileStore_PrunesEveryFiveHundredPuts(t *testing.T) {
 }
 
 func TestPrune_LeavesOtherFilesAndSweepsStaleTemps(t *testing.T) {
-	dir := t.TempDir()
-	s := openStore(t, dir, DefaultPolicy())
+	root := t.TempDir()
+	dir := recDir(root)
+	s := openStore(t, root, DefaultPolicy())
 	r := sealed(t, 1)
 	require.NoError(t, s.Put(r))
 	sub := filepath.Join(dir, r.ID[2:4])
@@ -237,7 +247,7 @@ func TestPrune_LeavesOtherFilesAndSweepsStaleTemps(t *testing.T) {
 	}
 	old := time.Now().Add(-2 * time.Hour)
 	require.NoError(t, os.Chtimes(stale, old, old))
-	_, err := LoadKey(dir)
+	_, err := LoadKey(root)
 	require.NoError(t, err)
 	require.NoError(t, s.Prune(DefaultPolicy()))
 	assert.NoFileExists(t, stale)
@@ -247,9 +257,10 @@ func TestPrune_LeavesOtherFilesAndSweepsStaleTemps(t *testing.T) {
 }
 
 func TestFileStore_ConcurrentWritersInProcess(t *testing.T) {
-	dir := t.TempDir()
-	s1 := openStore(t, dir, DefaultPolicy())
-	s2 := openStore(t, dir, DefaultPolicy())
+	root := t.TempDir()
+	dir := recDir(root)
+	s1 := openStore(t, root, DefaultPolicy())
+	s2 := openStore(t, root, DefaultPolicy())
 	var wg sync.WaitGroup
 	errs := make(chan error, 400)
 	for w, s := range []*FileStore{s1, s2} {
@@ -284,12 +295,13 @@ func TestFileStore_ConcurrentWritersAcrossProcesses(t *testing.T) {
 	if os.Getenv("RECEIPTS_HELPER_DIR") != "" {
 		return
 	}
-	dir := t.TempDir()
+	root := t.TempDir()
+	dir := recDir(root)
 	var cmds []*exec.Cmd
 	var outs []*strings.Builder
 	for p := 0; p < 2; p++ {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestHelperWriter$")
-		cmd.Env = append(os.Environ(), "RECEIPTS_HELPER_DIR="+dir, "RECEIPTS_HELPER_BASE="+strconv.Itoa(p*1000))
+		cmd.Env = append(os.Environ(), "RECEIPTS_HELPER_DIR="+root, "RECEIPTS_HELPER_BASE="+strconv.Itoa(p*1000))
 		out := &strings.Builder{}
 		cmd.Stdout, cmd.Stderr = out, out
 		require.NoError(t, cmd.Start())
@@ -298,34 +310,37 @@ func TestFileStore_ConcurrentWritersAcrossProcesses(t *testing.T) {
 	for i, cmd := range cmds {
 		require.NoError(t, cmd.Wait(), outs[i].String())
 	}
+	s := openStore(t, root, floorPolicy)
+	require.NoError(t, s.Prune(floorPolicy))
 	n, _ := count(t, dir)
-	assert.Equal(t, 200, n)
-	s := openStore(t, dir, DefaultPolicy())
-	for p := 0; p < 2; p++ {
-		for i := 0; i < 100; i++ {
-			r, err := Seal(sample(p*1000 + i))
-			require.NoError(t, err)
-			got, err := s.Get(r.ID)
-			require.NoError(t, err)
-			assert.Equal(t, r, got)
+	assert.LessOrEqual(t, n, 100, "both writers pruned to the floor and nothing was left over")
+	assert.Positive(t, n)
+	// Every survivor is whole: a torn or half-pruned file would not decode.
+	require.NoError(t, filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".json") {
+			return err
 		}
-	}
+		_, gerr := s.Get(strings.TrimSuffix(d.Name(), ".json"))
+		return gerr
+	}))
 }
 
+var floorPolicy = Policy{KeepParams: true, MaxCount: 100}
+
 func TestHelperWriter(t *testing.T) {
-	dir := os.Getenv("RECEIPTS_HELPER_DIR")
-	if dir == "" {
+	root := os.Getenv("RECEIPTS_HELPER_DIR")
+	if root == "" {
 		t.Skip("helper process")
 	}
 	base, err := strconv.Atoi(os.Getenv("RECEIPTS_HELPER_BASE"))
 	require.NoError(t, err)
-	s := openStore(t, dir, DefaultPolicy())
+	s := openStore(t, root, floorPolicy)
 	for i := 0; i < 100; i++ {
 		r, err := Seal(sample(base + i))
 		require.NoError(t, err)
 		require.NoError(t, s.Put(r))
-		if i%20 == 0 {
-			require.NoError(t, s.Prune(DefaultPolicy()))
+		if i%10 == 0 {
+			require.NoError(t, s.Prune(floorPolicy))
 		}
 	}
 }

@@ -1,6 +1,8 @@
 package receipts
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +40,7 @@ func TestPolicyClamp_FloorsCeilingsAndUnset(t *testing.T) {
 func TestApplyParams_KeepParamsOffKeepsNamesAndHashOnly(t *testing.T) {
 	r := sample(10)
 	r.Params = map[string]ParamValue{"region": {Value: "EMEA-secret-ish"}, "n": {Value: "5"}}
-	r.ParamsHash = HashParams(map[string]string{"region": "EMEA-secret-ish", "n": "5"})
+	r.ParamsHash = HashParams(testKey, map[string]string{"region": "EMEA-secret-ish", "n": "5"})
 	hash := r.ParamsHash
 	p := DefaultPolicy()
 	p.KeepParams = false
@@ -64,7 +66,7 @@ func TestApplyParams_KeepParamsOnCapsAtAValidUTF8Boundary(t *testing.T) {
 	r := sample(11)
 	long := strings.Repeat("é", 200) // 400 bytes, two bytes a character
 	r.Params = map[string]ParamValue{"a": {Value: long}, "b": {Value: "short"}, "c": {Withheld: true}}
-	r.ParamsHash = HashParams(map[string]string{"a": long, "b": "short", "c": "secret"})
+	r.ParamsHash = HashParams(testKey, map[string]string{"a": long, "b": "short", "c": "secret"})
 	DefaultPolicy().ApplyParams(&r)
 	a := r.Params["a"]
 	assert.True(t, a.Truncated)
@@ -83,8 +85,21 @@ func TestApplyParams_KeepParamsOnCapsAtAValidUTF8Boundary(t *testing.T) {
 }
 
 func TestHashParams_IsOrderFreeAndUnambiguous(t *testing.T) {
-	assert.Equal(t, HashParams(map[string]string{"a": "1", "b": "2"}), HashParams(map[string]string{"b": "2", "a": "1"}))
-	assert.NotEqual(t, HashParams(map[string]string{"a": "1b", "": "2"}), HashParams(map[string]string{"a": "1", "b": "2"}))
-	assert.NotEqual(t, HashParams(map[string]string{"ab": ""}), HashParams(map[string]string{"a": "b"}))
-	assert.NotEqual(t, HashParams(nil), HashParams(map[string]string{"": ""}))
+	assert.Equal(t, HashParams(testKey, map[string]string{"a": "1", "b": "2"}), HashParams(testKey, map[string]string{"b": "2", "a": "1"}))
+	assert.NotEqual(t, HashParams(testKey, map[string]string{"a": "1b", "": "2"}), HashParams(testKey, map[string]string{"a": "1", "b": "2"}))
+	assert.NotEqual(t, HashParams(testKey, map[string]string{"ab": ""}), HashParams(testKey, map[string]string{"a": "b"}))
+	assert.NotEqual(t, HashParams(testKey, nil), HashParams(testKey, map[string]string{"": ""}))
+}
+
+// The three hashes are keyed, so a withheld credential or a low-entropy value
+// cannot be checked against a dictionary from a receipt alone.
+func TestKeyedHashes_NeedTheKeyAndKeepTheirDomains(t *testing.T) {
+	other := []byte("fedcba9876543210fedcba9876543210")
+	assert.NotEqual(t, HashText(testKey, "SELECT 1"), HashText(other, "SELECT 1"))
+	assert.NotEqual(t, HashRunText(testKey, "SELECT 1"), HashRunText(other, "SELECT 1"))
+	assert.NotEqual(t, HashParams(testKey, map[string]string{"a": "1"}), HashParams(other, map[string]string{"a": "1"}))
+	assert.NotEqual(t, HashText(testKey, "SELECT 1"), HashRunText(testKey, "SELECT 1"), "distinct domain tags")
+	plain := sha256.Sum256([]byte("SELECT 1"))
+	assert.NotEqual(t, hex.EncodeToString(plain[:]), HashText(testKey, "SELECT 1"), "not a plain SHA-256")
+	assert.True(t, IsHash(HashText(testKey, "")))
 }

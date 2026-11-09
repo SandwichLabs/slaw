@@ -98,12 +98,14 @@ type FileStore struct {
 
 var _ Store = (*FileStore)(nil)
 
-// NewFileStore opens the store in dir (created 0700) and prunes it by policy,
-// so a limit lowered since the last run takes effect on the next open. Later
-// Puts prune by the same policy every PruneEvery writes.
-func NewFileStore(dir string, p Policy) (*FileStore, error) {
-	if err := os.MkdirAll(dir, dirMode); err != nil {
-		return nil, fmt.Errorf("failed to create the receipts folder: %w", err)
+// NewFileStore opens the store of the workspace at root (its receipts folder
+// is made and checked by Dir: no symbolic link) and prunes it by policy, so a
+// limit lowered since the last run takes effect on the next open. Later Puts
+// prune by the same policy every PruneEvery writes.
+func NewFileStore(root string, p Policy) (*FileStore, error) {
+	dir, err := Dir(root)
+	if err != nil {
+		return nil, err
 	}
 	s := &FileStore{dir: dir, policy: p.Clamp()}
 	if err := s.Prune(s.policy); err != nil {
@@ -112,7 +114,7 @@ func NewFileStore(dir string, p Policy) (*FileStore, error) {
 	return s, nil
 }
 
-// Dir is the store's folder (where LoadKey keeps the key).
+// Dir is the store's folder.
 func (s *FileStore) Dir() string { return s.dir }
 
 // SetPolicy changes the policy the periodic prune uses; it does not prune.
@@ -134,8 +136,8 @@ func (s *FileStore) Put(r Receipt) error {
 		return err
 	}
 	path := s.path(r.ID)
-	if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
-		return fmt.Errorf("failed to create the receipt folder: %w", err)
+	if err := ensureShard(filepath.Dir(path)); err != nil {
+		return err
 	}
 	if err := filestore.WriteFileAtomicExact(path, data, fileMode); err != nil {
 		return fmt.Errorf("failed to write the receipt: %w", err)
@@ -289,4 +291,19 @@ func (s *FileStore) scan() ([]entry, error) {
 		}
 	}
 	return out, nil
+}
+
+// ensureShard makes the <aa> folder, refusing a link or a non-folder there.
+func ensureShard(dir string) error {
+	if err := os.Mkdir(dir, dirMode); err != nil && !errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("failed to create the receipt folder: %w", err)
+	}
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("failed to read the receipt folder: %w", err)
+	}
+	if fi.Mode()&fs.ModeSymlink != 0 || !fi.IsDir() {
+		return errors.New("a receipt folder is a symbolic link or not a folder")
+	}
+	return nil
 }

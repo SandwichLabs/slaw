@@ -24,10 +24,10 @@ func sample(n int) Receipt {
 		Source:     Source{Kind: SourceSavedQuery, Ref: "queries/orders.sql"},
 		SQL:        sql,
 		RunSQL:     "SELECT * FROM (" + sql + ") LIMIT 1001",
-		SQLHash:    HashText(sql),
-		RunSQLHash: HashText("run" + sql),
+		SQLHash:    HashText(testKey, sql),
+		RunSQLHash: HashRunText(testKey, "run"+sql),
 		Params:     map[string]ParamValue{"id": {Value: "42"}},
-		ParamsHash: HashParams(map[string]string{"id": "42"}),
+		ParamsHash: HashParams(testKey, map[string]string{"id": "42"}),
 		Connections: []Connection{
 			{Name: "warehouse", Type: "postgres", ReadOnly: true, Status: StatusConnected,
 				Snapshot: &Snapshot{Fact: "wal_lsn", Value: "0/16B3748", Label: LabelLiveOnly}},

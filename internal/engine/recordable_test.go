@@ -34,6 +34,16 @@ func TestRecordableStatement(t *testing.T) {
 	assert.True(t, Recordable("SELECT 1"))
 }
 
+func TestRecordable_RefusesUnicodeSpaces(t *testing.T) {
+	for _, sp := range []string{" ", " ", " ", " ", " ", " ", "　", " ", " ", " "} {
+		text := "SELECT 1 WHERE password" + sp + "=" + sp + "'x'"
+		assert.False(t, Recordable(text), "%q", sp)
+		assert.False(t, RecordableStatement(text), "%q", sp)
+		assert.False(t, RecordableStatement("SELECT"+sp+"1"), "%q", sp)
+	}
+	assert.True(t, RecordableStatement("SELECT 1\n\tFROM t"))
+}
+
 func TestRecordable(t *testing.T) {
 	for _, ok := range []string{
 		"SELECT 1",

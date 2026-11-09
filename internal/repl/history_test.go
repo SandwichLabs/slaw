@@ -2,7 +2,6 @@ package repl
 
 import (
 	"errors"
-	"github.com/SandwichLabs/slaw/internal/engine"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +11,8 @@ import (
 	duckdb "github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/SandwichLabs/slaw/internal/engine"
 )
 
 func historyPath(root string) string { return filepath.Join(root, ".slaw-local", "repl", "history") }

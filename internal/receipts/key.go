@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,16 +18,23 @@ const (
 	fileMode = 0o600
 )
 
-// LoadKey returns the folder's HMAC key, creating it on first use: KeySize
-// random bytes in <dir>/key, mode 0600. A key file that is not a regular file,
-// has a mode wider than 0600 or is not KeySize bytes is refused, never
+// LoadKey returns the HMAC key of the workspace at root, creating it on first
+// use: KeySize random bytes in .slaw-local/receipts/key, mode 0600. The folder
+// is checked by Dir (no symbolic link). The key file is opened without
+// following a link and checked on the open descriptor: a file that is not
+// regular, has a mode wider than 0600 or is not KeySize bytes is refused, never
 // repaired: a key someone else could have read or replaced fingerprints
 // nothing. Creation is atomic (a temp file linked into place), so two
 // processes starting together end up with one key.
-func LoadKey(dir string) ([]byte, error) {
-	if err := os.MkdirAll(dir, dirMode); err != nil {
-		return nil, fmt.Errorf("failed to create the receipts folder: %w", err)
+func LoadKey(root string) ([]byte, error) {
+	dir, err := Dir(root)
+	if err != nil {
+		return nil, err
 	}
+	return loadKeyIn(dir)
+}
+
+func loadKeyIn(dir string) ([]byte, error) {
 	path := filepath.Join(dir, KeyFile)
 	key, err := readKey(path)
 	if err == nil || !errors.Is(err, fs.ErrNotExist) {
@@ -66,9 +74,17 @@ func createKey(dir, path string) error {
 }
 
 func readKey(path string) ([]byte, error) {
-	fi, err := os.Lstat(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|oNoFollow, 0)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("the receipt key cannot be opened (a symbolic link is refused): %w", err)
+	}
+	defer f.Close() //nolint:errcheck
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the receipt key: %w", err)
 	}
 	if !fi.Mode().IsRegular() {
 		return nil, errors.New("the receipt key is not a regular file")
@@ -79,7 +95,7 @@ func readKey(path string) ([]byte, error) {
 	if fi.Size() != KeySize {
 		return nil, errors.New("the receipt key is not 32 bytes")
 	}
-	key, err := os.ReadFile(path)
+	key, err := io.ReadAll(io.LimitReader(f, KeySize+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read the receipt key: %w", err)
 	}

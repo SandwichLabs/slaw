@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"hash"
 	"math"
-	"sort"
+	"reflect"
 	"time"
 )
 
@@ -30,6 +30,7 @@ const (
 	tagList   = 'l'
 	tagMap    = 'm'
 	tagOther  = 'x'
+	tagStruct = 'S'
 )
 
 const resultDomain = "slaw-receipt-result-v1\x00"
@@ -143,20 +144,8 @@ func appendValue(b []byte, v any) []byte {
 			b = appendValue(b, e)
 		}
 		return b
-	case map[string]any:
-		keys := make([]string, 0, len(x))
-		for k := range x {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		b = appendUint(append(b, tagMap), uint64(len(keys)))
-		for _, k := range keys {
-			b = appendValue(appendString(b, k), x[k])
-		}
-		return b
 	default:
-		b = appendString(append(b, tagOther), fmt.Sprintf("%T", v))
-		return appendString(b, fmt.Sprintf("%v", v))
+		return appendReflect(b, reflect.ValueOf(v), 0)
 	}
 }
 

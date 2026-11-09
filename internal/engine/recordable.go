@@ -2,6 +2,7 @@ package engine
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/SandwichLabs/slaw/internal/secrets"
 )
@@ -24,11 +25,19 @@ func Recordable(text string) bool {
 // RecordableStatement is Recordable for SQL kept as written: the same rule,
 // except that line breaks (\n and \r\n) and tabs are allowed, since a statement
 // spans lines. A lone \r, every other control character, C1 and bidi
-// characters, text over RecordableMax and any credential-shaped text are still
-// refused. Parameter values use Recordable.
+// characters, any Unicode space other than ASCII space, tab and line breaks
+// (NBSP, U+2000 to U+200A, U+2028, U+2029, U+3000 and the like hide a credential
+// from the redactor), text over RecordableMax and any credential-shaped text are
+// still refused. Parameter values use Recordable.
 func RecordableStatement(text string) bool {
 	if text == "" || len(text) > RecordableMax {
 		return false
+	}
+	for _, r := range text {
+		// RedactPatterns' \s is ASCII: "password<NBSP>=<NBSP>x" would slip past it.
+		if unicode.IsSpace(r) && r != ' ' && r != '\t' && r != '\n' && r != '\r' {
+			return false
+		}
 	}
 	norm := strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\t", " ")
 	return TerminalText(norm, TerminalOpts{KeepNewlines: true, StripC1: true, StripBidi: true}) == norm &&

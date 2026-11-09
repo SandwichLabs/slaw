@@ -92,14 +92,14 @@ func TestValidate_RefusesBadEnumsAndRefs(t *testing.T) {
 func TestRedaction_WithheldTextKeepsOnlyItsHash(t *testing.T) {
 	r := sample(4)
 	secret := "SELECT 'hunter2-not-a-real-secret'"
-	r.SQL, r.SQLWithheld, r.SQLHash = "", true, HashText(secret)
-	r.RunSQL, r.RunSQLWithheld, r.RunSQLHash = "", true, HashText(secret+" LIMIT 1")
+	r.SQL, r.SQLWithheld, r.SQLHash = "", true, HashText(testKey, secret)
+	r.RunSQL, r.RunSQLWithheld, r.RunSQLHash = "", true, HashText(testKey, secret+" LIMIT 1")
 	s, err := Seal(r)
 	require.NoError(t, err)
 	b, err := Encode(s)
 	require.NoError(t, err)
 	assert.NotContains(t, string(b), "hunter2")
-	assert.Contains(t, string(b), HashText(secret))
+	assert.Contains(t, string(b), HashText(testKey, secret))
 
 	// A withheld text that still carries the text is refused, not stored.
 	r.SQL = secret
@@ -110,7 +110,7 @@ func TestRedaction_WithheldTextKeepsOnlyItsHash(t *testing.T) {
 func TestRedaction_WithheldParamKeepsOnlyItsName(t *testing.T) {
 	r := sample(5)
 	r.Params = map[string]ParamValue{"token": {Withheld: true}, "id": {Value: "7"}}
-	r.ParamsHash = HashParams(map[string]string{"token": "tok-not-real", "id": "7"})
+	r.ParamsHash = HashParams(testKey, map[string]string{"token": "tok-not-real", "id": "7"})
 	s, err := Seal(r)
 	require.NoError(t, err)
 	b, _ := Encode(s)

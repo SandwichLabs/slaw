@@ -2,7 +2,6 @@ package repl
 
 import (
 	"database/sql"
-	"github.com/SandwichLabs/slaw/internal/engine"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/lsp"
 	"github.com/SandwichLabs/slaw/internal/queries"
 )

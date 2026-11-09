@@ -1,6 +1,7 @@
 package receipts
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/SandwichLabs/slaw/internal/jsonenc"
 )
@@ -249,17 +251,35 @@ func isHex(s string, n int) bool {
 	return true
 }
 
-// HashText is the SHA-256 of text, as lowercase hex: the sql_hash and
-// run_sql_hash.
-func HashText(text string) string {
-	sum := sha256.Sum256([]byte(text))
-	return hex.EncodeToString(sum[:])
+// Domain tags keep the three keyed hashes (and result_hmac) from ever being
+// the same function of the same bytes.
+const (
+	sqlDomain    = "slaw-receipt-sql-v1\x00"
+	runSQLDomain = "slaw-receipt-run-sql-v1\x00"
+	paramsDomain = "slaw-receipt-params-v1\x00"
+)
+
+func keyedHash(key []byte, domain string, data []byte) string {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte(domain))
+	m.Write(data)
+	return hex.EncodeToString(m.Sum(nil))
 }
 
-// HashParams is the params_hash: the SHA-256 over the full set of names and
-// values (before any cap or withholding), length-prefixed and sorted by name so
-// it is unambiguous and order-free.
-func HashParams(params map[string]string) string {
+// HashText is the sql_hash: HMAC-SHA256 of the text as written, keyed with the
+// workspace's receipt key (LoadKey). It is keyed so a withheld credential
+// cannot be dictionary-attacked from a receipt: two hashes compare only within
+// one workspace on one machine.
+func HashText(key []byte, text string) string { return keyedHash(key, sqlDomain, []byte(text)) }
+
+// HashRunText is the run_sql_hash: HashText over the executed text, under its
+// own domain tag.
+func HashRunText(key []byte, text string) string { return keyedHash(key, runSQLDomain, []byte(text)) }
+
+// HashParams is the params_hash: HMAC-SHA256, keyed as HashText, over the full
+// set of names and values (before any cap or withholding), length-prefixed and
+// sorted by name so it is unambiguous and order-free.
+func HashParams(key []byte, params map[string]string) string {
 	names := make([]string, 0, len(params))
 	for n := range params {
 		names = append(names, n)
@@ -270,8 +290,7 @@ func HashParams(params map[string]string) string {
 		enc = appendString(enc, n)
 		enc = appendString(enc, params[n])
 	}
-	sum := sha256.Sum256(enc)
-	return hex.EncodeToString(sum[:])
+	return keyedHash(key, paramsDomain, enc)
 }
 
 // ValidID reports whether id has the form r_ + 20 lowercase hex digits.
@@ -337,6 +356,10 @@ func (r Receipt) validateBody() error {
 		return invalid("unknown actor %q", r.Actor)
 	case !r.Verdict.Valid():
 		return invalid("unknown verdict %q", r.Verdict)
+	case r.At.Location() != time.UTC:
+		return invalid("at must be in UTC")
+	case !r.validStrings():
+		return invalid("a text field is not valid UTF-8")
 	case r.DurationMS < 0:
 		return invalid("negative duration")
 	case len(r.AgentSession) > MaxSessionBytes:
@@ -446,4 +469,33 @@ func (r Receipt) validateConnections() error {
 		}
 	}
 	return nil
+}
+
+// validStrings reports whether every string field is valid UTF-8; invalid
+// bytes would collapse to U+FFFD when encoded, so two records could share an id.
+func (r Receipt) validStrings() bool {
+	for _, s := range []string{r.AgentSession, r.Source.Ref, r.SQL, r.RunSQL} {
+		if !utf8.ValidString(s) {
+			return false
+		}
+	}
+	for n, p := range r.Params {
+		if !utf8.ValidString(n) || !utf8.ValidString(p.Value) {
+			return false
+		}
+	}
+	for _, c := range r.Connections {
+		if !utf8.ValidString(c.Name) || !utf8.ValidString(c.Type) {
+			return false
+		}
+		if c.Snapshot != nil && (!utf8.ValidString(c.Snapshot.Fact) || !utf8.ValidString(c.Snapshot.Value)) {
+			return false
+		}
+	}
+	for _, c := range r.Columns {
+		if !utf8.ValidString(c.Name) || !utf8.ValidString(c.Type) {
+			return false
+		}
+	}
+	return true
 }

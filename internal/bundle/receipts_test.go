@@ -24,17 +24,17 @@ func TestReceipts_AreNeverABundleEntry(t *testing.T) {
 	require.NoError(t, src.Queries().Create(ctx, &queries.Query{ID: "orders", Title: "Orders", SQL: "SELECT 1"}))
 
 	dir := filepath.Join(src.Root(), ".slaw-local", "receipts")
-	key, err := receipts.LoadKey(dir)
+	key, err := receipts.LoadKey(src.Root())
 	require.NoError(t, err)
-	store, err := receipts.NewFileStore(dir, receipts.DefaultPolicy())
+	store, err := receipts.NewFileStore(src.Root(), receipts.DefaultPolicy())
 	require.NoError(t, err)
 	for i := 0; i < 25; i++ {
 		h := receipts.NewResultHasher(key, nil)
 		sql := "SELECT 'RECEIPTMARKER-" + strings.Repeat("x", i) + "'"
 		r, err := receipts.Seal(receipts.Receipt{
 			At: time.Now(), Surface: receipts.SurfaceQueryEditor, Actor: receipts.ActorPerson,
-			Source: receipts.Source{Kind: receipts.SourceSQL}, SQL: sql, SQLHash: receipts.HashText(sql),
-			RunSQL: sql, RunSQLHash: receipts.HashText(sql), Verdict: receipts.VerdictUnchecked,
+			Source: receipts.Source{Kind: receipts.SourceSQL}, SQL: sql, SQLHash: receipts.HashText(key, sql),
+			RunSQL: sql, RunSQLHash: receipts.HashRunText(key, sql), Verdict: receipts.VerdictUnchecked,
 			ResultHMAC: h.Sum(),
 		})
 		require.NoError(t, err)
