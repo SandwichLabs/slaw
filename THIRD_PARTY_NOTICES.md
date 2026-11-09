@@ -9,11 +9,11 @@ Contents: [Go modules](#go-modules) Â· [Frontend packages](#frontend-packages) Â
 ## Go modules
 
 Every module linked into the `slaw` CLI or Slaw on linux and macOS (amd64 and arm64), found with go-licenses v2.
-140 module/licence-file pairs: Apache-2.0 43, BSD-2-Clause 5, BSD-3-Clause 29, ISC 1, MIT 62.
+141 module/licence-file pairs: Apache-2.0 44, BSD-2-Clause 5, BSD-3-Clause 29, ISC 1, MIT 62.
 
 #### Apache-2.0
 
-- charm.land/fantasy v0.45.5
+- charm.land/fantasy v0.46.0
 
 ```text
 Apache License
@@ -197,30 +197,30 @@ Apache License
 #### Apache-2.0
 
 - cloud.google.com/go v0.123.0
-- cloud.google.com/go/auth v0.24.0
-- cloud.google.com/go/auth/oauth2adapt v0.2.8
-- cloud.google.com/go/compute/metadata v0.9.0
-- github.com/aws/aws-sdk-go-v2 v1.47.5
-- github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20
-- github.com/aws/aws-sdk-go-v2/config v1.33.12
-- github.com/aws/aws-sdk-go-v2/credentials v1.20.12
-- github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.5
-- github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.8
-- github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8
-- github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8
-- github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23
-- github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.8
-- github.com/aws/aws-sdk-go-v2/service/signin v1.12.0
-- github.com/aws/aws-sdk-go-v2/service/sso v1.39.0
-- github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.0
-- github.com/aws/aws-sdk-go-v2/service/sts v1.51.6
+- cloud.google.com/go/auth v0.24.2
+- cloud.google.com/go/auth/oauth2adapt v0.3.0
+- cloud.google.com/go/compute/metadata v0.10.0
+- github.com/aws/aws-sdk-go-v2 v1.47.7
+- github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25
+- github.com/aws/aws-sdk-go-v2/config v1.33.15
+- github.com/aws/aws-sdk-go-v2/credentials v1.20.15
+- github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.7
+- github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.10
+- github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.10
+- github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.10
+- github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.24
+- github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.10
+- github.com/aws/aws-sdk-go-v2/service/signin v1.12.3
+- github.com/aws/aws-sdk-go-v2/service/sso v1.39.3
+- github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.3
+- github.com/aws/aws-sdk-go-v2/service/sts v1.51.8
 - github.com/go-logr/stdr v1.2.2
 - github.com/google/flatbuffers v25.12.19+incompatible
-- github.com/google/s2a-go v0.1.9
-- github.com/googleapis/enterprise-certificate-proxy v0.3.22
+- github.com/google/s2a-go v0.1.11
+- github.com/googleapis/enterprise-certificate-proxy v0.3.24
 - go.opentelemetry.io/auto/sdk v1.2.1
-- google.golang.org/genproto/googleapis/rpc v0.0.0-20260911204522-f61a6ca850bd
-- google.golang.org/grpc v1.84.0
+- google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e
+- google.golang.org/grpc v1.85.0
 
 ```text
 Apache License
@@ -691,7 +691,7 @@ Distributed under MIT License.
 
 #### Apache-2.0
 
-- github.com/aws/smithy-go v1.28.7
+- github.com/aws/smithy-go v1.28.8
 - github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 - github.com/spf13/afero v1.15.0
 - github.com/spf13/cobra v1.10.2
@@ -1500,7 +1500,7 @@ Apache License
 
 #### Apache-2.0
 
-- github.com/wailsapp/wails/v2 v2.17.0
+- github.com/wailsapp/wails/v2 v2.17.1
 
 ```text
 Apache License
@@ -1708,11 +1708,12 @@ Apache License
 
 #### Apache-2.0
 
-- go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0
-- go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
-- go.opentelemetry.io/otel v1.46.0
-- go.opentelemetry.io/otel/metric v1.46.0
-- go.opentelemetry.io/otel/trace v1.46.0
+- go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.72.0
+- go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
+- go.opentelemetry.io/otel v1.47.0
+- go.opentelemetry.io/otel/log v1.47.0
+- go.opentelemetry.io/otel/metric v1.47.0
+- go.opentelemetry.io/otel/trace v1.47.0
 
 ```text
 Apache License
@@ -2158,7 +2159,7 @@ Apache License
 
 #### Apache-2.0
 
-- google.golang.org/genai v1.71.0
+- google.golang.org/genai v1.76.0
 
 ```text
 Apache License
@@ -2666,8 +2667,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #### BSD-3-Clause
 
-- github.com/aws/aws-sdk-go-v2 v1.47.5
-- github.com/aws/smithy-go v1.28.7
+- github.com/aws/aws-sdk-go-v2 v1.47.7
+- github.com/aws/smithy-go v1.28.8
 
 ```text
 Copyright (c) 2009 The Go Authors. All rights reserved.
@@ -2701,7 +2702,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #### BSD-3-Clause
 
-- github.com/aws/smithy-go v1.28.7
+- github.com/aws/smithy-go v1.28.8
 - github.com/bahlo/generic-list-go v0.2.0
 
 ```text
@@ -2836,7 +2837,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #### BSD-3-Clause
 
-- github.com/googleapis/gax-go/v2 v2.24.1
+- github.com/googleapis/gax-go/v2 v2.27.0
 
 ```text
 Copyright 2016, Google Inc.
@@ -2938,7 +2939,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #### BSD-3-Clause
 
-- github.com/spf13/pflag v1.0.10
+- github.com/spf13/pflag v1.1.0
 
 ```text
 Copyright (c) 2012 Alex Ogier. All rights reserved.
@@ -3039,7 +3040,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #### BSD-3-Clause
 
-- google.golang.org/api v0.298.0
+- google.golang.org/api v0.309.0
 
 ```text
 Copyright (c) 2011 Google Inc. All rights reserved.
@@ -3073,7 +3074,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #### BSD-3-Clause
 
-- google.golang.org/api v0.298.0
+- google.golang.org/api v0.309.0
 
 ```text
 Copyright (c) 2013 Joshua Tacoma. All rights reserved.
@@ -3161,7 +3162,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 #### MIT
 
-- github.com/anthropics/anthropic-sdk-go v1.75.0
+- github.com/anthropics/anthropic-sdk-go v1.84.0
 
 ```text
 Copyright 2023 Anthropic, PBC.
@@ -4125,7 +4126,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 #### MIT
 
-- github.com/mark3labs/mcp-go v1.4.0
+- github.com/mark3labs/mcp-go v1.5.0
 
 ```text
 MIT License
@@ -4561,7 +4562,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #### MIT
 
-- github.com/wailsapp/wails/v2 v2.17.0
+- github.com/wailsapp/wails/v2 v2.17.1
 
 ```text
 MIT License
@@ -9107,7 +9108,7 @@ For more information, please refer to <http://unlicense.org>
 Apache-2.0 section 4(d) asks that the NOTICE file of an Apache-licensed work be reproduced. These are the NOTICE files
 shipped by the Go modules and npm packages above.
 
-#### charm.land/fantasy v0.45.5
+#### charm.land/fantasy v0.46.0
 
 ```text
 Copyright 2025-2026 Charmbracelet, Inc.
@@ -9135,7 +9136,7 @@ This product includes software developed at
 The Apache Software Foundation (http://www.apache.org/).
 ```
 
-#### github.com/aws/aws-sdk-go-v2 v1.47.5
+#### github.com/aws/aws-sdk-go-v2 v1.47.7
 
 ```text
 AWS SDK for Go
@@ -9143,7 +9144,7 @@ Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Copyright 2014-2015 Stripe, Inc.
 ```
 
-#### github.com/aws/smithy-go v1.28.7
+#### github.com/aws/smithy-go v1.28.8
 
 ```text
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
@@ -9193,7 +9194,7 @@ Copyright 2025 - The go-yaml Project Contributors
 http://www.apache.org/licenses/LICENSE-2.0
 ```
 
-#### google.golang.org/grpc v1.84.0
+#### google.golang.org/grpc v1.85.0
 
 ```text
 Copyright 2014 gRPC authors.
