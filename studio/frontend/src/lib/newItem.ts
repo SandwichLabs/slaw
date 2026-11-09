@@ -21,7 +21,7 @@ export const RUNS_AFTER_ALLOW = 'Runs after you allow it'
 export const CARD_LINE: Record<LibraryType, string> = {
   notebook: 'SQL, notes and charts in cells you run top to bottom.',
   live: 'A view with controls (dates, filters) over named queries. Built from Slaw’s components.',
-  page: 'Your own HTML over named queries. Static by default; tick the script box for an interactive page in its own window.',
+  page: 'Your own HTML bound to named queries. Static by default; tick the script box for an interactive page in its own window.',
   script: 'A view.js that draws an SVG or a component page from query rows.',
 }
 

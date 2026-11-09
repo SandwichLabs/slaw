@@ -43,7 +43,7 @@ const scripted = computed(() => props.status.page_kind === 'scripted')
       <ul v-else-if="!info && status.capabilities?.length" class="page-prompt__list" data-testid="page-prompt-caps">
         <li v-for="c in status.capabilities" :key="c">{{ c }}</li>
       </ul>
-      <p v-else-if="info" class="help" style="margin: 0;">It asks for no capabilities.</p>
+      <p v-else-if="info" class="help" style="margin: 0;">It declares no capabilities.</p>
     </div>
 
     <div v-if="info?.network" class="note warn" role="note" data-testid="page-prompt-network">

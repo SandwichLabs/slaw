@@ -132,7 +132,7 @@ const isOwn = (c: ConnectionInfo) => c.name === 'local' && c.type === 'duckdb'
       <!-- This computer -->
       <fieldset class="col" style="gap: var(--sh-space-3); border: none; padding: var(--sh-space-4) 0 0; margin: 0; border-top: 1.5px dashed var(--slaw-border-subtle);">
         <legend class="field-label" style="padding: 0 8px 0 0; margin-bottom: 4px;">On this computer <span class="scope local" style="margin-left: 6px;">This computer</span></legend>
-        <p class="help" style="margin: 0;">Only you. Saved outside the folder, so it is never committed. Here you can <b>loosen</b>: raise the tier up to the team limit, or stop it asking before changes.</p>
+        <p class="help" style="margin: 0;">Only you. Saved outside the folder, so it is never committed. Here you can <b>loosen</b>: raise the tier up to the team limit, or stop being asked before changes to the workspace's own database.</p>
         <div class="seg" role="group" aria-label="What the Slaw assistant can do on this computer">
           <button
             v-for="m in SANDBOX_MODES"

@@ -212,7 +212,7 @@ func NewCell(cellType CellType) (Cell, error) {
 		// therefore savable) until the user or agent replaces it.
 		return Cell{ID: newID("cell"), Type: CellA2UI, Page: &a2ui.Page{
 			Title:      "Untitled",
-			Components: []a2ui.Component{{ID: "placeholder", Type: "text", Fields: map[string]any{"text": "Empty A2UI cell — edit the source below."}}},
+			Components: []a2ui.Component{{ID: "placeholder", Type: "text", Fields: map[string]any{"text": "Empty card. Edit the source below."}}},
 		}}, nil
 	default:
 		return Cell{}, fmt.Errorf("notebooks: unknown cell type %q", cellType)

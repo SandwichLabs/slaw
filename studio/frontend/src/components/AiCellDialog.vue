@@ -17,7 +17,7 @@ const props = defineProps<{
 }>()
 
 // applied carries the dialog's applyNote (review fix, finding 6: e.g. "The
-// cell changed while this was running — added as a new cell below.") so the
+// cell changed while this was running, so this was added as a new cell below.") so the
 // host can toast it — empty string when apply was a plain replace/insert
 // with nothing noteworthy to say.
 const emit = defineEmits<{ applied: [note: string] }>()
@@ -37,9 +37,9 @@ const applyButtonLabel = computed(() => {
 const applyExplanation = computed(() => {
   const p = preview.value
   if (!p) return ''
-  if (p.cellDrifted) return 'The cell changed while this was running, so this is added as a new cell instead.'
-  if (p.typeMismatch) return 'This is a different cell type from the one you were editing, so it is added as a new cell instead.'
-  if (p.targetMissing) return 'The cell you were editing is gone, so this is added as a new cell.'
+  if (p.cellDrifted) return 'The cell changed while this was running, so it will be added as a new cell instead.'
+  if (p.typeMismatch) return 'This is a different cell type from the one you were editing, so it will be added as a new cell instead.'
+  if (p.targetMissing) return 'The cell you were editing is gone, so it will be added as a new cell instead.'
   return ''
 })
 

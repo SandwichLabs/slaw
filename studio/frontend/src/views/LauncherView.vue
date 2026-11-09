@@ -167,7 +167,7 @@ onUnmounted(() => { if (undoTimer) clearTimeout(undoTimer) })
         <div class="hero-mini">
           <div class="card"><b>Library</b><span>Notebooks, live views and pages. They run again when you open them, so the numbers are current.</span></div>
           <div class="card"><b>Connections</b><span>Postgres, MotherDuck, SQLite files, cloud storage. Add them when you need them.</span></div>
-          <div class="card"><b>The Slaw assistant</b><span>Ask in plain English. It reads freely and asks before it changes anything.</span></div>
+          <div class="card"><b>The Slaw assistant</b><span>Ask in plain words. It reads freely and asks before it changes anything.</span></div>
         </div>
       </template>
 

@@ -54,7 +54,7 @@ const vFocus = {
         <div class="empty-hero">
           <div class="glyph"><Icon name="lock" :size="48" /></div>
           <h2>Can't list these tables yet</h2>
-          <p class="lead">{{ unavailable[0].connection }} is {{ unavailable[0].status === 'locked-by' ? 'in use by another program. Its tables can be read once it lets go.' : 'not available right now.' }}</p>
+          <p class="lead">{{ unavailable[0].connection }} is {{ unavailable[0].status === 'locked-by' ? "in use by another program. Its tables can't be read until it lets go." : 'not available right now.' }}</p>
           <details v-if="unavailable[0].detail && unavailable[0].status !== 'locked-by'" class="help" style="max-width: 560px;">
             <summary style="cursor: pointer; font-weight: 600;">Show details</summary>
             <div class="details" style="margin-top: 8px; overflow-wrap: anywhere;">{{ unavailable[0].detail }}</div>
