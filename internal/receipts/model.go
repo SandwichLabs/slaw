@@ -115,7 +115,7 @@ type ParamValue struct {
 }
 
 // Snapshot is one fact about a connection's state, filled by the connection
-// collectors (a later slice); the model only holds it.
+// collectors in internal/session after the run; the model only holds it.
 type Snapshot struct {
 	Fact  string        `json:"fact"`
 	Value string        `json:"value"`

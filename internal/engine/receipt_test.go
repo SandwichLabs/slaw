@@ -40,8 +40,64 @@ func TestRunFacts_ARunFillsWhatOnlyTheEngineKnows(t *testing.T) {
 	// The default catalog (what unqualified names mean) and the connection the
 	// statement named, lazily attached; each status is an enum.
 	require.Len(t, f.Connections, 2)
-	assert.Equal(t, receipts.Connection{Name: "memory", Type: "duckdb", Status: receipts.StatusConnected}, f.Connections[0])
-	assert.Equal(t, receipts.Connection{Name: "other", Type: "duckdb", Status: receipts.StatusConnected}, f.Connections[1])
+	// The in-memory default has no snapshot fact of its own: status only. The
+	// file connection gives its size and mtime (and never its path).
+	assert.Equal(t, receipts.Connection{Name: "memory", Type: "duckdb", Status: receipts.StatusConnected,
+		Snapshot: &receipts.Snapshot{Fact: "status", Value: "no snapshot fact for this connection type", Label: receipts.LabelLiveOnly}}, f.Connections[0])
+	other := f.Connections[1]
+	assert.Equal(t, "other", other.Name)
+	require.NotNil(t, other.Snapshot)
+	assert.Equal(t, "file size and mtime", other.Snapshot.Fact)
+	assert.Equal(t, receipts.LabelLiveOnly, other.Snapshot.Label)
+	assert.Regexp(t, `^[0-9]+ bytes, modified 20[0-9-]+T[0-9:]+Z$`, other.Snapshot.Value)
+	assert.NotContains(t, other.Snapshot.Value, ".duckdb")
+	for _, c := range f.Connections {
+		assert.True(t, c.Snapshot.Label.Valid())
+	}
+}
+
+// Snapshot facts are collected on the pool, never through the engine: a run with
+// facts keeps exactly one receipt, and its result is the result it would have had.
+func TestRunFacts_SnapshotFactsMintNoReceiptOfTheirOwnAndDoNotChangeTheResult(t *testing.T) {
+	sess := lazySession(t)
+	m := NewManager(sess)
+	store := receipts.NewMock()
+	rec := receipts.NewRecorder(store, []byte("0123456789abcdef0123456789abcdef"), receipts.DefaultPolicy(),
+		receipts.Checks{Statement: RecordableStatement, Value: Recordable}, nil)
+
+	plain, _, err := m.ExecuteCappedIn(context.Background(), "", "SELECT x FROM other.main.t", nil, 0)
+	require.NoError(t, err)
+
+	ctx := intentCtx()
+	rs, _, err := m.ExecuteCappedIn(ctx, "", "SELECT x FROM other.main.t", nil, 0)
+	require.NoError(t, err)
+	assert.Equal(t, plain.Rows, rs.Rows)
+	assert.Equal(t, plain.Columns, rs.Columns)
+	id, err := receipts.Finish(ctx, rec, rs.Rows, false, rs.RowCount())
+	require.NoError(t, err)
+	require.NotEmpty(t, id)
+
+	all := store.All()
+	require.Len(t, all, 1, "the fact queries mint nothing")
+	var withFact int
+	for _, c := range all[0].Connections {
+		if c.Snapshot != nil {
+			withFact++
+		}
+	}
+	assert.Equal(t, len(all[0].Connections), withFact)
+}
+
+// A statement that is not going to be a receipt does not pay for facts.
+func TestRunFacts_ANonReadAsksForNoSnapshotFacts(t *testing.T) {
+	m := NewManager(lazySession(t))
+	ctx := receipts.WithIntent(context.Background(), receipts.Intent{
+		Surface: receipts.SurfaceCLIQuery, Actor: receipts.ActorPerson, SQL: "x", Verdict: receipts.VerdictUnchecked,
+		Kind: receipts.StmtOther,
+	})
+	_, _, err := m.ExecuteCappedIn(ctx, "", "SELECT x FROM other.main.t", nil, 0)
+	require.NoError(t, err)
+	assert.Empty(t, receipts.RunFrom(ctx).Facts().Connections)
 }
 
 func TestRunFacts_AHeldConnectionRecordsToo(t *testing.T) {
