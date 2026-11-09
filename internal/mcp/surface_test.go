@@ -28,11 +28,25 @@ func callRequest(name string) mcp.CallToolRequest {
 	return r
 }
 
+// reply is the response with the given JSON-RPC id. The stdio server answers
+// requests concurrently, so a fast refusal can arrive before the initialize
+// response: never pick a response by position.
+func reply(t *testing.T, res []map[string]any, id float64) map[string]any {
+	t.Helper()
+	for _, r := range res {
+		if got, ok := r["id"].(float64); ok && got == id {
+			return r
+		}
+	}
+	t.Fatalf("no response with id %v in %v", id, res)
+	return nil
+}
+
 func listNames(t *testing.T, s *Server) (names []string, byName map[string]map[string]any) {
 	t.Helper()
 	res := stdioRoundTrip(t, s, []string{initLine, notifLine, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`}, 2)
 	byName = map[string]map[string]any{}
-	raws, _ := asMap(t, res[1]["result"])["tools"].([]any)
+	raws, _ := asMap(t, reply(t, res, 2)["result"])["tools"].([]any)
 	for _, raw := range raws {
 		tl := asMap(t, raw)
 		name, _ := tl["name"].(string)
@@ -51,8 +65,8 @@ func TestPresentData_IsChatOnly(t *testing.T) {
 
 	res := stdioRoundTrip(t, New(okHandler{}, slog.New(slog.DiscardHandler)), []string{initLine, notifLine,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"present_data","arguments":{"page":{"title":"x","components":[]}}}}`}, 2)
-	require.NotNil(t, res[1]["error"], "an unregistered tool is a protocol error")
-	assert.Contains(t, fmt.Sprint(res[1]["error"]), "not found")
+	require.NotNil(t, reply(t, res, 2)["error"], "an unregistered tool is a protocol error")
+	assert.Contains(t, fmt.Sprint(reply(t, res, 2)["error"]), "not found")
 
 	// The chat surface (and the handler's default mode) still has it.
 	var chat []string
@@ -126,8 +140,8 @@ func TestToolsList_FollowsTheTier(t *testing.T) {
 	// handler, which owns the tier refusal.
 	res := stdioRoundTrip(t, tierServer(agents.ModeReadOnly), []string{initLine, notifLine,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_table","arguments":{}}}`}, 2)
-	require.Nil(t, res[1]["error"])
-	assert.Contains(t, fmt.Sprint(res[1]["result"]), "create_table", "the call was dispatched to the handler")
+	require.Nil(t, reply(t, res, 2)["error"])
+	assert.Contains(t, fmt.Sprint(reply(t, res, 2)["result"]), "create_table", "the call was dispatched to the handler")
 
 	// Without a tier source the full registry is listed, as before.
 	names, _ := listNames(t, New(okHandler{}, slog.New(slog.DiscardHandler)))
@@ -143,7 +157,7 @@ func TestToolsList_UnlistedWriteToolIsStillGated(t *testing.T) {
 	assert.NotContains(t, names, "drop_table")
 	res := stdioRoundTrip(t, s, []string{initLine, notifLine,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"drop_table","arguments":{"name":"t"}}}`}, 2)
-	result := asMap(t, res[1]["result"])
+	result := asMap(t, reply(t, res, 2)["result"])
 	assert.Equal(t, true, result["isError"])
 	assert.True(t, strings.Contains(fmt.Sprint(result["content"]), "not allowed in read-only mode"), fmt.Sprint(result))
 }
