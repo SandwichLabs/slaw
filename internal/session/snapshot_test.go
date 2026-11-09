@@ -228,6 +228,12 @@ func TestSnapshot_AStatementThatPinsAVersionIsNotRecordedAsNewest(t *testing.T) 
 		// A live-only fact is not about a version: it stays.
 		assert.Equal(t, SnapshotLiveOnly, snapshotOf(t, got, "pg").Label, q)
 	}
+	// A metadata file inside the table is a version the statement chose.
+	got := SnapshotConnections(context.Background(), h, "", "SELECT * FROM iceberg_scan('"+loc+"/metadata/v1.metadata.json')")
+	sn := snapshotOf(t, got, "ice")
+	require.NotNil(t, sn)
+	assert.Equal(t, SnapshotNotRecorded, sn.Label)
+	assert.Equal(t, "version pinned in the statement", sn.Value)
 	assert.True(t, pinsVersion("SELECT * FROM lake.t AT (VERSION => 3)"))
 	assert.True(t, pinsVersion("SELECT * FROM lake.t AT (TIMESTAMP => now())"))
 	assert.False(t, pinsVersion("SELECT version FROM t WHERE at = 1"))

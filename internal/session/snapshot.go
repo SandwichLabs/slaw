@@ -205,6 +205,11 @@ func literalTargets(s Session, src specSource, sqlText string) []snapTarget {
 		switch {
 		case info.Type == "iceberg" || info.Type == "delta":
 			t.urls = literalsAt(lits, spec.Path)
+			loc := strings.TrimRight(spec.Path, "/")
+			for _, l := range t.urls {
+				// A metadata file inside the table is a version the statement chose.
+				t.pinned = t.pinned || strings.TrimRight(l, "/") != loc
+			}
 			if len(t.urls) > 0 {
 				tables = append(tables, t)
 			}
