@@ -50,10 +50,15 @@ describe('EvidenceDrawer across a workspace switch', () => {
     await flushPromises()
     w.unmount(); w = null
     expect(handlers['workspace:closed']).toHaveLength(0)
-    // An Esc after unmount must not close what a new mount shows.
+    // Unmounting resets the app-level state, so a new mount starts closed.
+    expect(useEvidenceDrawer().target.value).toBeNull()
+    expect(recallRun('r_0123456789abcdef0123')).toBeUndefined()
     w = mount(EvidenceDrawer, { attachTo: document.body, global: { stubs: { Icon: true } } })
     await flushPromises()
-    // The state is app-level, so the new mount shows it at once and its Esc listener is live.
+    expect(w.find('[data-testid="evidence-drawer"]').exists()).toBe(false)
+    // Its own Esc listener is live once something opens it.
+    openEvidence({ title: 't', receiptId: 'r_0123456789abcdef0123' })
+    await flushPromises()
     expect(w.find('[data-testid="evidence-drawer"]').exists()).toBe(true)
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
