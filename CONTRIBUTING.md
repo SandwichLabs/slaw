@@ -11,7 +11,7 @@ Prerequisites:
 - Go at the version in `go.mod` (1.27.x) or newer, with `CGO_ENABLED=1` and a C/C++ toolchain (DuckDB is embedded through cgo; no system DuckDB is needed).
 - Node 24 (see `.nvmrc`) and npm, for the Studio frontend.
 - [Task](https://taskfile.dev) for the automation in `Taskfile.yml` (there is no Makefile).
-- For Studio (the desktop app): the [Wails CLI](https://wails.io) v2.17.0 (the version of `github.com/wailsapp/wails/v2` in `go.mod`).
+- For Studio (the desktop app): the [Wails CLI](https://wails.io) v2.17.1 (the version of `github.com/wailsapp/wails/v2` in `go.mod`).
 - `jq`, which `task build:studio*` uses to stamp the version into `wails.json` for the length of the build.
   - Linux: `build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev`.
   - macOS: Xcode Command Line Tools.

@@ -275,7 +275,7 @@ Still to do (#4):
   - `slaw workspace init` + `slaw import` + `slaw query` round-trip in a temp folder, a real CGO smoke test of DuckDB (the vibe-app#72 CLI bug is fixed, vibe-app#113)
 - Cache: Go module/build cache, the npm cache, and `~/.duckdb/extensions` if vendoring.
 - The Wails CLI is installed at `WAILS_VERSION`, which matches `github.com/wailsapp/wails/v2` in `go.mod`
-  (v2.17.0). Wails v2.11 could not load Go 1.27 (vibe-app#92); v2.16 and later can, so the `wails build` steps run on the
+  (v2.17.1). Wails v2.11 could not load Go 1.27 (vibe-app#92); v2.16 and later can, so the `wails build` steps run on the
   `go.mod` toolchain with no `GOTOOLCHAIN` pin.
 
 ### 5.3 Release: `.github/workflows/release.yml` (on `push` tag `v*`)
