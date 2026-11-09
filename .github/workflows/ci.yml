@@ -18,7 +18,7 @@ permissions:
 env:
   CGO_ENABLED: "1"
   # Keep the Wails CLI at the github.com/wailsapp/wails/v2 version in go.mod.
-  WAILS_VERSION: v2.17.0
+  WAILS_VERSION: v2.17.1
   # Build on 22.04 (glibc 2.35, webkit2gtk-4.1) so the Linux artifacts run on Ubuntu 22.04+, Debian 12+, Fedora 36+ (see docs/install.md).
   LINUX_TAGS: webkit2_41,duckdb_arrow
 

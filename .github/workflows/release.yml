@@ -22,7 +22,7 @@ permissions:
 env:
   CGO_ENABLED: "1"
   # Keep the Wails CLI at the github.com/wailsapp/wails/v2 version in go.mod.
-  WAILS_VERSION: v2.17.0
+  WAILS_VERSION: v2.17.1
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
