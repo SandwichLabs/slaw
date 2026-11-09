@@ -64,7 +64,7 @@ async function install() {
           <li>Needed by {{ neededBy.length || 1 }} connection{{ (neededBy.length || 1) === 1 ? '' : 's' }} here<template v-if="neededBy.length">: {{ neededBy.map((c) => c.name).join(', ') }}</template>.</li>
         </ul>
         <div class="note info"><Icon name="info" :size="16" /><span>Offline? You can skip this and the connection will wait with an "Extension needed" icon.</span></div>
-        <div v-if="busy" class="note" role="status"><Icon name="download" :size="16" /><span>Installing… this can take a moment.</span></div>
+        <div v-if="busy" class="note" role="status"><Icon name="download" :size="16" /><span>Installing…</span></div>
         <div v-if="error" class="note attn" role="alert" data-testid="extension-error"><Icon name="alert" :size="16" /><span>{{ error }}</span></div>
       </div>
       <div class="d-foot">

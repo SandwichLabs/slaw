@@ -12,12 +12,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/SandwichLabs/slaw/internal/editor"
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/hub"
 	"github.com/SandwichLabs/slaw/internal/queries"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/usersql"
-	"github.com/spf13/cobra"
 )
 
 var queryCmd = &cobra.Command{
@@ -46,7 +48,7 @@ its SQL runs as saved, on its connection unless -c names another. A saved query
 may declare $name parameters; -p name=value (repeatable) sets one, typed by its
 declaration, and a parameter you leave out takes its default. A value is bound,
 never written into the SQL. Without --saved, a $name in the statement is an
-error, as before. A saved query is a plain file whose first line is a header
+error. A saved query is a plain file whose first line is a header
 comment, and the SQL follows it:
 
   -- slaw: {"title":"Top customers","description":"...","connection":"prod_pg","parameters":[{"name":"n","type":"integer","default":"10"}]}
@@ -143,6 +145,7 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	written := sqlText
 	if sqlText, params, err = expandMetrics(ctx, o, sqlText, conn, params, readOnly, errW); err != nil {
 		return err
 	}
@@ -157,10 +160,13 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	rs, total, err := o.Eng.ExecuteCappedIn(ctx, conn, sqlText, params, limit)
+	rctx := receipts.WithIntent(ctx, cliIntent(written, saved, params))
+	rs, total, err := o.Eng.ExecuteCappedIn(rctx, conn, sqlText, params, limit)
 	if err != nil {
 		return friendlyQueryError(err, readOnly)
 	}
+	// The receipt covers the rows the run kept (--limit), the true count known.
+	_, _ = receipts.Finish(rctx, o.WS.Receipts(), rs.Rows, total > rs.RowCount(), total)
 	if err := writeResult(cmd.OutOrStdout(), rs, format); err != nil {
 		return err
 	}
@@ -168,6 +174,20 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(errW, "showing the first %d of %d rows (--limit 0 for all)\n", rs.RowCount(), total)
 	}
 	return nil
+}
+
+// cliIntent is the receipt intent of a `slaw query` run: the statement as
+// written (or the saved query it ran), the values bound, and no policy verdict
+// (the CLI's own checks are a courtesy, not the agent policy).
+func cliIntent(written, saved string, params map[string]any) receipts.Intent {
+	src := receipts.Source{Kind: receipts.SourceSQL}
+	if saved != "" {
+		src = receipts.Source{Kind: receipts.SourceSavedQuery, Ref: "queries/" + saved + ".sql"}
+	}
+	return receipts.Intent{
+		Surface: receipts.SurfaceCLIQuery, Actor: receipts.ActorPerson, Source: src,
+		SQL: written, Params: receipts.ParamStrings(params), Verdict: receipts.VerdictUnchecked,
+	}
 }
 
 // expandMetrics prepares the statement as a person runs it

@@ -54,7 +54,7 @@ const vFocus = {
         <div class="empty-hero">
           <div class="glyph"><Icon name="lock" :size="48" /></div>
           <h2>Can't list these tables yet</h2>
-          <p class="lead">{{ unavailable[0].connection }} is {{ unavailable[0].status === 'locked-by' ? 'in use by another program, so its tables can only be read once it lets go.' : 'not available right now.' }}</p>
+          <p class="lead">{{ unavailable[0].connection }} is {{ unavailable[0].status === 'locked-by' ? "in use by another program. Its tables can't be read until it lets go." : 'not available right now.' }}</p>
           <details v-if="unavailable[0].detail && unavailable[0].status !== 'locked-by'" class="help" style="max-width: 560px;">
             <summary style="cursor: pointer; font-weight: 600;">Show details</summary>
             <div class="details" style="margin-top: 8px; overflow-wrap: anywhere;">{{ unavailable[0].detail }}</div>
@@ -65,7 +65,7 @@ const vFocus = {
         <div class="empty-hero">
           <div class="glyph"><Icon name="database" :size="48" /></div>
           <h2>No tables yet</h2>
-          <p class="lead">Create a table or import a CSV to get started.</p>
+          <p class="lead">Create a table or import a CSV.</p>
           <button @click="showNewTableModal = true" class="btn btn-primary" :disabled="isReadOnly" :title="isReadOnly ? readOnlyReason : undefined"><Icon name="plus" :size="16" /> Create table</button>
         </div>
       </div>
@@ -78,7 +78,7 @@ const vFocus = {
         <div class="page-subhead" style="padding: 14px 24px;">
           <h1 style="font-size: 22px;">{{ selectedTable }}</h1>
           <span class="flex-1"></span>
-          <button @click="openFbF" class="btn btn-sm"><Icon name="filter" :size="14" /> Filter by Form</button>
+          <button @click="openFbF" class="btn btn-sm"><Icon name="filter" :size="14" /> Filter by form</button>
           <button v-if="activeFilter" @click="saveFilterAsQuery" class="btn btn-sm"><Icon name="save" :size="14" /> Save as query</button>
           <button v-if="activeFilter" @click="(clearFilter(), loadData())" class="btn btn-ghost btn-sm"><Icon name="x" :size="14" /> Clear filter</button>
           <button v-if="!locked && selectedKind === 'table'" @click="dropTable(selectedTable!)" class="btn btn-ghost btn-sm" style="color: var(--sh-error);" data-testid="drop-table"><Icon name="trash" :size="14" /> Drop table</button>
@@ -105,7 +105,7 @@ const vFocus = {
         <!-- Filter-by-Form panel -->
         <div v-if="showFbF" class="px-6 py-3 border-b-2 border-[var(--sh-ink)] bg-[var(--sh-paper-2)]">
           <div class="flex items-center gap-2 mb-2">
-            <span class="sh-label" style="margin:0;">Filter by Form</span>
+            <span class="sh-label" style="margin:0;">Filter by form</span>
             <select v-model="fbfCombinator" class="field-input fbf-combinator w-24">
               <option value="AND">AND</option>
               <option value="OR">OR</option>

@@ -8,6 +8,7 @@ import (
 
 	"github.com/SandwichLabs/slaw/internal/artifacts"
 	"github.com/SandwichLabs/slaw/internal/queries"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 )
 
 // --- saved queries: list_queries, save_query, run_saved_query ---------------
@@ -325,5 +326,8 @@ func (h *Handler) handleRunSavedQuery(ctx context.Context, req *Request) *Respon
 		return NewErrorResponse(req.ID, ErrInvalidParams, fmt.Sprintf("saved query %q: %s", id, err))
 	}
 	run := &Request{JSONRPC: req.JSONRPC, ID: req.ID, Method: "run_query", Params: map[string]any{"sql": sqlText, "params": params}}
-	return h.runQuery(ctx, run, runTarget{connection: conn, readsOnly: true})
+	return h.runQuery(ctx, run, runTarget{
+		connection: conn, readsOnly: true,
+		surface: receipts.SurfaceAgentSavedQuery, source: receipts.Source{Kind: receipts.SourceSavedQuery, Ref: savedQueryRef(id)},
+	})
 }

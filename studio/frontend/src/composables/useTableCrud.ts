@@ -77,7 +77,7 @@ export function useTableCrud(b: TableBrowser) {
     if (editing.value && editing.value.row === rowIdx && editing.value.col === colIdx) return
     const pk = pkColumn()
     if (!pk) {
-      b.errorMessage.value = 'Cannot edit: no primary key column found'
+      b.errorMessage.value = "Can't edit: this table has no primary key"
       return
     }
     if (td.columns[colIdx] === pk.name) return
@@ -203,7 +203,7 @@ export function useTableCrud(b: TableBrowser) {
   function deleteRow(row: any[]) {
     if (!b.selectedTable.value || !b.tableInfo.value) return
     if (!pkColumn()) {
-      b.errorMessage.value = 'Cannot delete: no primary key column found'
+      b.errorMessage.value = "Can't delete: this table has no primary key"
       return
     }
     pendingDeleteRow.value = row

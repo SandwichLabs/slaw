@@ -16,6 +16,7 @@ import (
 	"github.com/SandwichLabs/slaw/internal/connname"
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/queries"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/secrets"
 	"github.com/SandwichLabs/slaw/internal/strictyaml"
 	"github.com/SandwichLabs/slaw/internal/watches"
@@ -184,6 +185,8 @@ type watchPlan struct {
 	label   string
 	params  map[string]any
 	maxRows int
+	// origin is what the watch's read is recorded as (a receipt).
+	origin receipts.Origin
 }
 
 func checkWatch(ctx context.Context, ws Workspace, w *watches.Watch, runner ReadOnlyRunner, now time.Time) (res WatchResult) {
@@ -310,7 +313,8 @@ func planSavedQueryWatch(ctx context.Context, ws Workspace, w *watches.Watch, no
 	if err != nil {
 		return watchPlan{}, fmt.Errorf("saved query %q: %w", id, err)
 	}
-	return watchPlan{sql: q.SQL, connection: q.Connection, params: params}, nil
+	origin := receipts.Origin{Surface: receipts.SurfaceWatch, Source: receipts.Source{Kind: receipts.SourceSavedQuery, Ref: "queries/" + id + ".sql"}}
+	return watchPlan{sql: q.SQL, connection: q.Connection, params: params, origin: origin}, nil
 }
 
 // planMetricWatch is the metric at its grain total: MetricQuery with no
@@ -324,7 +328,8 @@ func planMetricWatch(ctx context.Context, ws Workspace, w *watches.Watch) (watch
 	if err := checkConnectionDefined(ws, conn, fmt.Sprintf("the saved query behind metric %q", w.Question.Metric)); err != nil {
 		return watchPlan{}, err
 	}
-	return watchPlan{sql: sql, connection: conn}, nil
+	origin := receipts.Origin{Surface: receipts.SurfaceWatch, Source: receipts.Source{Kind: receipts.SourceMetric, Ref: "semantics/metrics/" + w.Question.Metric + ".yaml"}}
+	return watchPlan{sql: sql, connection: conn, origin: origin}, nil
 }
 
 // checkConnectionDefined says plainly that a query names a connection this
@@ -346,7 +351,7 @@ func checkConnectionDefined(ws Workspace, name, what string) error {
 func runWatchPlan(ctx context.Context, runner ReadOnlyRunner, p watchPlan) (*engine.ResultSet, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, CheckStatementTimeout)
 	defer cancel()
-	return runner.RunReadOnlySQLIn(ctx, p.connection, p.sql, p.params, p.maxRows)
+	return runner.RunReadOnlySQLIn(receipts.WithOrigin(ctx, p.origin), p.connection, p.sql, p.params, p.maxRows)
 }
 
 // runFailed is why a run failed: shown in the report, and the part of it the

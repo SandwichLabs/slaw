@@ -7,10 +7,12 @@ import { ARTIFACT_RUNTIME } from './artifactRuntime'
 import { useBoundQuery } from './useBoundQuery'
 import type { A2UIComponentT } from './types'
 import { runLiveQuery, isBound, type LiveQueryResult } from './query'
+import { useRenderSource } from './source'
 import type { TableData } from './series'
 
 export function useChartData(component: () => A2UIComponentT) {
   const abortSignal = inject<AbortSignal | undefined>('a2uiAbortSignal', undefined)
+  const sourceOf = useRenderSource()
   // Inside a data artifact view the rows come from its named queries (#162).
   const artifact = inject(ARTIFACT_RUNTIME, undefined)
   const bound = artifact ? useBoundQuery(artifact, component) : null
@@ -26,7 +28,7 @@ export function useChartData(component: () => A2UIComponentT) {
     if (!c.sql || inFlight) return
     inFlight = true
     if (first) loading.value = true
-    const res = await runLiveQuery(c.sql, abortSignal, 'low', c.connection || undefined)
+    const res = await runLiveQuery(c.sql, abortSignal, 'low', c.connection || undefined, sourceOf(c.id))
     inFlight = false
     if (res.aborted || unmounted) return
     loading.value = false
@@ -59,5 +61,7 @@ export function useChartData(component: () => A2UIComponentT) {
     return { columns: src.columns ?? [], rows }
   })
 
-  return bound ? { loading: bound.loading, error: bound.error, table } : { loading, error, table }
+  // the run behind the chart, for its Evidence button (receipt id or note)
+  const result = computed<LiveQueryResult | null>(() => (bound ? bound.data.value : live.value))
+  return bound ? { loading: bound.loading, error: bound.error, table, result } : { loading, error, table, result }
 }

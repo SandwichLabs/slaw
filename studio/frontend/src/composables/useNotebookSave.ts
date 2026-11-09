@@ -132,7 +132,7 @@ export function useNotebookSave(opts: NotebookSaveOptions) {
       const result = await App.SaveNotebook({ ...payload, rev: loadedRev }, loadedSessionId)
       loadedRev = result?.notebook?.rev ?? loadedRev
       if (result?.warnings?.length) {
-        opts.error(`Saved with ${result.warnings.length} warning(s): ${result.warnings[0]}`)
+        opts.error(`Saved with ${result.warnings.length} ${result.warnings.length === 1 ? 'warning' : 'warnings'}: ${result.warnings[0]}`)
       }
       saveState.value = 'saved'
       tombstones = pruneConfirmedTombstones(tombstones, new Set(payload.cells.map((c) => c.id)))
@@ -143,7 +143,7 @@ export function useNotebookSave(opts: NotebookSaveOptions) {
         cf.raise(isDeletedConflict(e))
         return
       }
-      opts.error('Failed to save notebook: ' + errorText(e))
+      opts.error("Couldn't save the notebook: " + errorText(e))
     }
   }
 
@@ -176,7 +176,7 @@ export function useNotebookSave(opts: NotebookSaveOptions) {
         cf.raise(isDeletedConflict(e))
         throw new Error(CONFLICT_UNSAVED)
       }
-      const message = 'Failed to save notebook: ' + errorText(e)
+      const message = "Couldn't save the notebook: " + errorText(e)
       opts.error(message)
       throw new Error(message)
     }

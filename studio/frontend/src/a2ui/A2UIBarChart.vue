@@ -28,6 +28,7 @@ import { valueScale, frac as scaleFrac, formatTick } from './scale'
 import { tickAnchor } from './xaxis'
 import { seriesClass } from './series'
 import A2UISeriesLegend from './A2UISeriesLegend.vue'
+import A2UIEvidence from './A2UIEvidence.vue'
 
 const props = defineProps<{ component: A2UIComponentT }>()
 const { loading, error, data, ms } = useMultiSeries(() => props.component, 'bars')
@@ -73,7 +74,7 @@ const groupText = (i: number) => `${labels.value[i]}: ${ms.value.series.map((s, 
 
 <template>
   <div class="a2ui-barchart" @keydown="drill.enabled.value && roving.onKeydown($event)" @focusin="roving.onFocusin">
-    <div v-if="component.label" class="a2ui-component__title">{{ component.label }}</div>
+    <div v-if="component.label || data?.receipt_id || data?.receipt_note" class="a2ui-component__title">{{ component.label }}<A2UIEvidence :result="data" :title="component.label || component.id" /></div>
     <div v-if="isBound(component) && loading && !data" class="a2ui-loading">RUNNING QUERY…</div>
     <div v-else-if="isBound(component) && error" class="a2ui-error">QUERY ERROR: {{ error }}</div>
     <div v-else-if="labels.length === 0 || ms.series.length === 0" class="a2ui-empty">NO ROWS</div>

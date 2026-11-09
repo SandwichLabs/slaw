@@ -42,7 +42,8 @@ export interface CellState {
   page: A2UIPageT | null
   // Runtime-only (never saved):
   lastRunSource: string | null
-  result: { columns: string[]; types: string[]; rows: any[][]; error?: string } | null
+  // receipt_id / receipt_note: the run's receipt, or why it has none (the Evidence button)
+  result: { columns: string[]; types: string[]; rows: any[][]; error?: string; receipt_id?: string; receipt_note?: ReceiptNote } | null
   running: boolean
   mdPreview: boolean
   // SQL drawer / a2ui card definition open. Runtime-only, never saved (not
@@ -98,7 +99,7 @@ export function blankCell(type: CellState['type']): RawCell {
   // internal/a2ui.Validate rejects zero components, so a freshly added
   // a2ui cell needs a placeholder or it would fail Coerce on the very
   // next autosave.
-  return { id, type, page: { title: 'Untitled', components: [{ id: 'placeholder', type: 'text', text: 'Empty A2UI cell — edit the source below.' }] } }
+  return { id, type, page: { title: 'Untitled', components: [{ id: 'placeholder', type: 'text', text: 'Empty card. Edit the source below.' }] } }
 }
 
 // envelopeToRaw converts a task-mode EnvelopeCell (the agent's proposal) into a

@@ -119,7 +119,7 @@ useModalKeys(open, () => close(), root)
 
           <div v-if="preview.warnings.length" class="note warn" role="status" data-testid="bi-warnings">
             <Icon name="alert" :size="16" />
-            <span><b>Heads up</b><span v-for="w in preview.warnings" :key="w" style="display: block;">{{ w }}</span></span>
+            <span><b>Warnings</b><span v-for="w in preview.warnings" :key="w" style="display: block;">{{ w }}</span></span>
           </div>
           <div v-if="preview.makerNotes.length" class="note maker" data-testid="bi-maker-notes">
             <Icon name="fileText" :size="16" />

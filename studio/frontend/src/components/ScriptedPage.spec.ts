@@ -107,7 +107,7 @@ describe('ScriptedPage', () => {
     await flushPromises()
     handlers['pagewindow:state']({ name: 'pg', state: 'setup', hash: 'h1' })
     await flushPromises()
-    expect(w.get('[data-testid="scripted-page-setup"]').text()).toBe('This page window could not be set up on this Mac.')
+    expect(w.get('[data-testid="scripted-page-setup"]').text()).toBe("This page window couldn't be set up on this Mac.")
     expect(w.find('[data-testid="scripted-page-stopped"]').exists()).toBe(false)
     expect(w.find('[data-testid="scripted-page-reopen"]').exists()).toBe(true)
   })

@@ -5,8 +5,9 @@
 // cap says so (`truncated`), without inventing a count of the rest.
 import { computed } from 'vue'
 import { cellClass, formatCell, isNumericType } from '../lib/formatCell'
+import { openEvidence } from '../composables/useEvidenceDrawer'
 
-const props = defineProps<{ result: QueryResult }>()
+const props = defineProps<{ result: QueryResult; title?: string }>()
 const rows = computed(() => (props.result.rows ?? []).map((row) => row.map((cell, j) => formatCell(cell, props.result.columns[j]?.type))))
 </script>
 
@@ -30,7 +31,9 @@ const rows = computed(() => (props.result.rows ?? []).map((row) => row.map((cell
         </tbody>
       </table>
     </div>
-    <p class="help result-grid__meta" data-testid="result-meta">{{ result.row_count.toLocaleString() }} {{ result.row_count === 1 ? 'row' : 'rows' }} in {{ result.duration }}</p>
+    <p class="help result-grid__meta" data-testid="result-meta">{{ result.row_count.toLocaleString() }} {{ result.row_count === 1 ? 'row' : 'rows' }} in {{ result.duration }}
+      <button v-if="result.receipt_id || result.receipt_note" type="button" class="ev-link" data-testid="result-evidence" :aria-label="`Show evidence for ${title ?? 'this result'}`" @click="openEvidence({ title: title ?? 'Result', receiptId: result.receipt_id, note: result.receipt_note }, $event)">Evidence</button>
+    </p>
   </div>
 </template>
 

@@ -11,6 +11,7 @@ import (
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/hub"
 	"github.com/SandwichLabs/slaw/internal/queries"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/session"
 )
 
@@ -31,6 +32,14 @@ type QueryResult struct {
 	// rest (a metric's Try it): TotalRows is then only RowCount, not the true
 	// count. RunQuery counts, so it leaves this false.
 	Truncated bool `json:"truncated,omitempty"`
+	// ReceiptID is the run's receipt (docs/plans/run-receipts.md), empty when
+	// none was kept: a statement that is not a single read, or a store that could
+	// not be written.
+	ReceiptID string `json:"receipt_id,omitempty"`
+	// ReceiptNote says why there is no receipt when one was due ("not_kept":
+	// the receipt could not be written; "unavailable": this workspace keeps
+	// none). A reason class, never an error message.
+	ReceiptNote string `json:"receipt_note,omitempty"`
 }
 
 // queryGridRowCap bounds how many rows the Query editor's grid will
@@ -56,7 +65,7 @@ const queryGridRowCap = 5000
 // every open file/every other in-flight call.
 func jsonRoundTripGuard(v any) error {
 	if _, err := json.Marshal(v); err != nil {
-		return fmt.Errorf("result contains a value that could not be serialized (%w) — this is almost certainly a bug in Slaw, not your query; please report it", err)
+		return fmt.Errorf("the result holds a value Slaw couldn't encode (%w); this is almost certainly a bug in Slaw, not in your query. Please report it", err)
 	}
 	return nil
 }
@@ -149,7 +158,9 @@ func (a *App) runQuery(ctx context.Context, req RunQueryRequest) (*QueryResult, 
 	}
 	before := session.StatusSnapshot(a.sess)
 	start := time.Now()
-	rs, total, err := a.engine.ExecuteCappedIn(ctx, req.Connection, sqlStr, params, queryGridRowCap)
+	rec := a.ws.Receipts()
+	rctx := receipts.WithIntent(ctx, editorIntent(req, params))
+	rs, total, err := a.engine.ExecuteCappedIn(rctx, req.Connection, sqlStr, params, queryGridRowCap)
 	a.afterRun(a.sess, before, sqlStr)
 	duration := time.Since(start)
 
@@ -165,11 +176,29 @@ func (a *App) runQuery(ctx context.Context, req RunQueryRequest) (*QueryResult, 
 	}
 
 	result.Columns = columnInfos(rs)
+	// The receipt covers the rows the grid gets: capped at queryGridRowCap, with
+	// the true count known.
+	id, ferr := receipts.Finish(rctx, rec, rs.Rows, total > len(rs.Rows), total)
+	result.ReceiptID, result.ReceiptNote = id, string(receipts.NoteFor(rec, id, ferr))
 
 	if err := jsonRoundTripGuard(result); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// editorIntent is the receipt intent of the Query Explorer's run: the person's
+// own statement, as written, with the values bound to the saved query it has
+// open (if any). It is not policy-gated, so its verdict is unchecked.
+func editorIntent(req RunQueryRequest, params map[string]any) receipts.Intent {
+	src := receipts.Source{Kind: receipts.SourceSQL}
+	if req.QueryID != "" {
+		src = receipts.Source{Kind: receipts.SourceSavedQuery, Ref: "queries/" + req.QueryID + ".sql"}
+	}
+	return receipts.Intent{
+		Surface: receipts.SurfaceQueryEditor, Actor: receipts.ActorPerson, Source: src,
+		SQL: req.SQL, Params: receipts.ParamStrings(params), Verdict: receipts.VerdictUnchecked,
+	}
 }
 
 // columnInfos names and types a result set's columns for the grid.
@@ -235,6 +264,10 @@ type A2UIQueryResult struct {
 	// (RunReadOnlySQL's LIMIT push-down) rather than fetched-then-sliced,
 	// so this reports whether that LIMIT actually cut anything.
 	Truncated bool `json:"truncated"`
+	// ReceiptID is the run's receipt, empty when none was kept.
+	ReceiptID string `json:"receipt_id,omitempty"`
+	// ReceiptNote is why there is no receipt when one was due (see QueryResult).
+	ReceiptNote string `json:"receipt_note,omitempty"`
 }
 
 // RunA2UIQuery executes one A2UI component's "sql" binding. It is called by
@@ -254,7 +287,7 @@ type A2UIQueryResult struct {
 // result with checkSQLClassReadOnly: sqlClassRead only, regardless of
 // sandbox mode.
 func (a *App) RunA2UIQuery(sqlStr string) (*A2UIQueryResult, error) {
-	return a.RunA2UIQueryIn(sqlStr, "")
+	return a.RunA2UIQueryIn(sqlStr, "", RenderSource{})
 }
 
 // RunA2UIQueryIn is RunA2UIQuery for a binding (or notebook sql cell) that
@@ -262,8 +295,11 @@ func (a *App) RunA2UIQuery(sqlStr string) (*A2UIQueryResult, error) {
 // connection's catalog as the default for unqualified table names, on a
 // pinned connection. An empty connection is the session default, exactly
 // RunA2UIQuery. Every gate (read-only classification, row cap, timeout)
-// applies identically.
-func (a *App) RunA2UIQueryIn(sqlStr, connection string) (*A2UIQueryResult, error) {
+// applies identically. source names the notebook cell or A2UI component that
+// asked, for the run's receipt (a notebook_cell or a2ui surface with a ref); Go
+// checks it against the open notebook or artifact and drops what does not match,
+// so a wrong source never refuses a run.
+func (a *App) RunA2UIQueryIn(sqlStr, connection string, source RenderSource) (*A2UIQueryResult, error) {
 	if connection != "" {
 		if err := session.ValidateName(connection); err != nil {
 			return nil, fmt.Errorf("unknown connection %q", connection)
@@ -293,7 +329,9 @@ func (a *App) RunA2UIQueryIn(sqlStr, connection string) (*A2UIQueryResult, error
 	ctx, cancel := context.WithTimeout(a.ctx, a2uiQueryTimeout)
 	defer cancel()
 	before := session.StatusSnapshot(runSess)
-	rs, truncated, err := handler.RunReadOnlySQLIn(agents.ArtifactQueryContext(ctx), connection, sqlStr, nil, a2uiQueryRowCap)
+	ws, _, _, _ := a.snapshot() // the workspace is open: readOnlyRunner just said so
+	origin := renderOrigin(ctx, ws, &a.renderIndex, source)
+	rs, truncated, err := handler.RunReadOnlySQLIn(receipts.WithOrigin(agents.ArtifactQueryContext(ctx), origin), connection, sqlStr, nil, a2uiQueryRowCap)
 	a.afterRun(runSess, before, sqlStr)
 	if err != nil {
 		return nil, a.explainReadOnlyDenial(err)
@@ -319,7 +357,7 @@ func (a *App) readOnlyRunner() (*agentToolHandler, session.Session, error) {
 // a2uiResult shapes a result set for the renderer, refusing one that does not
 // survive a JSON round trip.
 func a2uiResult(rs *engine.ResultSet, truncated bool) (*A2UIQueryResult, error) {
-	out := &A2UIQueryResult{Truncated: truncated}
+	out := &A2UIQueryResult{Truncated: truncated, ReceiptID: rs.ReceiptID, ReceiptNote: rs.ReceiptNote}
 	out.Columns, out.Types = rs.NamesAndTypes()
 	out.Rows = rs.Rows
 	if err := jsonRoundTripGuard(out); err != nil {

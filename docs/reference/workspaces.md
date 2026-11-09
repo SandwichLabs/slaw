@@ -170,6 +170,7 @@ Connection definitions come from three files and are merged most-specific-wins.
 | `sign_in_fingerprint` | Connection name to the definition fingerprint the sign-in was chosen for (written by Slaw). |
 | `sign_in_server` | Connection name to the host-level description of that server, so "the server changed (a to b)" can name both (written by Slaw). |
 | `agent` | This person's agent settings: `sandbox` and `ask_before_writes`. |
+| `receipts` | This person's [run receipt](receipts.md) settings: `keep_params`, `days`, `max_count`, `max_mb` (all optional; a missing one is the default). Set in Settings > Workspace > Receipts or `slaw receipts settings`. |
 | `mcp_port` | The loopback port Studio's MCP server last used for this workspace, so a client's saved address survives a restart. Not a secret; the bearer token changes on every start. |
 | `nonce` | Written by Slaw. Ties the file to the folder it was made for (see below). |
 <!-- /keys -->

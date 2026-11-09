@@ -39,7 +39,7 @@ const TIMESTAMP = /^(\d{4}-\d{2}-\d{2})[ T]/
  */
 export function drillCandidate(p: ArtifactParamT, cell: unknown, column: string): DrillCandidate {
   if (cell === null || cell === undefined) return { ok: false, error: `That row has no value for "${column.slice(0, 80)}".` }
-  if (typeof cell === 'object') return { ok: false, error: `The value of "${column.slice(0, 80)}" cannot be used here.` }
+  if (typeof cell === 'object') return { ok: false, error: `The value of "${column.slice(0, 80)}" can't be used here.` }
   if ((p.type === 'text' || p.type === 'enum') && (typeof cell === 'number' || typeof cell === 'bigint')) return { ok: true, raw: String(cell) }
   if (p.type === 'date' && typeof cell === 'string') {
     const m = TIMESTAMP.exec(cell)

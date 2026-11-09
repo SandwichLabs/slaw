@@ -40,7 +40,7 @@ export function useNotebookEditor() {
   // click-to-dismiss shape as infoMessage, plus a 4s auto-dismiss timeout.
   const statusMessage = ref('')
 
-  const nb = useNotebookCells({ onDelete: (id) => save.tombstone(id) })
+  const nb = useNotebookCells({ onDelete: (id) => save.tombstone(id), notebookId: () => save.id() })
   const { cells } = nb
   const save = useNotebookSave({
     title, cells,
@@ -91,7 +91,7 @@ export function useNotebookEditor() {
       await sync.replayPending(id)
     } catch (e: any) {
       notFound.value = true
-      errorMessage.value = 'Failed to load notebook: ' + errorText(e)
+      errorMessage.value = "Couldn't load the notebook: " + errorText(e)
       loading.value = false
       // Nothing was loaded, so there is nothing to save: a later flush (switching
       // workspaces, closing) must not try to write an empty notebook back.
@@ -155,7 +155,7 @@ export function useNotebookEditor() {
       const path = await App.ExportNotebook(save.id(), '')
       if (path) statusMessage.value = `Exported to ${path}`
     } catch (e: any) {
-      errorMessage.value = 'Failed to export notebook: ' + errorText(e)
+      errorMessage.value = "Couldn't export the notebook: " + errorText(e)
     }
   }
 

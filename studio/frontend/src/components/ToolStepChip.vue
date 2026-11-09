@@ -9,6 +9,7 @@ import { ref, computed } from 'vue'
 import Icon from './Icon.vue'
 import ApprovalCard from './ApprovalCard.vue'
 import { formatToolInput } from '../lib/toolStep'
+import { openEvidence } from '../composables/useEvidenceDrawer'
 import type { ToolStep } from '../composables/useAgentChat'
 
 const props = defineProps<{ step: ToolStep; previewLen: number }>()
@@ -19,6 +20,17 @@ const preview = computed(() => {
   const p = formatted.value.preview
   return p.length > props.previewLen ? p.slice(0, props.previewLen) + '…' : p
 })
+
+// The read's receipt: its id, how many rows the model was shown, and the drawer.
+const rowsText = computed(() => {
+  const r = props.step.receipt
+  if (!r) return ''
+  return `${r.rows} ${r.rows === 1 ? 'row' : 'rows'} shown${r.truncated ? ' (cut)' : ''}`
+})
+function openRunEvidence(e: Event) {
+  const r = props.step.receipt
+  if (r) openEvidence({ title: props.step.tool, receiptId: r.receiptId, fromId: true }, e)
+}
 
 const copied = ref(false)
 async function copy() {
@@ -56,6 +68,13 @@ async function copy() {
         <pre v-if="step.status === 'error' && step.output" class="tool-step__error">{{ step.output }}</pre>
       </div>
     </details>
+    <div v-if="step.receipt" class="tool-step__receipt" data-testid="agent-receipt">
+      <span class="tool-step__rid" :title="step.receipt.receiptId">{{ step.receipt.receiptId }}</span>
+      <span class="tool-step__rows" data-testid="agent-receipt-rows">{{ rowsText }}</span>
+      <button class="btn btn-ghost btn-sm" type="button" data-testid="agent-open-evidence" @click="openRunEvidence">
+        <Icon name="fileText" :size="12" /> Open evidence
+      </button>
+    </div>
     <!-- Outside <details> so the card is always visible, even collapsed
          (#79) — the whole point is that the user sees the ask without
          having to open the chip first. -->
@@ -100,6 +119,16 @@ async function copy() {
   font-family: var(--sh-font-mono);
   font-size: 12px;
 }
+.tool-step__receipt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--sh-graphite);
+}
+.tool-step__rid { font-family: var(--sh-font-mono); }
 .tool-step__copy {
   margin-top: 6px;
 }

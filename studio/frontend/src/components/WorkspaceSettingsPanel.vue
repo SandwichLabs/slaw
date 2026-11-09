@@ -7,6 +7,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import Icon from './Icon.vue'
 import AgentSettings from './AgentSettings.vue'
 import ArtifactViewDecisions from './ArtifactViewDecisions.vue'
+import ReceiptsSection from './ReceiptsSection.vue'
 import { workspaceInfo, isReadOnly, refreshWorkspaceInfo } from '../composables/useWorkspace'
 import { EventsOn } from '../wailsjs/runtime/runtime'
 import { errorText, settingsError } from '../lib/errors'
@@ -55,7 +56,7 @@ async function save() {
       loadedTeamSandbox: i.teamSandboxSet ? i.team.sandbox : '',
       loadedTeamAsk: i.team.askBeforeWrites,
     })
-    message.value = defaultChanged.value ? 'Settings saved. The default connection applies the next time the workspace opens.' : 'Settings saved'
+    message.value = defaultChanged.value ? 'Saved. The default connection applies the next time the workspace opens.' : 'Saved'
     setTimeout(() => { message.value = '' }, 4000)
   } catch (e: unknown) {
     const se = settingsError(e)
@@ -175,6 +176,8 @@ onUnmounted(() => unsub?.())
     </div>
 
     <ArtifactViewDecisions />
+
+    <ReceiptsSection />
 
     <AgentSettings />
 

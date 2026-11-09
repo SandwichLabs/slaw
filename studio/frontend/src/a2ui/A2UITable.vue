@@ -8,6 +8,7 @@ import { useLiveQuery } from './useLiveQuery'
 import { formatCell, cellClass, isNumericType } from '../lib/formatCell'
 import { useDrill } from './useDrill'
 import { useRoving } from './useRoving'
+import A2UIEvidence from './A2UIEvidence.vue'
 
 const props = defineProps<{ component: A2UIComponentT }>()
 const { loading, error, data } = useLiveQuery(() => props.component)
@@ -34,7 +35,7 @@ const formattedRows = computed(() =>
 
 <template>
   <div class="a2ui-tablewrap">
-    <div v-if="component.label" class="a2ui-component__title">{{ component.label }}</div>
+    <div v-if="component.label || data?.receipt_id || data?.receipt_note" class="a2ui-component__title">{{ component.label }}<A2UIEvidence :result="data" :title="component.label || component.id" /></div>
     <div v-if="isBound(component) && loading && !data" class="a2ui-loading">RUNNING QUERY…</div>
     <div v-else-if="isBound(component) && error" class="a2ui-error">QUERY ERROR: {{ error }}</div>
     <div v-else-if="rows.length === 0" class="a2ui-empty">NO ROWS</div>

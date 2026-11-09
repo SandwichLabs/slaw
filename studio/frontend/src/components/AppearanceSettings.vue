@@ -49,7 +49,7 @@ async function openFolder() {
   try {
     themesDir.value = await App.OpenThemesDir()
   } catch (e: any) {
-    flash('Could not open the themes folder: ' + errorText(e))
+    flash("Couldn't open the themes folder: " + errorText(e))
   } finally {
     opening.value = false
   }

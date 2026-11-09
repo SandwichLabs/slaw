@@ -154,7 +154,7 @@ describe('WatchesView', () => {
     expect(w.find('[data-testid="watch-status-revenue_cap"]').text()).toContain('ok')
     const stopped = w.find('[data-testid="watch-status-volume"]')
     expect(stopped.text()).toContain('stopped')
-    expect(stopped.text()).toContain('not recorded')
+    expect(stopped.text()).toContain("wasn't recorded")
     expect(stopped.find('.badge').classes()).toContain('badge--info')
     expect(w.find('[data-testid="alert-volume"]').exists()).toBe(false)
     w.unmount()

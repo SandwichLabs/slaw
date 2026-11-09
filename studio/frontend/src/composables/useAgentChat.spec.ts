@@ -357,7 +357,7 @@ describe('useAgentChat approvals (#79)', () => {
     chat = useAgentChat()
     chat.resetAll()
     await chat.send('hi')
-    expect(chat.messages.value[1].text).toBe('Assistant error: 401 unauthorized. Check the API key and model in Settings \u2192 App.')
+    expect(chat.messages.value[1].text).toBe('Assistant error: 401 unauthorized. Check the API key and model in Settings > App.')
     llmSettings = { provider: 'local', endpoint: 'http://localhost:8080/v1' }
   })
 

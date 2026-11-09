@@ -4,8 +4,35 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-09
+
+Plainer, shorter wording across Studio and the CLI. No behaviour changes.
+
+### Changed
+
+- **User-facing text rewritten (#374).** About 120 labels, buttons, empty states, hints, errors and CLI help strings in 69 files are shorter and say what they mean, among them the About header, the chat placeholder, the Import view and the dashboard.
+
+## [0.9.0] - 2026-11-09
+
+Run receipts and the evidence drawer: every read that shows you a value (in the console, after `.receipts on`), and every `run_query`, `run_saved_query` and `preview_query` the agent runs, keeps a record on this computer of the statement, the connections and, where one can be recorded, the snapshot it read, and Evidence opens it (#241, E1). Also clearer SQL errors and an MCP surface that lists only the tools a session can use.
+
+**Opening in an older Slaw:** once you change a receipt setting (Settings > Workspace > Receipts or `slaw receipts settings`), Slaw 0.8.0 and older refuse to open that workspace on this computer (`field receipts not found`). Clear every limit box in Settings (leave it blank) and tick Keep parameter values, or run `slaw receipts settings --keep-params on --days default --max-count default --max-mb default`, or remove the `receipts:` block from your per-workspace `local.yaml` in the config directory, before opening it in an older Slaw.
+
 ### Added
 
+- **Run receipts and the evidence drawer (#241).**
+  - Every read that shows a value keeps a receipt in `.slaw-local/receipts/`. This covers the Query Explorer, notebook cells, A2UI components, artifacts, metric Try it, assertions, watches, `slaw query`, the agent's `run_query`, `run_saved_query` and `preview_query`, and the console after `.receipts on`.
+  - A receipt records:
+    - the statement as written and as run, and the parameter values;
+    - the connections, each with a snapshot fact (replayable, live only or not recorded);
+    - the columns (a name that could carry a value is withheld), how many rows were shown and a keyed fingerprint of them.
+  - It never holds a result row or a credential, and its connection facts never hold a path, a bucket or a host. The statement is kept as you wrote it, so a file path you typed stays in it. It stays on this computer, and is never in git or a bundle.
+  - **Evidence** opens a drawer with the receipt from the Query Explorer, notebook SQL cells, metric Try it and every A2UI stat, table and chart. `slaw receipts show <id>` prints the drawer's sections as text; `slaw receipts list` prints the newest receipts one per line (`--surface`, `--limit`, `--json`).
+  - Settings > Workspace > Receipts and `slaw receipts settings` control whether parameter values are kept and how long receipts are kept (30 days, 20,000 or 64 MB by default). **Delete all receipts** and `slaw receipts clear` remove them.
+  - The agent's read tools return a `receipt_id` to cite, and `get_receipt` returns receipts made by the same session (an MCP connection, or a chat conversation until **New chat**); a client that reconnects can't read its earlier ones.
+  - In chat, tool chips open the evidence. A number in an answer that matches a value this turn's queries showed the model gets a ✓ that opens its evidence; a number in no result is underlined as "not from a query"; a number that could match by coincidence (an id column, a non-unique value, a short number in a long result) is left unmarked. A ✓ means the value appeared in a result, not that the answer is right.
+  - Recording a connection's snapshot fact adds up to 300 ms to a read; a remote Postgres may often record `timed out`, and an `iceberg_catalog` records no snapshot.
+  - Settings also lists the ten most recent receipts, each with Evidence. Out-of-range limits are moved into range, and a lowered limit removes the oldest receipts.
 - **`run_query` takes an optional `connection`** (#352): the catalog unqualified names resolve against, so the agent can call `metric()` on a saved query pinned to a non-default connection (an `iceberg_catalog`, for one). The same tier, read-only, writable-connection and approval gates apply; an unknown name is refused.
 
 ### Changed
@@ -13,9 +40,14 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 - **MCP clients see the tools they can use (#221).**
   - `present_data` is chat-only: it renders in Studio's chat, so `tools/list` no longer offers it and an MCP call to it is refused as an unknown tool.
   - The notebook cell tools no longer mention "the notebook currently open in Studio" over MCP: omit `notebook_id` to create a new notebook (Studio's own MCP server still appends to the notebook you have open).
-  - `tools/list` leaves out the tools the session's tier can never run (a read-only session lists no write tool). Calls are gated as before, so an unlisted tool still returns the tier refusal. Studio sends `tools/list_changed` when you save the agent settings.
+  - `tools/list` leaves out the tools the session's tier can never run (read-only lists no write, content or schema tool; read-write no schema tool). Calls are gated as before, so an unlisted tool still returns the tier refusal. Studio's MCP server sends `tools/list_changed` when you save Settings > Workspace.
   - `list_connections` no longer shows DuckDB's `memory`, `system` and `temp` catalogs.
   - `describe_table` on a missing table is an error that names it and points at `introspect_schema` (it was an empty column list), `pk` is real (read from DuckDB's constraints; an attached Postgres or MySQL database reports none), and a file path or URL is answered with `run_query` `DESCRIBE SELECT * FROM read_csv(...)`.
+
+### Fixed
+
+- **Errors say what is wrong (#3).** A notebook cell, A2UI component, artifact or metric query with a typo, a missing table or an empty statement shows that reason (DuckDB's parser or binder error, `table "x" not found`, `the statement is empty`) instead of "live bindings are read-only…"; writes and files outside `data/` still get that message, and `preview_query` reports such a statement as `query failed: <reason>`. An empty notebook cell can't be run ("Write a query first"). A defined connection that failed to connect reports its own status (`connection "x": …`); "unknown connection" is only for a name nothing defines.
+- **`run_saved_query` on a saved query pinned to a connection** no longer suggests values from a same-named table on the default connection when it returns no rows (#352).
 
 ## [0.8.0] - 2026-11-08
 
@@ -495,7 +527,9 @@ The first public release. Vibe is an agentic desktop workspace for working with 
 - Older data-holding `.vibe` (SQLCipher) files are not opened.
 - Linux builds target glibc 2.35 or newer and WebKitGTK 4.1; musl and older distributions are unsupported.
 
-[Unreleased]: https://github.com/SandwichLabs/slaw/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/SandwichLabs/slaw/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/SandwichLabs/slaw/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/SandwichLabs/slaw/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/SandwichLabs/slaw/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/SandwichLabs/slaw/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/SandwichLabs/slaw/compare/v0.6.3...v0.6.4

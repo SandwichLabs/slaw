@@ -13,7 +13,7 @@ import { seriesClass, toRings } from './series'
 import { formatNumber } from '../lib/formatCell'
 
 const props = defineProps<{ component: A2UIComponentT }>()
-const { loading, error, table } = useChartData(() => props.component)
+const { loading, error, table, result } = useChartData(() => props.component)
 const rings = computed(() => toRings(table.value, props.component.max))
 // Animate each ring's fill fraction, not its raw value, so mixed maxes share one sweep.
 const fractions = computed(() => rings.value.map((r) => Math.max(0, Math.min(r.value / r.max, 1))))
@@ -44,7 +44,7 @@ function pct(i: number): string {
 </script>
 
 <template>
-  <A2UIChartFrame kind="rings" :label="component.label" :sql="isBound(component)" :loading="loading" :error="error" :empty="rings.length === 0" :animated="enabled" @replay="replay">
+  <A2UIChartFrame :result="result" :title="component.label || component.id" kind="rings" :label="component.label" :sql="isBound(component)" :loading="loading" :error="error" :empty="rings.length === 0" :animated="enabled" @replay="replay">
     <div class="a2ui-rings">
       <svg :viewBox="`0 0 ${SIZE} ${SIZE}`" class="a2ui-rings__svg" role="img" :aria-label="ariaLabel">
         <g v-for="(r, i) in rings" :key="i" :class="[seriesClass(i), { 'a2ui-rings__ring--active': selected === i }]" @mouseenter="selected = i">

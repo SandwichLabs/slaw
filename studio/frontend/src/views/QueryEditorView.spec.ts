@@ -9,6 +9,8 @@ import { mount, flushPromises } from '@vue/test-utils'
 import QueryEditorView from './QueryEditorView.vue'
 import { flushAll, _resetForTests as resetSaves } from '../composables/usePendingSaves'
 import { _resetConnectionsForTests } from '../composables/useConnections'
+import { useEvidenceDrawer, _resetEvidenceForTests } from '../composables/useEvidenceDrawer'
+import { _resetRunMemoryForTests, recallRun } from '../composables/useReceipt'
 
 // The SQL editor is CodeMirror, which jsdom cannot drive: mock it the way
 // NotebookView.spec.ts does, keep the latest instance, and "type" through its
@@ -439,5 +441,49 @@ describe('QueryEditorView (W5 Query Explorer)', () => {
     await flushPromises()
     expect(app.RunQuery).not.toHaveBeenCalled()
     expect(wrapper.find('.sql-error').text()).toContain('min_n')
+  })
+
+  // Evidence (docs/plans/run-receipts.md R4a)
+  it('the result bar has an Evidence button when the run has a receipt; it opens the drawer with the run’s parameter values in memory', async () => {
+    _resetEvidenceForTests(); _resetRunMemoryForTests()
+    const app = makeApp({ execResult: { columns: [{ name: 'x' }], rows: [[1]], duration: '4.2ms', row_count: 1, total_rows: 1, receipt_id: 'r_q1' } })
+    app.GetQuery.mockResolvedValue({
+      id: 'q1', title: 'Over', sql: 'SELECT $min_n',
+      parameters: [{ name: 'min_n', type: 'integer', required: false, default: '5' }],
+    } as any)
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-testid="query-evidence"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="saved-query"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="run-query"]').trigger('click')
+    await flushPromises()
+
+    const btn = wrapper.find('[data-testid="query-evidence"]')
+    expect(btn.exists()).toBe(true)
+    expect(recallRun('r_q1')?.params).toEqual({ min_n: '5' })
+    await btn.trigger('click')
+    expect(useEvidenceDrawer().target.value).toMatchObject({ title: 'Top customers', receiptId: 'r_q1' })
+    expect(useEvidenceDrawer().target.value?.memory).toMatchObject({ sql: 'SELECT $min_n', params: { min_n: '5' } })
+    _resetEvidenceForTests()
+  })
+
+  it('a run with no receipt and no note has no Evidence button; a note alone brings it back', async () => {
+    _resetEvidenceForTests()
+    makeApp()
+    let wrapper = await mountView()
+    await typeSql('SELECT 1')
+    await wrapper.find('[data-testid="run-query"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="query-evidence"]').exists()).toBe(false)
+
+    makeApp({ execResult: { columns: [{ name: 'x' }], rows: [[1]], duration: '4.2ms', row_count: 1, total_rows: 1, receipt_note: 'not_kept' } })
+    editors.length = 0
+    wrapper = await mountView()
+    await typeSql('SELECT 1')
+    await wrapper.find('[data-testid="run-query"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="query-evidence"]').trigger('click')
+    expect(useEvidenceDrawer().target.value).toMatchObject({ note: 'not_kept', memory: { sql: 'SELECT 1' } })
+    _resetEvidenceForTests()
   })
 })

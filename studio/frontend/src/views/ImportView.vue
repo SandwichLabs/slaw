@@ -100,7 +100,7 @@ const {
             <label class="field-label">Table name</label>
             <input data-testid="table-name" v-model="tableName" class="field-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="my_table" />
           </div>
-          <div v-if="inspection" class="sh-meta" style="align-self: flex-end;">{{ inspection.row_count }} row(s)</div>
+          <div v-if="inspection" class="sh-meta" style="align-self: flex-end;">{{ inspection.row_count }} {{ inspection.row_count === 1 ? 'row' : 'rows' }}</div>
         </div>
 
         <div v-if="tableExists && summary" class="col" data-testid="mode-group" style="gap: var(--sh-space-3); padding: var(--sh-space-4); border: 1.5px dashed var(--slaw-border-subtle); border-radius: var(--sh-radius-md);">

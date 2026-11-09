@@ -15,18 +15,17 @@ var artifactCmd = &cobra.Command{
 	Short: "List the workspace's data artifacts, trust their custom views, render static pages",
 	Long: `Data artifacts are parameterised, live views kept in the workspace's
 artifacts/<name>/ folders. They are made and edited in Studio (or by an agent
-over MCP); "list" shows them as the artifact kinds in Studio's Library (live views, pages,
-chart scripts) do, "view" allows
-or denies a custom script view or page, and "render" draws an allowed static
-HTML page to a folder of files.`,
+over MCP). "list" shows them the way Studio's Library does (live views, pages,
+chart scripts), "view" allows or denies a custom script view or page, and
+"render" draws an allowed static HTML page to a folder of files.`,
 }
 
 var artifactListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List data artifacts: name, title, view kind and any error",
-	Long: `List the workspace's data artifacts the way the artifact kinds in Studio's
-Library (live views, pages, chart scripts) show them: name, title, view kind and, for an artifact that cannot be read, why. It
-reads files only: no connection is opened and no query is run.`,
+	Long: `List the workspace's data artifacts the way Studio's Library shows them (live
+views, pages, chart scripts): name, title, view kind and, for one that cannot be
+read, why. It reads files only: no connection is opened and no query is run.`,
 	Args:         cobra.NoArgs,
 	RunE:         runArtifactList,
 	SilenceUsage: true,

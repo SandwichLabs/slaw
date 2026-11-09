@@ -13,7 +13,7 @@ import (
 
 	duckdb "github.com/duckdb/duckdb-go/v2"
 
-	"github.com/SandwichLabs/slaw/internal/secrets"
+	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/usersql"
 )
 
@@ -30,7 +30,7 @@ const (
 
 // history is the console's recall list, kept in .slaw-local/repl/history: one
 // entry per line, machine-local, never in the workspace's tracked files. It
-// only ever holds what recordable and eligible allow. The file is a cache the
+// only ever holds what engine.Recordable and eligible allow. The file is a cache the
 // repository does not control: a symbolic link anywhere on its path, or a file
 // that is not a regular file, switches history off for the session (with one
 // notice) rather than following it. Up to four consoles of a workspace share
@@ -45,17 +45,6 @@ type history struct {
 // foldEntry is a statement as one history line.
 func foldEntry(text string) string {
 	return strings.Join(strings.Fields(strings.ReplaceAll(text, "\n", " ")), " ")
-}
-
-// recordable reports whether an entry may be kept, in the file, in memory or
-// in a saved query: it is non-empty and not oversized, it is unchanged by
-// terminal sanitising (an entry holding ESC, a C1 control or a bidi character
-// would be replayed to the terminal on recall), and no credential-shaped text
-// in it would be redacted (a password=..., a token, an s3 secret key in a URL,
-// a DSN). Conservative on purpose: a WHERE password = 'x' is not kept either.
-func recordable(entry string) bool {
-	return entry != "" && len(entry) <= historyEntryMax &&
-		safe(entry) == entry && secrets.RedactPatterns(entry) == entry
 }
 
 // safeDir returns the history directory under root, creating it (0700) and
@@ -125,7 +114,7 @@ func openHistory(root string) (h *history, notice string) {
 }
 
 // loadHistory reads the file without following a link, tightens its mode and
-// keeps the entries recordable allows. dirty says the file should be rewritten.
+// keeps the entries engine.Recordable allows. dirty says the file should be rewritten.
 func loadHistory(path string) (entries []string, dirty bool, err error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|oNoFollow, 0)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -152,7 +141,7 @@ func loadHistory(path string) (entries []string, dirty bool, err error) {
 	sc.Buffer(make([]byte, 0, 64<<10), historyEntryMax+1)
 	for sc.Scan() {
 		line := sc.Text()
-		if !recordable(line) {
+		if !engine.Recordable(line) {
 			dirty = dirty || line != ""
 			continue
 		}
@@ -191,10 +180,10 @@ func (h *history) rewrite(dir string) error {
 }
 
 // record adds an entry (statement newlines become spaces), skipping one
-// recordable refuses and a repeat of the last.
+// engine.Recordable refuses and a repeat of the last.
 func (h *history) record(text string) {
 	entry := foldEntry(text)
-	if !recordable(entry) {
+	if !engine.Recordable(entry) {
 		return
 	}
 	h.mu.Lock()

@@ -7,6 +7,7 @@ import (
 
 	"github.com/SandwichLabs/slaw/internal/agents"
 	"github.com/SandwichLabs/slaw/internal/engine"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/semantics"
 	"github.com/SandwichLabs/slaw/internal/semantics/assert"
 	"github.com/SandwichLabs/slaw/internal/semantics/proposals"
@@ -265,7 +266,8 @@ func (a *App) RunMetric(name string, dims []string) (*QueryResult, error) {
 	}
 	before := session.StatusSnapshot(h.sess)
 	start := time.Now()
-	rs, truncated, err := h.RunReadOnlySQLIn(ctx, connection, sqlStr, nil, tryItRowCap)
+	origin := receipts.Origin{Surface: receipts.SurfaceMetric, Source: receipts.Source{Kind: receipts.SourceMetric, Ref: "semantics/metrics/" + name + ".yaml"}}
+	rs, truncated, err := h.RunReadOnlySQLIn(receipts.WithOrigin(ctx, origin), connection, sqlStr, nil, tryItRowCap)
 	a.afterReadOnlyRun(h.sess, before)
 	if err != nil {
 		return nil, cancelledOr(runCtx, a.explainReadOnlyDenial(err))
@@ -278,7 +280,7 @@ func (a *App) RunMetric(name string, dims []string) (*QueryResult, error) {
 // leaves TotalRows equal to RowCount (the true total is unknown), instead of
 // inventing a count.
 func tryItResult(rs *engine.ResultSet, truncated bool, took time.Duration) (*QueryResult, error) {
-	out := &QueryResult{Duration: humanDuration(took), RowCount: rs.RowCount(), TotalRows: rs.RowCount(), Rows: rs.Rows, Columns: columnInfos(rs), Truncated: truncated}
+	out := &QueryResult{Duration: humanDuration(took), RowCount: rs.RowCount(), TotalRows: rs.RowCount(), Rows: rs.Rows, Columns: columnInfos(rs), Truncated: truncated, ReceiptID: rs.ReceiptID, ReceiptNote: rs.ReceiptNote}
 	if err := jsonRoundTripGuard(out); err != nil {
 		return nil, err
 	}

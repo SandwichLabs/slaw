@@ -4,7 +4,7 @@
 # Class 1: functional-option seams (With*) are API surface kept for callers and tests.
 : unreachable func: With[A-Za-z]*$
 # Class 2: test doubles (every mock.go in the store/secret packages).
-/mock\.go:[0-9]+:[0-9]+: unreachable func: Mock\.
+/mock\.go:[0-9]+:[0-9]+: unreachable func: (New)?Mock(\.|$)
 # Class 3: at most 5 justified others.
 # Each is called only from a different package's tests (so it cannot move to export_test.go):
 # internal/docsref asserts docs/reference/agent-policy.md against these lists.

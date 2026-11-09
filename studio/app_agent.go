@@ -10,6 +10,7 @@ import (
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/hub"
 	"github.com/SandwichLabs/slaw/internal/llm"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/session"
 	"github.com/SandwichLabs/slaw/internal/workspace"
 )
@@ -85,6 +86,15 @@ type AgentToolStep struct {
 type AgentChatResult struct {
 	Text  string          `json:"text"`
 	Steps []AgentToolStep `json:"steps"`
+	// ConversationID names the conversation this turn belongs to. The panel
+	// sends it back with the next turn; Go accepts back only an id it issued in
+	// this workspace (chatTurns.conversation).
+	ConversationID string `json:"conversationId"`
+	// Runs are the turn's reads that made a receipt (the chips' receipt id and
+	// row count), and Numbers the verdict on each distinct number of Text
+	// against those reads' rows: matched, or not from a query.
+	Runs    []ChatRun        `json:"runs,omitempty"`
+	Numbers []llm.NumberMark `json:"numbers,omitempty"`
 }
 
 // AgentTurn is one prior message of conversation history passed from the panel
@@ -97,8 +107,9 @@ type AgentTurn struct {
 // AgentChatStream runs a streaming agent turn. As the agent works it emits
 // "agent:stream" Wails events tagged with turnID (kind: delta | tool |
 // tool_done | final | error) so the panel can show live progress and tool use.
-// history is the prior transcript for multi-turn memory. Studio-only.
-func (a *App) AgentChatStream(turnID, message, pinnedContext string, history []AgentTurn) (*AgentChatResult, error) {
+// history is the prior transcript for multi-turn memory; conversationID is the
+// id the previous turn's result returned ("" for a new chat). Studio-only.
+func (a *App) AgentChatStream(turnID, message, pinnedContext string, history []AgentTurn, conversationID string) (*AgentChatResult, error) {
 	cfg, handler, err := a.chatSetup(turnID)
 	if err != nil {
 		return nil, err
@@ -112,15 +123,19 @@ func (a *App) AgentChatStream(turnID, message, pinnedContext string, history []A
 		return nil, err
 	}
 	defer release()
+	// The runs this turn makes are the agent's, in this conversation (receipts).
+	conv := a.chat.conversation(conversationID)
+	ctx = receipts.WithAgentSession(ctx, conv)
 	runner := llm.NewRunner(handler, a.logger)
-	res, err := runner.ChatStream(ctx, cfg, message, pinnedContext, hist, a.streamEmitter(turnID))
+	res, err := runner.ChatStream(ctx, cfg, message, pinnedContext, hist, a.streamEmitter(turnID, conv))
 	if err != nil {
 		return nil, err
 	}
-	out := &AgentChatResult{Text: res.Text}
+	out := &AgentChatResult{Text: res.Text, ConversationID: conv}
 	for _, s := range res.Steps {
 		out.Steps = append(out.Steps, AgentToolStep{Tool: s.Tool, Input: s.Input, Output: s.Output, IsError: s.IsError})
 	}
+	out.Numbers, out.Runs = handler.turn.answerNumbers(res.Text)
 	return out, nil
 }
 
@@ -142,6 +157,8 @@ func (a *App) chatSetup(turnID string) (llm.Config, *agentToolHandler, error) {
 	// inline "agent:approval" card instead of running (or, absent this,
 	// being refused outright the way MCP/AgentChat are).
 	handler.enableApprovals(turnID)
+	// The reads of this turn, for the chips and for checking the answer's numbers.
+	handler.trackRuns(turnID)
 	return cfg, handler, nil
 }
 
@@ -161,18 +178,20 @@ func (a *App) llmConfig(sandbox string, askBeforeWrites bool) llm.Config {
 }
 
 // streamEmitter publishes a chat turn's progress as "agent:stream" events
-// tagged with turnID.
-func (a *App) streamEmitter(turnID string) func(llm.StreamEvent) {
+// tagged with turnID. Each carries the turn's conversation id, so the panel has
+// it even for a turn that is stopped or fails before it returns a result.
+func (a *App) streamEmitter(turnID, conversationID string) func(llm.StreamEvent) {
 	return func(ev llm.StreamEvent) {
 		a.emitEvent("agent:stream", map[string]any{
-			"turnId":  turnID,
-			"kind":    ev.Kind,
-			"text":    ev.Text,
-			"id":      ev.ID,
-			"tool":    ev.Tool,
-			"input":   ev.Input,
-			"output":  ev.Output,
-			"isError": ev.IsError,
+			"turnId":         turnID,
+			"conversationId": conversationID,
+			"kind":           ev.Kind,
+			"text":           ev.Text,
+			"id":             ev.ID,
+			"tool":           ev.Tool,
+			"input":          ev.Input,
+			"output":         ev.Output,
+			"isError":        ev.IsError,
 		})
 	}
 }
@@ -248,6 +267,9 @@ func (a *App) AgentTask(req AgentTaskRequest) (*llm.TaskEnvelope, error) {
 	}
 	ctx, release := a.trackTask(taskID)
 	defer release()
+	// A task's runs are the agent's, in this dialog (receipts): the dialog's
+	// follow-ups all send its one taskId.
+	ctx = receipts.WithAgentSession(ctx, taskSession(taskID))
 
 	cell, err := taskCellFrom(req.Cell)
 	if err != nil {
@@ -357,6 +379,7 @@ func (a *App) newAgentToolHandler(ceiling agents.SandboxMode) *agentToolHandler 
 		a.logger.Error("failed to build the agent handler", "error", err)
 		sc := &agents.SandboxConfig{Mode: agents.ModeReadOnly, MaxQueryRows: 10000, RequireApproval: true}
 		inner = agents.NewHandler(workspace.NewAgentAccess(a.ws, a.sess), engine.NewManager(a.sess, engine.WithLogger(a.logger)), sc, a.logger)
+		inner.SetReceipts(a.ws.Receipts())
 	}
 	inner.SetActiveNotebook(a.activeNotebookID)
 	return &agentToolHandler{app: a, ws: a.ws, sess: a.sess, inner: inner, ceiling: ceiling}
@@ -395,6 +418,9 @@ type agentToolHandler struct {
 	// ceiling = ModeReadOnly; AgentChat/AgentChatStream/StartMCP/RunA2UIQuery
 	// set ceiling = ModeFull (no additional cap beyond what the policy allows).
 	ceiling agents.SandboxMode
+	// turn and turnID are set for a chat turn only (trackRuns): its reads.
+	turn   *turnRuns
+	turnID string
 }
 
 // SetMode forwards to the wrapped *agents.Handler, satisfying internal/llm's
@@ -440,6 +466,7 @@ func (h *agentToolHandler) Handle(ctx context.Context, req *agents.Request) *age
 	if resp.Error == nil {
 		h.app.notifyAgentToolChange(req.Method, resp.Result)
 	}
+	h.noteRun(req, resp)
 	return resp
 }
 

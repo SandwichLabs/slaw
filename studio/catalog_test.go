@@ -163,14 +163,14 @@ func TestStudio_RunA2UIQueryIn_UsesConnectionAsDefaultCatalog(t *testing.T) {
 	assert.Equal(t, []string{"sku"}, def.Columns)
 
 	// connection = other: unqualified `items` is the OTHER catalog's table.
-	in, err := app.RunA2UIQueryIn("SELECT * FROM items ORDER BY id", "other")
+	in, err := app.RunA2UIQueryIn("SELECT * FROM items ORDER BY id", "other", RenderSource{})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"id", "name"}, in.Columns)
 	require.Len(t, in.Rows, 2)
 	assert.Equal(t, "alpha", in.Rows[0][1])
 
 	// Qualified names keep working with or without a connection.
-	q, err := app.RunA2UIQueryIn("SELECT count(*) FROM other.main.items", "")
+	q, err := app.RunA2UIQueryIn("SELECT count(*) FROM other.main.items", "", RenderSource{})
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, q.Rows[0][0])
 
@@ -180,16 +180,16 @@ func TestStudio_RunA2UIQueryIn_UsesConnectionAsDefaultCatalog(t *testing.T) {
 	assert.Equal(t, []string{"sku"}, again.Columns)
 
 	// Same read-only gate on a bound statement.
-	_, err = app.RunA2UIQueryIn("DELETE FROM items", "other")
+	_, err = app.RunA2UIQueryIn("DELETE FROM items", "other", RenderSource{})
 	require.Error(t, err)
 	var n int
 	require.NoError(t, app.sess.DB().QueryRow("SELECT COUNT(*) FROM other.main.items").Scan(&n))
 	assert.Equal(t, 2, n)
 
 	// Unknown / malformed connection names are refused, not interpolated.
-	_, err = app.RunA2UIQueryIn("SELECT 1", "nope")
+	_, err = app.RunA2UIQueryIn("SELECT 1", "nope", RenderSource{})
 	assert.Error(t, err)
-	_, err = app.RunA2UIQueryIn("SELECT 1", `x"; DROP TABLE items; --`)
+	_, err = app.RunA2UIQueryIn("SELECT 1", `x"; DROP TABLE items; --`, RenderSource{})
 	assert.Error(t, err)
 }
 
@@ -233,10 +233,10 @@ func TestStudio_UnknownAndInternalConnectionsRefused(t *testing.T) {
 		_, err := app.InsertRow(tbl, map[string]any{"a": 1})
 		assert.Error(t, err, tbl)
 	}
-	_, err := app.RunA2UIQueryIn("SELECT 1", "Prod DB")
+	_, err := app.RunA2UIQueryIn("SELECT 1", "Prod DB", RenderSource{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown connection")
-	_, err = app.RunA2UIQueryIn("SELECT 1", "ghost")
+	_, err = app.RunA2UIQueryIn("SELECT 1", "ghost", RenderSource{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown connection")
 }
@@ -283,6 +283,6 @@ func catalogTables(app *App, connection string) ([]string, error) {
 
 func TestStudio_RunA2UIQueryIn_ByteCap(t *testing.T) {
 	app := appWithSecondCatalog(t)
-	_, err := app.RunA2UIQueryIn("SELECT repeat('x', 1000000) FROM range(100)", "")
+	_, err := app.RunA2UIQueryIn("SELECT repeat('x', 1000000) FROM range(100)", "", RenderSource{})
 	require.ErrorIs(t, err, engine.ErrResultTooLarge)
 }
