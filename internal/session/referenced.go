@@ -12,7 +12,7 @@ import (
 // It is a best reading of the text, not a plan: a name that is only a column
 // alias is not a qualifier (the same rule ConnectReferenced applies), and a
 // connection that attaches no catalog (object storage) is named by a URL, so it
-// is not listed. Sorted by name. Only types, names and states: no DSN, path or
+// is not listed here (SnapshotConnections adds the ones a string literal points into). Sorted by name. Only types, names and states: no DSN, path or
 // message.
 func ReferencedConnections(s Session, catalog, sqlText string) []ConnectionInfo {
 	if s == nil {

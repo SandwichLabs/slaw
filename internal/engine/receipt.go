@@ -92,7 +92,12 @@ func (m *Manager) recordRunFacts(ctx context.Context, connection string, start t
 	if kind == "" {
 		kind = m.statementKind(ctx, executed)
 	}
-	conns := receiptConnections(session.ReferencedConnections(m.sess, connection, executed))
+	// The snapshot facts are asked only for a statement that will be a receipt,
+	// and never fail or hold the run past their own budget (session.SnapshotConnections).
+	var conns []receipts.Connection
+	if kind == receipts.StmtSelect || kind == receipts.StmtExplain {
+		conns = receiptConnections(session.SnapshotConnections(ctx, m.sess, connection, executed))
+	}
 	fromData := columnNamesFromData(executed)
 	run.Record(func(f *receipts.Facts) {
 		f.At, f.Duration, f.Stmt, f.Connections, f.NamesFromData = start, dur, kind, conns, fromData
@@ -115,11 +120,13 @@ func ReadKind(text string) receipts.StmtKind {
 }
 
 // receiptConnections is what a receipt keeps of a connection: its name, type and
-// read-only flag, and a status that is an enum, never the status message (which
-// can name a host).
-func receiptConnections(infos []session.ConnectionInfo) []receipts.Connection {
-	out := make([]receipts.Connection, 0, len(infos))
-	for _, c := range infos {
+// read-only flag, a status that is an enum, never the status message (which can
+// name a host), and its snapshot fact (nil for a connection that was not
+// attached, so not asked).
+func receiptConnections(snaps []session.ConnectionSnapshot) []receipts.Connection {
+	out := make([]receipts.Connection, 0, len(snaps))
+	for _, sc := range snaps {
+		c := sc.Info
 		st := receipts.StatusError
 		switch c.Kind {
 		case session.StatusOK:
@@ -127,7 +134,11 @@ func receiptConnections(infos []session.ConnectionInfo) []receipts.Connection {
 		case session.StatusNotConnected:
 			st = receipts.StatusNotConnected
 		}
-		out = append(out, receipts.Connection{Name: c.Name, Type: c.Type, ReadOnly: c.ReadOnly, Status: st})
+		rc := receipts.Connection{Name: c.Name, Type: c.Type, ReadOnly: c.ReadOnly, Status: st}
+		if sn := sc.Snapshot; sn != nil {
+			rc.Snapshot = &receipts.Snapshot{Fact: sn.Fact, Value: sn.Value, Label: receipts.SnapshotLabel(sn.Label)}
+		}
+		out = append(out, rc)
 	}
 	return out
 }

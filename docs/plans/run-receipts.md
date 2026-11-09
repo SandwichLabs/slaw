@@ -130,10 +130,20 @@ Collected after the run, for each catalog in `connections[]`, with a 300 ms tota
 | Delta | table version | replayable |
 | Postgres | `pg_current_wal_lsn()` on Slaw's session | live only |
 | DuckDB file | size + mtime | live only |
-| S3/GCS/R2 files | ETag via one HEAD through the `storageglob` lister (at most 8 objects, then `+N more`) | live only |
+| S3/GCS/R2 files | ETag via one HEAD through the `storageglob` lister (at most 8 objects, then `+N more`); as built, size and mtime, see below | live only |
 | MotherDuck, MySQL, SQLite | status only | live only |
 
 Collectors live in `internal/session`, next to the attach code that already knows each type. `receipts` stays a leaf that only stores them.
+
+**As built (R3, 2026-11-09).** Each connection in `connections[]` carries a `snapshot{fact, value, label}` (what each fact means: `docs/reference/console.md`, "Snapshot facts"). Where the plan left a choice or the build differs:
+- **Where.** `session.SnapshotConnections(ctx, sess, catalog, sql)` (`internal/session/snapshot.go`, collectors in `snapshot_collect.go`) replaces `ReferencedConnections` in `engine.recordRunFacts`; `receipts` is unchanged apart from a comment. It runs only when the statement is a select or explain (what mints). The fact queries go to the pool (`Session.DB()`), never the run's pinned connection and never the engine, so they cannot move its catalog, change its result or carry an intent, and no receipt is made for them.
+- **Budget.** One 300 ms deadline over all collectors, which run at once. A collector that has not answered is `not_recorded` with the value `timed out`; its answer goes to a channel nobody reads, so a late answer is dropped and nothing is retried. Any error is `not_recorded` with the value `unavailable`, never the error's text. A connection that is not attached has no `snapshot` (nil): it is not asked and not connected.
+- **Object storage and table connections** attach no catalog, so R2 left them out of `connections[]`. They are now listed when a string literal of the executed text points into a storage connection's scope or at an Iceberg or Delta table connection's location (a wildcard the engine expanded is already a list of plain URLs, which is why it is the executed text that is read). A literal that a table connection claims is not also an object of its storage connection.
+- **No ETag.** DuckDB 1.5 has no function that returns one (`glob` gives names, `read_blob` gives `size` and `last_modified`), and the plan's "HEAD through the lister" cannot reach it from SQL. The fact is the size and modification time of up to 8 objects (sorted by URL, so the list is stable), each from one `read_blob(url)` that selects no content (httpfs makes a HEAD), at once on the session that read them. Value: `N objects: size@unix,... (+K more)`; if that would pass 200 bytes, `N objects, digest <16 hex> (+K more)`. If any one of the objects cannot be asked, the whole fact is `not_recorded`, so a short list is never mistaken for the whole. No URL, bucket or key is in the value: only numbers and a count. The value holds nothing the "Not in a receipt" line excludes, and no bucket, key or path.
+- **Iceberg tables read (judgement call).** DuckDB 1.5's `iceberg_snapshots()` takes a table *location*, not a catalog table (checked against the embedded extension: `iceberg_snapshots('cat.ns.t')` is read as a folder), and finding which tables a statement reads needs a bind that goes back to the remote catalog, which the R2 review rejected for the hot path. So an `iceberg_catalog` connection records `not_recorded` ("not available for catalog tables"), not a catalog-level guess, and the drawer should not offer replay for it. An Iceberg *table connection* (a location) is replayable: the newest snapshot id (`iceberg_snapshots(<location the statement used>) ORDER BY sequence_number DESC LIMIT 1`; the location is the literal in the executed text, so it names the metadata the run read). A table that needs a version DuckDB will not guess is `not_recorded`.
+- **Delta** has no version function in the extension, so a table in a folder on this computer is the newest `NNN.json` commit in `_delta_log` (names only, no file is read); a table in object storage cannot be listed by the hub and is `not_recorded`.
+- **Postgres** runs `postgres_query(<connection>, 'SELECT pg_current_wal_lsn()::text')` on the session's own attachment and records the value only when it has the shape of a WAL position. The in-memory default and types with no fact (MotherDuck, MySQL, SQLite) are `status only`, live only.
+- **Tests.** `internal/session/snapshot_test.go` (a DuckDB file without its path, status-only types, a connection not attached is skipped and not connected, Postgres and Iceberg through stand-in functions for the extensions that are not loaded, a real DuckLake that follows a commit (skipped when the extension is not installed), Delta, which literals pick which objects, the 8 + count rule against a loopback server that serves no content, a spent budget, a slow collector, the pinned connection left alone) and `internal/engine/receipt_test.go` (facts on a real run, exactly one receipt, a non-read asks for none). Not covered here: a live Postgres, a real Iceberg catalog and a real bucket (integration environments).
 
 ### R4a. Read surfaces: `slaw receipts show`, `GetReceipt`, the drawer
 
@@ -158,6 +168,12 @@ Collectors live in `internal/session`, next to the attach code that already know
 
 - The `get_receipt` tool with the own-session rule. Tests probe it: a receipt minted by one MCP session (SSE, same handler) requested by another is refused exactly like a missing id; a chat conversation reads its own receipts from earlier turns; a person's receipt is never returned.
 - In-app chat: tool chips show `receipt_id`, row count and Open evidence. ✓ chips go on numbers in the answer that match a value in one of the turn's receipts. Matching is done in Go against the in-memory result of the turn, never against the store, which holds no values. Numbers that don't match get the dotted "not from a query" underline. The grounding check (`internal/llm/grounding.go`) is unchanged, and a test pins its behaviour.
+
+Notes for R5 from the R2 review:
+1. Go mints the chat conversation id and returns it on `AgentChatResult`, and accepts back only ids it issued in this workspace (today the id is derived from the history length).
+2. The AI cell dialog keeps one session across its follow-ups (today each `taskId` is its own session).
+3. `get_receipt` never returns `agent_session`.
+4. Document that a new SSE session after a reconnect loses access to the earlier session's receipts.
 
 ### Later slices (separate plans when reached)
 
