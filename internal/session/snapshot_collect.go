@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -27,7 +28,10 @@ const maxSnapshotValue = 200
 // (named even when it is not recorded) and the query or check behind it.
 type snapCollector struct {
 	fact string
-	run  func(ctx context.Context, s Session, t snapTarget) (value string, label SnapshotLabel, err error)
+	// replayable: the fact names a version, so a statement that pins one makes
+	// "the newest" wrong.
+	replayable bool
+	run        func(ctx context.Context, s Session, t snapTarget) (value string, label SnapshotLabel, err error)
 }
 
 // collectorFor is the whole table of R3: which fact each connection type gives
@@ -36,24 +40,24 @@ type snapCollector struct {
 func collectorFor(t snapTarget) snapCollector {
 	switch t.info.Type {
 	case "ducklake":
-		return snapCollector{"ducklake_current_snapshot()", collectDuckLake}
+		return snapCollector{"ducklake_current_snapshot()", true, collectDuckLake}
 	case "iceberg":
-		return snapCollector{"iceberg snapshot id", collectIcebergTable}
+		return snapCollector{"iceberg snapshot id", true, collectIcebergTable}
 	case "iceberg_catalog":
-		return snapCollector{"iceberg snapshot id of each table read", collectIcebergCatalog}
+		return snapCollector{"iceberg snapshot id of each table read", false, collectIcebergCatalog}
 	case "delta":
-		return snapCollector{"delta table version", collectDeltaTable}
+		return snapCollector{"delta table version", true, collectDeltaTable}
 	case "postgres":
-		return snapCollector{"pg_current_wal_lsn()", collectPostgres}
+		return snapCollector{"pg_current_wal_lsn()", false, collectPostgres}
 	case "duckdb":
 		if t.spec.Path == "" || t.spec.Path == ":memory:" { // the in-memory default has no file
 			break
 		}
-		return snapCollector{"file size and mtime", collectDuckDBFile}
+		return snapCollector{"file size and mtime", false, collectDuckDBFile}
 	case "s3", "gcs", "r2", "azure":
-		return snapCollector{"object size and mtime", collectObjects}
+		return snapCollector{"object size and mtime", false, collectObjects}
 	}
-	return snapCollector{"status", collectStatusOnly}
+	return snapCollector{"status", false, collectStatusOnly}
 }
 
 func collectStatusOnly(context.Context, Session, snapTarget) (string, SnapshotLabel, error) {
@@ -72,16 +76,23 @@ func collectDuckLake(ctx context.Context, s Session, t snapTarget) (string, Snap
 }
 
 // collectIcebergTable is the newest snapshot id of an Iceberg table connection,
-// read from the table location the statement itself used (so it names the same
-// metadata the run read). The metadata is read once; a table that needs a
-// version DuckDB cannot guess is not recorded.
+// read from the connection's own location (never from a literal in the
+// statement, which could name any file). A local location must be a folder. The
+// metadata is read once; a table that needs a version DuckDB will not guess is
+// not recorded.
 func collectIcebergTable(ctx context.Context, s Session, t snapTarget) (string, SnapshotLabel, error) {
-	if len(t.urls) == 0 {
+	loc := t.spec.Path
+	if loc == "" {
 		return "", "", errors.New("no table location")
+	}
+	if !strings.Contains(loc, "://") {
+		if fi, err := os.Lstat(loc); err != nil || !fi.IsDir() {
+			return "", "", errors.New("not a folder")
+		}
 	}
 	var id int64
 	err := s.DB().QueryRowContext(ctx,
-		`SELECT snapshot_id FROM iceberg_snapshots(`+QuoteLiteral(t.urls[0])+`) ORDER BY sequence_number DESC LIMIT 1`).Scan(&id)
+		`SELECT snapshot_id FROM iceberg_snapshots(`+QuoteLiteral(loc)+`) ORDER BY sequence_number DESC LIMIT 1`).Scan(&id)
 	if err != nil {
 		return "", "", err
 	}
@@ -99,13 +110,20 @@ func collectIcebergCatalog(context.Context, Session, snapTarget) (string, Snapsh
 var deltaCommitRE = regexp.MustCompile(`^[0-9]{1,20}$`)
 
 // collectDeltaTable is the newest commit of a Delta table in a folder on this
-// computer: the highest <version>.json in its _delta_log. A table in object
-// storage cannot be listed by the hub, so it is not recorded.
+// computer: the highest <version>.json in the connection's own _delta_log. Only
+// a real folder is opened (Lstat first: a symbolic link, a FIFO or a file in its
+// place is refused without being opened, so nothing can block or escape), and
+// only names are read. A table in object storage cannot be listed by the hub,
+// so it is not recorded.
 func collectDeltaTable(_ context.Context, _ Session, t snapTarget) (string, SnapshotLabel, error) {
-	if len(t.urls) == 0 || strings.Contains(t.urls[0], "://") {
+	if t.spec.Path == "" || strings.Contains(t.spec.Path, "://") {
 		return "", "", errors.New("not a local table")
 	}
-	entries, err := os.ReadDir(strings.TrimRight(t.urls[0], "/") + "/_delta_log")
+	logDir := filepath.Join(t.spec.Path, "_delta_log")
+	if fi, err := os.Lstat(logDir); err != nil || !fi.Mode().IsDir() {
+		return "", "", errors.New("no log folder")
+	}
+	entries, err := os.ReadDir(logDir)
 	if err != nil {
 		return "", "", err
 	}

@@ -46,6 +46,7 @@ const (
 const (
 	snapshotValueTimeout = "timed out"
 	snapshotValueMissing = "unavailable"
+	snapshotValuePinned  = "version pinned in the statement"
 )
 
 // Snapshot is one fact about a connection's state.
@@ -70,11 +71,23 @@ type specSource interface {
 
 // snapTarget is one connection to collect from and what the statement named in
 // it: the string literals that point into a storage scope or at a table.
+//
+// Only the connection's own definition (spec.Path) is ever collected from; a
+// literal in the statement decides whether a connection is listed and which
+// objects of a storage scope are asked, and never where a collector looks.
 type snapTarget struct {
 	info ConnectionInfo
 	spec Spec
 	urls []string
+	// pinned: the statement names a version or time, so "the newest" would not
+	// be what it read (replayable types only).
+	pinned bool
 }
+
+// snapSlots caps the collectors in flight in the whole process, so a burst of
+// receipted reads cannot open a burst of connections and metadata requests. A
+// run that cannot get a slot within its budget records the fact as not recorded.
+var snapSlots = make(chan struct{}, 4)
 
 // SnapshotConnections lists the connections the statement (the text that ran)
 // reads from, as ReferencedConnections does, plus the object-storage and table
@@ -97,6 +110,11 @@ func SnapshotConnections(ctx context.Context, s Session, catalog, sqlText string
 		targets = append(targets, literalTargets(s, src, sqlText)...)
 	}
 	sort.Slice(targets, func(i, j int) bool { return targets[i].info.Name < targets[j].info.Name })
+	if pinsVersion(sqlText) {
+		for i := range targets {
+			targets[i].pinned = true
+		}
+	}
 	return collectAll(ctx, s, targets, SnapshotBudget)
 }
 
@@ -116,6 +134,13 @@ func collectAll(ctx context.Context, s Session, targets []snapTarget, budget tim
 		}
 		chans[i] = make(chan Snapshot, 1)
 		go func(t snapTarget, ch chan<- Snapshot) {
+			select {
+			case snapSlots <- struct{}{}:
+				defer func() { <-snapSlots }()
+			case <-ctx.Done():
+				ch <- Snapshot{Fact: collectorFor(t).fact, Label: SnapshotNotRecorded, Value: snapshotValueTimeout}
+				return
+			}
 			ch <- collectOne(ctx, s, t)
 		}(t, chans[i])
 	}
@@ -142,6 +167,9 @@ func collectAll(ctx context.Context, s Session, targets []snapTarget, budget tim
 // was not recorded; its text is dropped (it can name a host or a path).
 func collectOne(ctx context.Context, s Session, t snapTarget) Snapshot {
 	c := collectorFor(t)
+	if t.pinned && c.replayable {
+		return Snapshot{Fact: c.fact, Label: SnapshotNotRecorded, Value: snapshotValuePinned}
+	}
 	value, label, err := c.run(ctx, s, t)
 	switch {
 	case ctx.Err() != nil:
@@ -153,12 +181,14 @@ func collectOne(ctx context.Context, s Session, t snapTarget) Snapshot {
 }
 
 // literalTargets finds the connections that attach no catalog and that the
-// statement still reads: a storage connection whose scope holds a URL literal,
-// and an Iceberg or Delta table connection whose location a literal names.
-// A literal claimed by a table connection is not also an object of its storage
-// connection.
+// statement reads by name: a storage connection whose scope holds a URL the
+// statement reads (in FROM or JOIN position, or as the first argument of a
+// read_*, *_scan or read_blob call), and an Iceberg or Delta table connection
+// whose location such a literal names. A literal claimed by a table connection
+// is not also an object of its storage connection. Merely mentioning a URL
+// (a WHERE comparison) lists nothing.
 func literalTargets(s Session, src specSource, sqlText string) []snapTarget {
-	lits := stringLiterals(sqlText)
+	lits := readLiterals(sqlText)
 	if len(lits) == 0 {
 		return nil
 	}
@@ -204,21 +234,84 @@ func literalTargets(s Session, src specSource, sqlText string) []snapTarget {
 	return out
 }
 
-// stringLiterals are the string literals of a statement, decoded.
-func stringLiterals(sqlText string) []string {
+// readLiterals are the string literals a statement reads by name: the one
+// after FROM or JOIN, and the first argument (or each element of a first list
+// argument) of a read_* or *_scan call (read_blob included).
+func readLiterals(sqlText string) []string {
 	var out []string
 	for _, stmt := range sqllex.Statements(sqlText) {
-		for _, t := range stmt {
-			if t.Kind == sqllex.String && t.Text != "" {
-				out = append(out, t.Text)
+		for i, t := range stmt {
+			switch {
+			case t.Kind == sqllex.Word && (t.Text == "FROM" || t.Text == "JOIN"):
+				if i+1 < len(stmt) && stmt[i+1].Kind == sqllex.String && stmt[i+1].Text != "" {
+					out = append(out, stmt[i+1].Text)
+				}
+			case t.Kind == sqllex.Word && readsFiles(t.Text) && i+2 < len(stmt) && stmt[i+1].IsParen("("):
+				out = append(out, firstArgLiterals(stmt[i+2:])...)
 			}
 		}
 	}
 	return out
 }
 
-// literalsAt are the literals that are the location or lie inside it (a table
-// folder, or a metadata file in it), sorted and without duplicates.
+func readsFiles(word string) bool {
+	return strings.HasPrefix(word, "READ_") || strings.HasSuffix(word, "_SCAN")
+}
+
+// firstArgLiterals is the literal that starts an argument list, or the literals
+// of a list that does (['a', 'b']).
+func firstArgLiterals(toks []sqllex.Tok) []string {
+	if toks[0].Kind == sqllex.String && toks[0].Text != "" {
+		return []string{toks[0].Text}
+	}
+	if !toks[0].IsPunct("[") {
+		return nil
+	}
+	var out []string
+	for _, t := range toks[1:] {
+		switch {
+		case t.IsPunct("]"):
+			return out
+		case t.Kind == sqllex.String && t.Text != "":
+			out = append(out, t.Text)
+		case t.IsPunct(","):
+		default:
+			return out
+		}
+	}
+	return out
+}
+
+// pinsVersion reports a statement that names the version or time it reads: the
+// version, snapshot_from_id or snapshot_from_timestamp argument of an Iceberg or
+// Delta reader, or a DuckLake AT (VERSION|TIMESTAMP => ...). The newest
+// snapshot is then not what it read. Deliberately wider than one connection:
+// when in doubt the fact is not recorded rather than wrong.
+func pinsVersion(sqlText string) bool {
+	for _, stmt := range sqllex.Statements(sqlText) {
+		for i, t := range stmt {
+			if t.Kind != sqllex.Word {
+				continue
+			}
+			switch t.Text {
+			case "VERSION", "SNAPSHOT_FROM_ID", "SNAPSHOT_FROM_TIMESTAMP":
+				if i+1 < len(stmt) && stmt[i+1].Kind == sqllex.Punct && strings.ContainsAny(stmt[i+1].Text, "=:") {
+					return true
+				}
+			case "AT":
+				if i+2 < len(stmt) && stmt[i+1].IsParen("(") && (stmt[i+2].IsWord("VERSION") || stmt[i+2].IsWord("TIMESTAMP")) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// literalsAt are the literals that are the location or lie inside it, sorted
+// and without duplicates. A literal with a ".." segment never matches. This
+// only decides that the table is read: collectors use the connection's own
+// location, never a literal.
 func literalsAt(lits []string, location string) []string {
 	loc := strings.TrimRight(location, "/")
 	if loc == "" {
@@ -226,12 +319,24 @@ func literalsAt(lits []string, location string) []string {
 	}
 	var out []string
 	for _, l := range lits {
+		if hasDotDot(l) {
+			continue
+		}
 		if t := strings.TrimRight(l, "/"); t == loc || strings.HasPrefix(l, loc+"/") {
 			out = append(out, l)
 		}
 	}
 	sort.Strings(out)
 	return dedupe(out)
+}
+
+func hasDotDot(p string) bool {
+	for _, seg := range strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func dedupe(sorted []string) []string {

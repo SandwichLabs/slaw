@@ -160,15 +160,18 @@ func TestSnapshot_DuckLakeIsItsCurrentSnapshotAndFollowsAWrite(t *testing.T) {
 	assert.NotContains(t, second.Value, dir)
 }
 
-func TestSnapshot_IcebergTableIsTheNewestSnapshotOfTheLocationTheStatementUsed(t *testing.T) {
+func TestSnapshot_IcebergTableIsTheNewestSnapshotOfTheConnectionsOwnLocation(t *testing.T) {
 	h, db := snapHub(t)
-	// The iceberg extension is not loaded here: a stand-in with its shape.
+	loc := t.TempDir()
+	// The iceberg extension is not loaded here: a stand-in with its shape that
+	// answers only for the connection's own location and fails for any other.
 	_, err := db.Exec(`CREATE MACRO iceberg_snapshots(p) AS TABLE
-		SELECT * FROM (VALUES (1, 111::BIGINT), (2, 222::BIGINT)) AS s(sequence_number, snapshot_id)`)
+		SELECT * FROM (VALUES (1, 111::BIGINT), (2, 222::BIGINT)) AS s(sequence_number, snapshot_id)
+		WHERE CASE WHEN p = '` + loc + `' THEN true ELSE error('read a location that is not the connection''s') END`)
 	require.NoError(t, err)
-	addConn(h, Spec{Name: "ice", Type: "iceberg", Path: "/warehouse/orders"}, StatusOK)
+	addConn(h, Spec{Name: "ice", Type: "iceberg", Path: loc}, StatusOK)
 
-	got := SnapshotConnections(context.Background(), h, "", "SELECT * FROM iceberg_scan('/warehouse/orders') WHERE a = '/warehouse/other'")
+	got := SnapshotConnections(context.Background(), h, "", "SELECT * FROM iceberg_scan('"+loc+"') WHERE a = '/warehouse/other'")
 	sn := snapshotOf(t, got, "ice")
 	require.NotNil(t, sn)
 	assert.Equal(t, "iceberg snapshot id", sn.Fact)
@@ -179,6 +182,102 @@ func TestSnapshot_IcebergTableIsTheNewestSnapshotOfTheLocationTheStatementUsed(t
 	for _, c := range SnapshotConnections(context.Background(), h, "", "SELECT 1") {
 		assert.NotEqual(t, "ice", c.Info.Name)
 	}
+
+	// A literal cannot steer the collector: one with a .. segment does not even
+	// list the connection, and a target built with such a literal still reads
+	// only the connection's own location.
+	for _, lit := range []string{loc + "/../../../etc/passwd", "/warehouse/orders/../../etc/passwd"} {
+		for _, c := range SnapshotConnections(context.Background(), h, "", "SELECT * FROM iceberg_scan('"+lit+"')") {
+			assert.NotEqual(t, "ice", c.Info.Name, lit)
+		}
+	}
+	steered := collectAll(context.Background(), h, []snapTarget{{
+		info: ConnectionInfo{Name: "ice", Type: "iceberg", Kind: StatusOK}, spec: Spec{Path: loc}, urls: []string{"/etc/passwd"},
+	}}, time.Second)
+	assert.Equal(t, "222", steered[0].Snapshot.Value)
+
+	// A location that is not a folder is not read at all.
+	file := filepath.Join(t.TempDir(), "f")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+	odd := collectAll(context.Background(), h, []snapTarget{{
+		info: ConnectionInfo{Name: "ice", Type: "iceberg", Kind: StatusOK}, spec: Spec{Path: file},
+	}}, time.Second)
+	assert.Equal(t, SnapshotNotRecorded, odd[0].Snapshot.Label)
+}
+
+func TestSnapshot_AStatementThatPinsAVersionIsNotRecordedAsNewest(t *testing.T) {
+	h, db := snapHub(t)
+	loc := t.TempDir()
+	_, err := db.Exec(`CREATE MACRO iceberg_snapshots(p) AS TABLE SELECT 1 AS sequence_number, 9::BIGINT AS snapshot_id`)
+	require.NoError(t, err)
+	addConn(h, Spec{Name: "ice", Type: "iceberg", Path: loc}, StatusOK)
+	addConn(h, Spec{Name: "pg", Type: "postgres"}, StatusOK)
+	_, err = db.Exec(`CREATE MACRO postgres_query(n, q) AS TABLE SELECT '0/1' AS v`)
+	require.NoError(t, err)
+
+	for _, q := range []string{
+		"SELECT * FROM iceberg_scan('" + loc + "', version = 'v3')",
+		"SELECT * FROM iceberg_scan('" + loc + "', snapshot_from_id := 12)",
+		"SELECT * FROM iceberg_scan('" + loc + "', snapshot_from_timestamp => now())",
+	} {
+		got := SnapshotConnections(context.Background(), h, "pg", q+" JOIN pg.t USING (a)")
+		sn := snapshotOf(t, got, "ice")
+		require.NotNil(t, sn, q)
+		assert.Equal(t, SnapshotNotRecorded, sn.Label, q)
+		assert.Equal(t, "version pinned in the statement", sn.Value, q)
+		// A live-only fact is not about a version: it stays.
+		assert.Equal(t, SnapshotLiveOnly, snapshotOf(t, got, "pg").Label, q)
+	}
+	assert.True(t, pinsVersion("SELECT * FROM lake.t AT (VERSION => 3)"))
+	assert.True(t, pinsVersion("SELECT * FROM lake.t AT (TIMESTAMP => now())"))
+	assert.False(t, pinsVersion("SELECT version FROM t WHERE at = 1"))
+	assert.False(t, pinsVersion("SELECT * FROM iceberg_scan('x')"))
+}
+
+func TestSnapshot_AMentionIsNotARead(t *testing.T) {
+	h, _ := snapHub(t)
+	loc := t.TempDir()
+	addConn(h, Spec{Name: "ice", Type: "iceberg", Path: loc}, StatusOK)
+	addConn(h, Spec{Name: "lake_s3", Type: "s3", Params: map[string]string{"scope": "s3://b/data/"}}, StatusOK)
+
+	assert.Empty(t, literalTargets(h, h, "SELECT * FROM t WHERE a = 's3://b/data/x.csv' OR b = '"+loc+"'"))
+	assert.Empty(t, literalTargets(h, h, "SELECT 's3://b/data/x.csv'"))
+	assert.Len(t, literalTargets(h, h, "SELECT * FROM 's3://b/data/x.csv'"), 1)
+	assert.Len(t, literalTargets(h, h, "SELECT * FROM t JOIN read_blob('s3://b/data/x.csv') ON true"), 1)
+	assert.Len(t, literalTargets(h, h, "SELECT * FROM delta_scan('"+loc+"')"), 1)
+}
+
+func TestSnapshot_CollectorsAreCappedAndAFullQueueIsTimedOut(t *testing.T) {
+	h, _ := snapHub(t)
+	path := mkDuckFile(t, "data", "CREATE TABLE t(x INT)")
+	for i := 0; i < cap(snapSlots); i++ {
+		snapSlots <- struct{}{}
+	}
+	released := false
+	release := func() {
+		if released {
+			return
+		}
+		released = true
+		for i := 0; i < cap(snapSlots); i++ {
+			<-snapSlots
+		}
+	}
+	defer release()
+
+	start := time.Now()
+	got := collectAll(context.Background(), h, []snapTarget{{
+		info: ConnectionInfo{Name: "data", Type: "duckdb", Kind: StatusOK}, spec: Spec{Path: path},
+	}}, 50*time.Millisecond)
+	assert.Less(t, time.Since(start), time.Second)
+	assert.Equal(t, SnapshotNotRecorded, got[0].Snapshot.Label)
+	assert.Equal(t, snapshotValueTimeout, got[0].Snapshot.Value)
+
+	release()
+	got = collectAll(context.Background(), h, []snapTarget{{
+		info: ConnectionInfo{Name: "data", Type: "duckdb", Kind: StatusOK}, spec: Spec{Path: path},
+	}}, time.Second)
+	assert.Equal(t, SnapshotLiveOnly, got[0].Snapshot.Label, "a free slot collects")
 }
 
 func TestSnapshot_IcebergCatalogSaysItIsNotAvailable(t *testing.T) {
@@ -206,6 +305,31 @@ func TestSnapshot_DeltaIsTheNewestCommitOfALocalTable(t *testing.T) {
 	assert.Equal(t, "7", sn.Value)
 	assert.Equal(t, SnapshotReplayable, sn.Label)
 	assert.NotContains(t, sn.Value, table)
+
+	// A literal cannot send the collector elsewhere.
+	outside := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(outside, "_delta_log"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "_delta_log", "00000000000000000099.json"), nil, 0o600))
+	for _, q := range []string{
+		"SELECT '" + table + "/../../../" + outside + "'",
+		"SELECT * FROM delta_scan('" + table + "/../" + filepath.Base(outside) + "')",
+	} {
+		for _, c := range SnapshotConnections(context.Background(), h, "", q) {
+			assert.NotEqual(t, "dl", c.Info.Name, q)
+		}
+	}
+	steered := collectAll(context.Background(), h, []snapTarget{{
+		info: ConnectionInfo{Name: "dl", Type: "delta", Kind: StatusOK}, spec: Spec{Path: table}, urls: []string{outside},
+	}}, time.Second)
+	assert.Equal(t, "7", steered[0].Snapshot.Value, "the connection's own folder, whatever the statement says")
+
+	// A _delta_log that is a link to somewhere else is not followed.
+	linked := t.TempDir()
+	require.NoError(t, os.Symlink(filepath.Join(outside, "_delta_log"), filepath.Join(linked, "_delta_log")))
+	sl := collectAll(context.Background(), h, []snapTarget{{
+		info: ConnectionInfo{Name: "dl", Type: "delta", Kind: StatusOK}, spec: Spec{Path: linked},
+	}}, time.Second)
+	assert.Equal(t, SnapshotNotRecorded, sl[0].Snapshot.Label)
 
 	// A table in object storage cannot be listed: not recorded.
 	addConn(h, Spec{Name: "dlr", Type: "delta", Path: "s3://bucket/tbl"}, StatusOK)
