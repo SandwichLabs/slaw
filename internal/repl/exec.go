@@ -9,6 +9,7 @@ import (
 	duckdb "github.com/duckdb/duckdb-go/v2"
 
 	"github.com/SandwichLabs/slaw/internal/engine"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/session"
 	"github.com/SandwichLabs/slaw/internal/usersql"
 )
@@ -94,11 +95,13 @@ func (s *Session) runStatement(text string) {
 	before := session.StatusSnapshot(s.o.Sess)
 	start := s.clock()
 
-	rs, total, err := s.o.Engine.ExecuteOn(runCtx, s.conn, s.current, runText, params, fetchCap)
+	ictx := s.withReceiptIntent(runCtx, text, params, typ, prepErr)
+	rs, total, err := s.o.Engine.ExecuteOn(ictx, s.conn, s.current, runText, params, fetchCap)
 	if s.o.Hooks.AfterRun != nil {
 		s.o.Hooks.AfterRun(before, text) // always after a run, as RunQuery does
 	}
 	s.show(runCtx, runText, rs, total, err, typ, prepErr)
+	s.finishReceipt(ictx, rs, total, err)
 	elapsed := s.clock().Sub(start)
 
 	if s.st.timer {
@@ -113,6 +116,43 @@ func (s *Session) runStatement(text string) {
 		if err == nil {
 			s.last = text // what .save offers: never an ATTACH, a SET or a credential
 		}
+	}
+}
+
+// withReceiptIntent puts the receipt intent of a statement on ctx while
+// .receipts is on: what was typed, with the values bound, and no policy verdict
+// (the console is the person's own). Off, it is ctx as it was.
+func (s *Session) withReceiptIntent(ctx context.Context, text string, params map[string]any, typ duckdb.StmtType, prepErr error) context.Context {
+	if !s.st.receipts || s.o.Receipts == nil {
+		return ctx
+	}
+	// The console has already had DuckDB's word for the statement type; the
+	// engine need not parse it again.
+	kind := receipts.StmtOther
+	switch {
+	case prepErr != nil:
+	case typ == duckdb.STATEMENT_TYPE_SELECT:
+		kind = receipts.StmtSelect
+	case typ == duckdb.STATEMENT_TYPE_EXPLAIN:
+		kind = engine.ReadKind(text) // an explain, unless it analyzes
+	}
+	return receipts.WithIntent(ctx, receipts.Intent{
+		Kind:    kind,
+		Surface: receipts.SurfaceConsole, Actor: receipts.ActorPerson,
+		Source: receipts.Source{Kind: receipts.SourceSQL}, SQL: text,
+		Params: receipts.ParamStrings(params), Verdict: receipts.VerdictUnchecked,
+	})
+}
+
+// finishReceipt keeps the receipt of a statement that ran, over the rows the
+// console fetched (fetchCap, the true count known), and says its id. A statement
+// that is not a single read, or a store that cannot be written, makes none.
+func (s *Session) finishReceipt(ctx context.Context, rs *engine.ResultSet, total int, err error) {
+	if err != nil || rs == nil || !s.st.receipts {
+		return
+	}
+	if id, _ := receipts.Finish(ctx, s.o.Receipts, rs.Rows, total > len(rs.Rows), total); id != "" {
+		s.printf("%s\n", s.pal().dim("receipt "+id))
 	}
 }
 

@@ -15,10 +15,12 @@ import (
 
 	"github.com/SandwichLabs/slaw/internal/artifacts"
 
+	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/filestore"
 	"github.com/SandwichLabs/slaw/internal/notebooks"
 	"github.com/SandwichLabs/slaw/internal/prefs"
 	"github.com/SandwichLabs/slaw/internal/queries"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/secrets"
 	"github.com/SandwichLabs/slaw/internal/semantics"
 	"github.com/SandwichLabs/slaw/internal/semantics/proposals"
@@ -84,6 +86,13 @@ type Workspace interface {
 	// WatchHistory is the record of checks, kept under .slaw-local/watches/:
 	// machine-local, git-ignored and never bundled.
 	WatchHistory() watches.History
+	// Receipts is the run receipts of this workspace (.slaw-local/receipts/):
+	// machine-local, git-ignored and never bundled (docs/plans/run-receipts.md).
+	// It is opened on first use and shared by everything that opens this
+	// workspace, so the store is pruned once per open and not once per handler.
+	// Nil when the store cannot be opened (a warning is logged): a run is never
+	// refused for want of a receipt, and a nil Recorder records nothing.
+	Receipts() *receipts.Recorder
 	// Proposals is the inbox of proposed semantic definitions
 	// (.slaw-local/proposals/): machine-local, git-ignored and never bundled.
 	// Accepting one (proposals.Accept) is the person's act; agent tools are
@@ -234,6 +243,9 @@ type workspace struct {
 	wt watches.Store
 	wh watches.History
 	pr proposals.Store
+
+	rcOnce sync.Once
+	rc     *receipts.Recorder
 
 	mu       sync.RWMutex
 	cfg      Config
@@ -511,6 +523,11 @@ func (w *workspace) WatchHistory() watches.History { return w.wh }
 
 func (w *workspace) Proposals() proposals.Store { return w.pr }
 
+func (w *workspace) Receipts() *receipts.Recorder {
+	w.rcOnce.Do(func() { w.rc = engine.OpenRecorder(w.root, w.logger) })
+	return w.rc
+}
+
 func (w *workspace) Reload() error { return w.reload() }
 
 func (w *workspace) SaveConfig(c Config) error {
@@ -603,6 +620,10 @@ func (w *workspace) Close() error {
 			first = err
 		}
 	}
+	// Let the receipts' background prune finish; a recorder asked for after the
+	// close is nil (never opened, never started).
+	w.rcOnce.Do(func() {})
+	w.rc.Close()
 	return first
 }
 

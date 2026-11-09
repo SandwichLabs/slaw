@@ -855,6 +855,7 @@ interface QueryResult {
   row_count: number
   total_rows: number
   truncated?: boolean // stopped at the cap without counting the rest (total_rows is then only row_count)
+  receipt_id?: string // the run's receipt (docs/plans/run-receipts.md); absent when none was kept
 }
 
 // KeychainProbe / LLMKeyStatus (#114): where the agent's API key comes from.
@@ -981,6 +982,7 @@ interface A2UIQueryResult {
   rows: any[][]
   // true when the query had more rows than the 500-row cap (Go caps; never capped again here)
   truncated?: boolean
+  receipt_id?: string // the run's receipt; absent when none was kept
 }
 
 // ArtifactSummary mirrors studio.ArtifactSummary (#162): one data artifact in

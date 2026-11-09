@@ -80,7 +80,7 @@ func FuzzRenderNoEscape(f *testing.F) {
 			t.Fatalf("recordable entry changes under safe: %q", e)
 		}
 
-		main, cont := prompts(colName, palette{})
+		main, cont := prompts(colName, palette{}, true)
 		assertTerminalSafe(t, []byte(main+cont+bannerText(colName)))
 	})
 }

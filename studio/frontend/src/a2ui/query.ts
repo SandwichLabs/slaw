@@ -20,6 +20,8 @@ export interface LiveQueryResult {
   error?: string
   // the artifact query hit Go's 500-row cap
   truncated?: boolean
+  // the run's receipt (docs/plans/run-receipts.md); absent when none was kept
+  receipt_id?: string
 }
 
 // runLiveQuery executes sql through RunA2UIQuery (RunA2UIQueryIn when a
@@ -54,7 +56,7 @@ export async function runLiveQuery(sql: string, signal?: AbortSignal, priority: 
       priority,
     )
     if (out.aborted) return aborted
-    return { columns: out.value?.columns ?? [], types: out.value?.types ?? [], rows: out.value?.rows ?? [] }
+    return { columns: out.value?.columns ?? [], types: out.value?.types ?? [], rows: out.value?.rows ?? [], receipt_id: out.value?.receipt_id }
   } catch (e: any) {
     if (signal?.aborted) return aborted
     return { columns: [], types: [], rows: [], error: errorText(e) }

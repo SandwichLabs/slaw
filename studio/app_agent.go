@@ -10,6 +10,7 @@ import (
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/hub"
 	"github.com/SandwichLabs/slaw/internal/llm"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/session"
 	"github.com/SandwichLabs/slaw/internal/workspace"
 )
@@ -112,6 +113,8 @@ func (a *App) AgentChatStream(turnID, message, pinnedContext string, history []A
 		return nil, err
 	}
 	defer release()
+	// The runs this turn makes are the agent's, in this conversation (receipts).
+	ctx = receipts.WithAgentSession(ctx, a.chat.conversation(len(history)))
 	runner := llm.NewRunner(handler, a.logger)
 	res, err := runner.ChatStream(ctx, cfg, message, pinnedContext, hist, a.streamEmitter(turnID))
 	if err != nil {
@@ -248,6 +251,8 @@ func (a *App) AgentTask(req AgentTaskRequest) (*llm.TaskEnvelope, error) {
 	}
 	ctx, release := a.trackTask(taskID)
 	defer release()
+	// A task's runs are the agent's, in this task (receipts).
+	ctx = receipts.WithAgentSession(ctx, taskID)
 
 	cell, err := taskCellFrom(req.Cell)
 	if err != nil {
@@ -357,6 +362,7 @@ func (a *App) newAgentToolHandler(ceiling agents.SandboxMode) *agentToolHandler 
 		a.logger.Error("failed to build the agent handler", "error", err)
 		sc := &agents.SandboxConfig{Mode: agents.ModeReadOnly, MaxQueryRows: 10000, RequireApproval: true}
 		inner = agents.NewHandler(workspace.NewAgentAccess(a.ws, a.sess), engine.NewManager(a.sess, engine.WithLogger(a.logger)), sc, a.logger)
+		inner.SetReceipts(a.ws.Receipts())
 	}
 	inner.SetActiveNotebook(a.activeNotebookID)
 	return &agentToolHandler{app: a, ws: a.ws, sess: a.sess, inner: inner, ceiling: ceiling}

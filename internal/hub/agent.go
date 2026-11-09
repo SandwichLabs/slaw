@@ -47,7 +47,11 @@ func NewAgentHandler(ws workspace.Workspace, sess session.Session, tighten strin
 	policy := agents.FilePolicy{Mode: mode, AskBeforeWrites: base.AskBeforeWrites}
 	cfg := &agents.SandboxConfig{Mode: policy.Mode, MaxQueryRows: 10000, RequireApproval: policy.AskBeforeWrites}
 	eng := engine.NewManager(sess, engine.WithLogger(logger))
-	return agents.NewHandler(workspace.NewAgentAccess(ws, sess), eng, cfg, logger), policy, nil
+	h := agents.NewHandler(workspace.NewAgentAccess(ws, sess), eng, cfg, logger)
+	// Every read this handler runs keeps a receipt (nil when the store cannot be
+	// opened: the run goes on without one).
+	h.SetReceipts(ws.Receipts())
+	return h, policy, nil
 }
 
 // MetricVetter is the read-only policy check a person's surface runs on the

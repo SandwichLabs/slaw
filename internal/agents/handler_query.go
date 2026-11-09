@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/SandwichLabs/slaw/internal/engine"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/session"
 )
 
@@ -66,19 +67,38 @@ type cappedEngine interface {
 // statement is classified on a connection pinned to that catalog, so the
 // classifier resolves names exactly as the run will, and runs the same way.
 func (h *Handler) RunReadOnlySQLIn(ctx context.Context, connection, sqlStr string, params map[string]any, maxRows int) (rs *engine.ResultSet, truncated bool, err error) {
+	rs, truncated, rctx, err := h.runReadOnlySQL(ctx, connection, sqlStr, params, maxRows)
+	if err != nil {
+		return nil, false, err
+	}
+	// The rows are final here: the probe row, DuckLake internal rows and the cap
+	// are already gone, so the receipt describes what the caller shows.
+	rs.ReceiptID = h.finishReceipt(rctx, rs.Rows, truncated, len(rs.Rows))
+	return rs, truncated, nil
+}
+
+// runReadOnlySQL is RunReadOnlySQLIn up to the receipt: it returns the context
+// the final run had (carrying the intent, when there is a recorder), so a caller
+// that trims the rows further (preview_query's sample budget) finishes the
+// receipt itself over what it shows.
+func (h *Handler) runReadOnlySQL(ctx context.Context, connection, sqlStr string, params map[string]any, maxRows int) (rs *engine.ResultSet, truncated bool, rctx context.Context, err error) {
 	userDB := h.access.DuckDBDB()
 	if userDB == nil {
-		return nil, false, fmt.Errorf("DuckDB not available")
+		return nil, false, ctx, fmt.Errorf("DuckDB not available")
 	}
 	exec, err := h.executorFor(connection)
 	if err != nil {
-		return nil, false, err
+		return nil, false, ctx, err
 	}
 	orig := sqlStr
+	origin := receipts.OriginFrom(ctx) // an empty surface (Skip) makes no receipt
 	sqlStr, params, ctx, _, err = h.readOnlyVerdict(ctx, connection, orig, params)
 	if err != nil {
-		return nil, false, err
+		return nil, false, ctx, err
 	}
+	// The intent goes on the final run's context only: the verdict above, which
+	// classifies with EXPLAIN, ran without it.
+	ctx = h.withIntent(ctx, origin.Surface, origin.Source, orig, params)
 
 	if maxRows > 0 {
 		trimmed := strings.TrimSuffix(strings.TrimSpace(sqlStr), ";")
@@ -87,7 +107,7 @@ func (h *Handler) RunReadOnlySQLIn(ctx context.Context, connection, sqlStr strin
 		if errors.Is(err, engine.ErrResultTooLarge) {
 			// Not a shape the push-down cannot wrap: the unwrapped run would
 			// read the same rows again.
-			return nil, false, err
+			return nil, false, ctx, err
 		}
 		if err == nil {
 			rs.Rows = dropDuckLakeInternalRows(rs.Rows)
@@ -95,7 +115,7 @@ func (h *Handler) RunReadOnlySQLIn(ctx context.Context, connection, sqlStr strin
 				rs.Rows = rs.Rows[:maxRows]
 				truncated = true
 			}
-			return rs, truncated, nil
+			return rs, truncated, ctx, nil
 		}
 		h.logger.Debug("render-time sql binding: LIMIT push-down not supported for this statement shape, falling back to unwrapped execution", "query_sha256", engine.QueryDigest(orig), "query_bytes", len(orig), "wrap_error", engine.ErrorForLog(err))
 	}
@@ -108,17 +128,17 @@ func (h *Handler) RunReadOnlySQLIn(ctx context.Context, connection, sqlStr strin
 		rs, err = exec(ctx, sqlStr, params)
 	}
 	if errors.Is(err, engine.ErrResultTooLarge) {
-		return nil, false, err
+		return nil, false, ctx, err
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("query execution failed: %w", err)
+		return nil, false, ctx, fmt.Errorf("query execution failed: %w", err)
 	}
 	rs.Rows = dropDuckLakeInternalRows(rs.Rows)
 	if maxRows > 0 && len(rs.Rows) > maxRows {
 		rs.Rows = rs.Rows[:maxRows]
 		truncated = true
 	}
-	return rs, truncated, nil
+	return rs, truncated, ctx, nil
 }
 
 // executorFor returns the function that runs a statement on the named
@@ -299,6 +319,18 @@ func (h *Handler) queryConnection(req *Request) (string, error) {
 type runTarget struct {
 	connection string
 	readsOnly  bool
+	// surface and source are what a receipt of this run records; the zero value
+	// is run_query's own.
+	surface receipts.Surface
+	source  receipts.Source
+}
+
+// receiptOrigin is the surface and source of this run's receipt.
+func (t runTarget) receiptOrigin() (receipts.Surface, receipts.Source) {
+	if t.surface == "" {
+		return receipts.SurfaceAgentRunQuery, receipts.Source{Kind: receipts.SourceSQL}
+	}
+	return t.surface, t.source
 }
 
 func (h *Handler) runQuery(ctx context.Context, req *Request, tgt runTarget) *Response {
@@ -382,6 +414,12 @@ func (h *Handler) runQuery(ctx context.Context, req *Request, tgt runTarget) *Re
 	if err != nil {
 		return NewErrorResponse(req.ID, ErrInternal, err.Error())
 	}
+	// Only a plain read is given a receipt, and its intent goes on this run's
+	// context alone (the classification above ran without one).
+	if class == sqlClassRead {
+		surface, source := tgt.receiptOrigin()
+		runCtx = h.withIntent(runCtx, surface, source, sqlStr, params)
+	}
 	rs, err := exec(runCtx, runSQL, params)
 	if err != nil {
 		return NewErrorResponse(req.ID, ErrInternal, fmt.Sprintf("query execution failed: %v", err))
@@ -390,6 +428,7 @@ func (h *Handler) runQuery(ctx context.Context, req *Request, tgt runTarget) *Re
 	// Enforce max rows. DuckLake's own metadata catalog never shows in what the
 	// agent reads, not even as a name in duckdb_tables() or SHOW ALL TABLES.
 	rows := dropDuckLakeInternalRows(rs.Rows)
+	total := len(rows)
 	if sb.MaxQueryRows > 0 && len(rows) > sb.MaxQueryRows {
 		rows = rows[:sb.MaxQueryRows]
 	}
@@ -429,12 +468,26 @@ func (h *Handler) runQuery(ctx context.Context, req *Request, tgt runTarget) *Re
 	// a large SELECT never floods the model's (or MCP client's) context.
 	// Applied here at the handler layer so chat, task mode, and MCP all get
 	// it uniformly — see budget.go.
+	h.budgetAndReceipt(runCtx, result, rows, total)
+
+	return NewResponse(req.ID, result)
+}
+
+// budgetAndReceipt applies the result budget to the rows, and finishes the
+// receipt over the rows as the caller gets them: after the row cap and the
+// budget, so its count and result_hmac match what was shown.
+func (h *Handler) budgetAndReceipt(ctx context.Context, result map[string]any, rows [][]any, total int) {
+	shown := rows
+	budgetCut := false
 	if budgeted, truncated := budgetRows(rows); truncated != nil {
 		result["rows"] = budgeted
 		result["truncated"] = truncated
+		shown = budgeted
+		budgetCut = true // also when it only clipped the one row's long values
 	}
-
-	return NewResponse(req.ID, result)
+	if id := h.finishReceipt(ctx, shown, budgetCut || len(shown) < total, total); id != "" {
+		result["receipt_id"] = id
+	}
 }
 
 // requireWriteStatement classifies a fully-built SQL statement (identifiers

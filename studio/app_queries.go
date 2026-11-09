@@ -11,6 +11,7 @@ import (
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/hub"
 	"github.com/SandwichLabs/slaw/internal/queries"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/session"
 )
 
@@ -31,6 +32,10 @@ type QueryResult struct {
 	// rest (a metric's Try it): TotalRows is then only RowCount, not the true
 	// count. RunQuery counts, so it leaves this false.
 	Truncated bool `json:"truncated,omitempty"`
+	// ReceiptID is the run's receipt (docs/plans/run-receipts.md), empty when
+	// none was kept: a statement that is not a single read, or a store that could
+	// not be written.
+	ReceiptID string `json:"receipt_id,omitempty"`
 }
 
 // queryGridRowCap bounds how many rows the Query editor's grid will
@@ -149,7 +154,9 @@ func (a *App) runQuery(ctx context.Context, req RunQueryRequest) (*QueryResult, 
 	}
 	before := session.StatusSnapshot(a.sess)
 	start := time.Now()
-	rs, total, err := a.engine.ExecuteCappedIn(ctx, req.Connection, sqlStr, params, queryGridRowCap)
+	rec := a.ws.Receipts()
+	rctx := receipts.WithIntent(ctx, editorIntent(req, params))
+	rs, total, err := a.engine.ExecuteCappedIn(rctx, req.Connection, sqlStr, params, queryGridRowCap)
 	a.afterRun(a.sess, before, sqlStr)
 	duration := time.Since(start)
 
@@ -165,11 +172,28 @@ func (a *App) runQuery(ctx context.Context, req RunQueryRequest) (*QueryResult, 
 	}
 
 	result.Columns = columnInfos(rs)
+	// The receipt covers the rows the grid gets: capped at queryGridRowCap, with
+	// the true count known.
+	result.ReceiptID, _ = receipts.Finish(rctx, rec, rs.Rows, total > len(rs.Rows), total)
 
 	if err := jsonRoundTripGuard(result); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// editorIntent is the receipt intent of the Query Explorer's run: the person's
+// own statement, as written, with the values bound to the saved query it has
+// open (if any). It is not policy-gated, so its verdict is unchecked.
+func editorIntent(req RunQueryRequest, params map[string]any) receipts.Intent {
+	src := receipts.Source{Kind: receipts.SourceSQL}
+	if req.QueryID != "" {
+		src = receipts.Source{Kind: receipts.SourceSavedQuery, Ref: "queries/" + req.QueryID + ".sql"}
+	}
+	return receipts.Intent{
+		Surface: receipts.SurfaceQueryEditor, Actor: receipts.ActorPerson, Source: src,
+		SQL: req.SQL, Params: receipts.ParamStrings(params), Verdict: receipts.VerdictUnchecked,
+	}
 }
 
 // columnInfos names and types a result set's columns for the grid.
@@ -235,6 +259,8 @@ type A2UIQueryResult struct {
 	// (RunReadOnlySQL's LIMIT push-down) rather than fetched-then-sliced,
 	// so this reports whether that LIMIT actually cut anything.
 	Truncated bool `json:"truncated"`
+	// ReceiptID is the run's receipt, empty when none was kept.
+	ReceiptID string `json:"receipt_id,omitempty"`
 }
 
 // RunA2UIQuery executes one A2UI component's "sql" binding. It is called by
@@ -319,7 +345,7 @@ func (a *App) readOnlyRunner() (*agentToolHandler, session.Session, error) {
 // a2uiResult shapes a result set for the renderer, refusing one that does not
 // survive a JSON round trip.
 func a2uiResult(rs *engine.ResultSet, truncated bool) (*A2UIQueryResult, error) {
-	out := &A2UIQueryResult{Truncated: truncated}
+	out := &A2UIQueryResult{Truncated: truncated, ReceiptID: rs.ReceiptID}
 	out.Columns, out.Types = rs.NamesAndTypes()
 	out.Rows = rs.Rows
 	if err := jsonRoundTripGuard(out); err != nil {

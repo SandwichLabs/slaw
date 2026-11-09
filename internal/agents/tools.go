@@ -161,7 +161,7 @@ var Tools = []ToolDef{
 	// Data tools
 	{
 		Name:        "run_query",
-		Description: "Execute a SQL query and return results. Gated per statement by an allow-list, not just by sandbox category. Reads (SELECT, WITH, SHOW, DESCRIBE, SUMMARIZE, EXPLAIN but not EXPLAIN ANALYZE, a read-style PRAGMA) over any connection are allowed in every tier; files may be read only with a literal absolute path inside the workspace data/ folder, and URLs only inside a storage connection's scope. INSERT/UPDATE/DELETE additionally need the read-write or full tier. CREATE/DROP/ALTER and COPY ... TO a data/ file need the full tier. A write also needs the target connection to be writable (read_only: false) and the user's approval, which is always required for a connection that is not a local file. Never allowed in any tier: ATTACH/DETACH/USE, SET/RESET/PRAGMA changes, INSTALL/LOAD, secrets, EXPORT/IMPORT DATABASE, EXPLAIN ANALYZE, raw passthroughs (postgres_query, postgres_execute, ...), settings and environment functions. Every statement of a script is checked; only the last statement's result is returned, so a script is for writes and a read is its own call. A keyword used as a bare alias (SELECT count(*) days) is a parse error: write AS days.",
+		Description: "Execute a SQL query and return results. Gated per statement by an allow-list, not just by sandbox category. Reads (SELECT, WITH, SHOW, DESCRIBE, SUMMARIZE, EXPLAIN but not EXPLAIN ANALYZE, a read-style PRAGMA) over any connection are allowed in every tier; files may be read only with a literal absolute path inside the workspace data/ folder, and URLs only inside a storage connection's scope. INSERT/UPDATE/DELETE additionally need the read-write or full tier. CREATE/DROP/ALTER and COPY ... TO a data/ file need the full tier. A write also needs the target connection to be writable (read_only: false) and the user's approval, which is always required for a connection that is not a local file. Never allowed in any tier: ATTACH/DETACH/USE, SET/RESET/PRAGMA changes, INSTALL/LOAD, secrets, EXPORT/IMPORT DATABASE, EXPLAIN ANALYZE, raw passthroughs (postgres_query, postgres_execute, ...), settings and environment functions. Every statement of a script is checked; only the last statement's result is returned, so a script is for writes and a read is its own call. A keyword used as a bare alias (SELECT count(*) days) is a parse error: write AS days. A plain read also returns a receipt_id: cite it with the figures you report, so a person can open the evidence behind them.",
 		Category:    "data",
 		Params: []ParamDef{
 			{Name: "sql", Type: "string", Required: true, Desc: "One SQL statement to execute, as a string. Only the last statement of a script returns rows, so send one SELECT per call (a trailing semicolon is fine). Write a bound value as $name"},
@@ -423,7 +423,7 @@ var Tools = []ToolDef{
 	},
 	{
 		Name:        "run_saved_query",
-		Description: "Run a saved query by id (see list_queries) and return its rows like run_query. Send values for its declared parameters as params {name: value}; a name you omit takes its default. It goes through run_query's gates, on the query's own connection, and runs reads only.",
+		Description: "Run a saved query by id (see list_queries) and return its rows like run_query. Send values for its declared parameters as params {name: value}; a name you omit takes its default. It goes through run_query's gates, on the query's own connection, and runs reads only. It returns a receipt_id: cite it with the figures you report.",
 		Category:    "introspect",
 		Params: []ParamDef{
 			{Name: "id", Type: "string", Required: true, Desc: "Saved query id, from list_queries"},
@@ -442,7 +442,7 @@ var Tools = []ToolDef{
 
 	{
 		Name:        "preview_query",
-		Description: "Run a SELECT (read-only) query and preview its shape before committing it as a notebook cell: row count, columns with types, a sample of rows (budgeted to fit the response), and a suggestedView (table/bar/line/stat; area/columns/rings/radar/sankey/heatmap also listed in viewFit) computed from the actual result shape. Use it to pick the view for add_query_cell or update_cell. In task mode, ALWAYS preview a query before calling write_cell with cell_type \"sql\" — write_cell rejects sql it has not been shown working.",
+		Description: "Run a SELECT (read-only) query and preview its shape before committing it as a notebook cell: row count, columns with types, a sample of rows (budgeted to fit the response), and a suggestedView (table/bar/line/stat; area/columns/rings/radar/sankey/heatmap also listed in viewFit) computed from the actual result shape. Use it to pick the view for add_query_cell or update_cell. In task mode, ALWAYS preview a query before calling write_cell with cell_type \"sql\" — write_cell rejects sql it has not been shown working. The result carries a receipt_id for the run: cite it with any figure you report from it.",
 		Category:    "introspect",
 		Params: []ParamDef{
 			{Name: "sql", Type: "string", Required: true, Desc: "A single read-only statement (SELECT, WITH...SELECT, SHOW, DESCRIBE, EXPLAIN, SUMMARIZE)"},

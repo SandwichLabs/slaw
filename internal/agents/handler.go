@@ -18,6 +18,7 @@ import (
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/notebooks"
 	"github.com/SandwichLabs/slaw/internal/queries"
+	"github.com/SandwichLabs/slaw/internal/receipts"
 	"github.com/SandwichLabs/slaw/internal/semantics"
 	"github.com/SandwichLabs/slaw/internal/semantics/proposals"
 	"github.com/SandwichLabs/slaw/internal/session"
@@ -86,6 +87,9 @@ type Handler struct {
 	// rather than hanging forever waiting for an answer nobody can give.
 	approver ApproveFunc
 	logger   *slog.Logger
+	// receipts keeps the receipt of each read this handler runs (SetReceipts);
+	// nil records nothing. Set once, before the handler dispatches.
+	receipts *receipts.Recorder
 
 	// mode gates task-only tools (preview_query, write_cell,
 	// need_more_info — see ToolDef.Modes/IsModeVisible). Defaults to ""
