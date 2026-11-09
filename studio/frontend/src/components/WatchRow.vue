@@ -34,7 +34,7 @@ const status = computed(() => {
 const reason = computed(() => {
   if (props.watch.error) return props.watch.error
   if (live.value || props.phase) return ''
-  if (stopped.value) return 'Stopped before it finished. This check was not recorded.'
+  if (stopped.value) return "Stopped before it finished, so this check wasn't recorded."
   return now.value.entry?.reason ?? ''
 })
 const read = computed(() => (now.value.entry ? readText(now.value.entry) : ''))

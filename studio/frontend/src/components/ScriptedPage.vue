@@ -34,7 +34,7 @@ const { state, unavailable, error, open, close } = usePageWindow(() => props.nam
       </div>
       <div v-else-if="state === 'setup'" class="note warn" role="alert" data-testid="scripted-page-setup">
         <Icon name="alert" :size="16" />
-        <span>This page window could not be set up on this Mac.</span>
+        <span>This page window couldn't be set up on this Mac.</span>
       </div>
       <div v-else-if="state === 'changed'" class="note warn" role="alert" data-testid="scripted-page-changed">
         <Icon name="alert" :size="16" />

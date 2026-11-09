@@ -390,7 +390,7 @@ export function useConnectionForm() {
   function validate(): string {
     invalidField.value = ''
     if (!spec.value) return 'Choose a connection type first.'
-    if (isNew.value && !NAME_RE.test(f.name.trim())) return 'Give it a name with lowercase letters, numbers and underscores, like prod_pg.'
+    if (isNew.value && !NAME_RE.test(f.name.trim())) return 'Name it with lowercase letters, numbers and underscores, like prod_pg.'
     for (const fd of spec.value.fields.filter(visible)) {
       if (fd.required && !fd.option && val(fd).trim() === '') return missing(fd)
     }

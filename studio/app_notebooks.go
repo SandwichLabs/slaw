@@ -139,7 +139,7 @@ func (a *App) SaveNotebook(raw map[string]any, sessionID string) (*NotebookSaveR
 		return nil, err
 	}
 	if sessionID != a.sessionID {
-		return nil, fmt.Errorf("stale workspace session: the open workspace changed since this notebook was loaded; reopen it and try again")
+		return nil, fmt.Errorf("the workspace changed since this notebook was loaded; reopen it and try again")
 	}
 	nb, warnings, err := a.ws.Notebooks().Save(a.ctxOrBackground(), raw)
 	if err != nil {

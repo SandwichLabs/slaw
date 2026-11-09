@@ -42,7 +42,7 @@ export function useAbout() {
       copied.value = true
       setTimeout(() => { copied.value = false }, 2000)
     } catch {
-      error.value = 'Could not copy to the clipboard.'
+      error.value = "Couldn't copy to the clipboard."
     }
   }
 

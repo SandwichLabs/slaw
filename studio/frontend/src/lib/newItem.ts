@@ -21,7 +21,7 @@ export const RUNS_AFTER_ALLOW = 'Runs after you allow it'
 export const CARD_LINE: Record<LibraryType, string> = {
   notebook: 'SQL, notes and charts in cells you run top to bottom.',
   live: 'A view with controls (dates, filters) over named queries. Built from Slaw’s components.',
-  page: 'Your own HTML bound to named queries. Starts static; for interactivity in its own window, tick the script box below.',
+  page: 'Your own HTML bound to named queries. Static by default; tick the script box for an interactive page in its own window.',
   script: 'A view.js that draws an SVG or a component page from query rows.',
 }
 
@@ -43,7 +43,7 @@ export function needsAllow(type: LibraryType): boolean {
 /** The message for a bad entry, or '' when it is fine. */
 export function nameProblem(type: LibraryType, value: string): string {
   const v = value.trim()
-  if (type === 'notebook') return v ? '' : 'Title is required'
+  if (type === 'notebook') return v ? '' : 'Give it a title'
   if (!NAME_RE.test(v)) return 'Use 1 to 64 lowercase letters, digits, - or _ (for example "weekly-sales").'
   return RESERVED_RE.test(v) ? `"${v}" is a reserved name on Windows (con, prn, aux, nul, com1-9, lpt1-9). Pick another.` : ''
 }

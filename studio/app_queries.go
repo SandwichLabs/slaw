@@ -65,7 +65,7 @@ const queryGridRowCap = 5000
 // every open file/every other in-flight call.
 func jsonRoundTripGuard(v any) error {
 	if _, err := json.Marshal(v); err != nil {
-		return fmt.Errorf("result contains a value that could not be serialized (%w) — this is almost certainly a bug in Slaw, not your query; please report it", err)
+		return fmt.Errorf("the result holds a value Slaw couldn't encode (%w); this is almost certainly a bug in Slaw, not in your query. Please report it", err)
 	}
 	return nil
 }

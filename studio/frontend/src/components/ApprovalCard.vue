@@ -36,7 +36,7 @@ const doLabel = computed(() => {
 // card says nothing about counts.
 const rowNote = computed(() => {
   const n = props.approval.rows
-  return props.approval.destructive && typeof n === 'number' && n >= 0 ? `It affects about ${n.toLocaleString()} row${n === 1 ? '' : 's'}. Check that is what you expect before you allow it.` : ''
+  return props.approval.destructive && typeof n === 'number' && n >= 0 ? `It affects about ${n.toLocaleString()} row${n === 1 ? '' : 's'}. Check that this is what you expect before you allow it.` : ''
 })
 
 // Focus starts on Decline, the safe default, never on Allow. Escape declines.

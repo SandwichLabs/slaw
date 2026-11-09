@@ -165,7 +165,7 @@ async function submit() {
             <legend>Connection definitions <span class="count">optional</span></legend>
             <div v-if="!content.connections.length" class="help">This workspace has no connections to share.</div>
             <template v-else>
-              <p class="help" style="margin: 0;">Just where the data lives (host, database, bucket). The person importing signs in with their own credentials. </p>
+              <p class="help" style="margin: 0;">Only where the data lives (host, database, bucket). Whoever imports it signs in with their own credentials.</p>
               <label v-for="c in portableConns" :key="c.name" class="be-row">
                 <input type="checkbox" :checked="picked.cn.has(c.name)" :data-testid="`be-conn-${c.name}`" @change="toggle('cn', c.name, ($event.target as HTMLInputElement).checked)" />
                 <span class="nm">{{ c.name }}</span>

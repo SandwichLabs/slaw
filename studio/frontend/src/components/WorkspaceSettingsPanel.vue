@@ -56,7 +56,7 @@ async function save() {
       loadedTeamSandbox: i.teamSandboxSet ? i.team.sandbox : '',
       loadedTeamAsk: i.team.askBeforeWrites,
     })
-    message.value = defaultChanged.value ? 'Settings saved. The default connection applies the next time the workspace opens.' : 'Settings saved'
+    message.value = defaultChanged.value ? 'Saved. The default connection applies the next time the workspace opens.' : 'Saved'
     setTimeout(() => { message.value = '' }, 4000)
   } catch (e: unknown) {
     const se = settingsError(e)

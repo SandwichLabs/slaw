@@ -24,7 +24,7 @@ export function useNotebookActions(opts: { reload: () => Promise<void>; open: (i
       await App.DeleteNotebook(id)
       await opts.reload()
     } catch (e) {
-      message.value = 'Failed to delete notebook: ' + errorText(e)
+      message.value = "Couldn't delete the notebook: " + errorText(e)
     }
   }
 
@@ -35,7 +35,7 @@ export function useNotebookActions(opts: { reload: () => Promise<void>; open: (i
       if (!path) return
       const result = await App.ImportNotebook(path)
       await opts.reload()
-      if (result?.warnings?.length) message.value = `Imported with ${result.warnings.length} warning(s): ${result.warnings[0]}`
+      if (result?.warnings?.length) message.value = `Imported with ${result.warnings.length} ${result.warnings.length === 1 ? 'warning' : 'warnings'}: ${result.warnings[0]}`
       if (result?.notebook?.id) opts.open(result.notebook.id)
     } catch (e) {
       message.value = 'Failed to import notebook: ' + errorText(e)

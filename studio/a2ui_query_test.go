@@ -201,7 +201,7 @@ func TestJSONRoundTripGuard(t *testing.T) {
 
 	err := jsonRoundTripGuard(map[string]any{"v": math.NaN()})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "could not be serialized")
+	assert.Contains(t, err.Error(), "couldn't encode")
 
 	require.NotPanics(t, func() {
 		_ = jsonRoundTripGuard(math.NaN())

@@ -203,7 +203,7 @@ async function manage() {
       <button class="mi" type="button" role="menuitem" tabindex="-1" data-testid="ws-manage" @click="manage">
         <Icon name="layers" :size="16" /><span class="grow"><span class="t">Manage workspaces…</span><span class="sub">Opens the launcher</span></span>
       </button>
-      <div class="mnote">Switching saves your open notebooks first. Nothing you were working on is lost.</div>
+      <div class="mnote">Switching saves your open notebooks first.</div>
     </div>
   </div>
 </template>

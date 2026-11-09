@@ -53,7 +53,7 @@ const starting = computed(() => isStarting(profile.value))
 const canSignIn = computed(() => props.saved && !!profile.value && valid.value && !starting.value && !prompt.value)
 
 // A denied or failed new sign-in leaves the current session alone: say so.
-const errorLine = computed(() => (status.value?.signedIn ? `That new sign-in did not finish (${error.value}). Your current session still works.` : error.value))
+const errorLine = computed(() => (status.value?.signedIn ? `That sign-in didn't finish (${error.value}). Your current session still works.` : error.value))
 
 // The hint quotes the terminal command in backticks: show it as code.
 const stateParts = computed(() => stateLine.value.split('`').map((t, i) => ({ t, code: i % 2 === 1 })))

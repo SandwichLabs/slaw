@@ -48,7 +48,7 @@ its SQL runs as saved, on its connection unless -c names another. A saved query
 may declare $name parameters; -p name=value (repeatable) sets one, typed by its
 declaration, and a parameter you leave out takes its default. A value is bound,
 never written into the SQL. Without --saved, a $name in the statement is an
-error, as before. A saved query is a plain file whose first line is a header
+error. A saved query is a plain file whose first line is a header
 comment, and the SQL follows it:
 
   -- slaw: {"title":"Top customers","description":"...","connection":"prod_pg","parameters":[{"name":"n","type":"integer","default":"10"}]}

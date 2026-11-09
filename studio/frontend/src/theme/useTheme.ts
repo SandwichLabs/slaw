@@ -186,7 +186,7 @@ async function persist(): Promise<void> {
     try {
       await b.SetPreferences(p)
     } catch (e) {
-      state.notice = 'Could not save preferences: ' + errorText(e)
+      state.notice = "Couldn't save preferences: " + errorText(e)
     }
   }
 }
@@ -201,7 +201,7 @@ export async function reloadUserThemes(): Promise<void> {
     const r = await b.ListUserThemes()
     ingestUserThemes(r?.themes ?? [], r?.problems ?? [])
   } catch (e) {
-    ingestUserThemes([], ['Could not read the themes folder: ' + errorText(e)])
+    ingestUserThemes([], ["Couldn't read the themes folder: " + errorText(e)])
   }
 }
 
