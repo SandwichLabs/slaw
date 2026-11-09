@@ -29,6 +29,7 @@ type Recorder struct {
 
 	mu     sync.RWMutex
 	policy Policy
+	source PolicySource
 }
 
 // NewRecorder builds a Recorder over a store and the key LoadKey returned.
@@ -72,7 +73,32 @@ func (r *Recorder) Close() {
 	}
 }
 
+// SetPolicySource makes the Recorder (and a store that takes one) ask src for
+// the person's current policy before each receipt and each prune round, so a
+// setting changed in another process applies here. See PolicySource.
+func (r *Recorder) SetPolicySource(src PolicySource) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.source = src
+	r.mu.Unlock()
+	if ps, ok := r.store.(interface{ SetPolicySource(PolicySource) }); ok {
+		ps.SetPolicySource(src)
+	}
+}
+
 func (r *Recorder) currentPolicy() Policy {
+	r.mu.RLock()
+	src := r.source
+	r.mu.RUnlock()
+	if src != nil {
+		if p, ok := src(); ok {
+			r.mu.Lock()
+			r.policy = p.Clamp()
+			r.mu.Unlock()
+		}
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.policy
@@ -193,4 +219,13 @@ func (r *Recorder) fillParams(rec *Receipt, in Intent) {
 			rec.Params[name] = ParamValue{Withheld: true}
 		}
 	}
+}
+
+// Policy is the policy new receipts are made under (clamped); the default on a
+// nil Recorder.
+func (r *Recorder) Policy() Policy {
+	if r == nil {
+		return DefaultPolicy()
+	}
+	return r.currentPolicy()
 }

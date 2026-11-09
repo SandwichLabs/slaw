@@ -46,6 +46,11 @@ type Store interface {
 	Get(id string) (Receipt, error)
 	// Prune removes the oldest receipts until the policy (clamped) holds.
 	Prune(p Policy) error
+	// Usage counts the receipts kept, their total size and the oldest one's time
+	// (zero when there is none), without decoding any of them.
+	Usage() (count int, bytes int64, oldest time.Time)
+	// Clear removes every receipt and nothing else.
+	Clear() error
 }
 
 // Encode is the one file encoding of a receipt: compact canonical JSON.
@@ -98,9 +103,10 @@ func Decode(data []byte) (Receipt, error) {
 type FileStore struct {
 	dir string
 
-	mu     sync.Mutex // guards puts and policy; never held across I/O
+	mu     sync.Mutex // guards puts, policy and source; never held across I/O
 	puts   int
 	policy Policy
+	source PolicySource
 
 	pruneMu sync.Mutex // one prune at a time in this process
 	running atomic.Bool
@@ -166,16 +172,43 @@ func (s *FileStore) pruneAsync() {
 	go func() {
 		defer s.wg.Done()
 		for !s.isClosed() && s.pending.Swap(false) {
-			s.mu.Lock()
-			p := s.policy
-			s.mu.Unlock()
-			_ = s.prune(p, false)
+			_ = s.prune(s.policyNow(), false)
 		}
 		s.running.Store(false)
 		if s.pending.Load() { // asked for again as it finished
 			s.pruneAsync()
 		}
 	}()
+}
+
+// PolicySource gives a running process the person's current policy: the
+// workspace reads the per-person settings file, so a change made by another
+// process (the CLI, say) is seen here. ok false (an unreadable, untrusted or
+// missing file) means keep the policy in force; it never falls back to defaults.
+type PolicySource func() (Policy, bool)
+
+// SetPolicySource makes every prune round ask src for the policy first.
+func (s *FileStore) SetPolicySource(src PolicySource) {
+	s.mu.Lock()
+	s.source = src
+	s.mu.Unlock()
+}
+
+// policyNow is the policy a prune round uses: the source's, when it answers.
+func (s *FileStore) policyNow() Policy {
+	s.mu.Lock()
+	src := s.source
+	s.mu.Unlock()
+	if src != nil {
+		if p, ok := src(); ok {
+			s.mu.Lock()
+			s.policy = p.Clamp()
+			s.mu.Unlock()
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.policy
 }
 
 // Dir is the store's folder.
@@ -255,7 +288,7 @@ func (s *FileStore) Get(id string) (Receipt, error) {
 }
 
 type entry struct {
-	path string
+	rel  string // <aa>/<id>.json, relative to the receipts folder
 	size int64
 	mod  time.Time
 }
@@ -274,7 +307,12 @@ func (s *FileStore) prune(p Policy, wait bool) error {
 		return err
 	}
 	defer unlock()
-	entries, err := s.scan()
+	root, err := os.OpenRoot(s.dir)
+	if err != nil {
+		return fmt.Errorf("failed to open the receipts folder: %w", err)
+	}
+	defer root.Close() //nolint:errcheck
+	entries, err := list(root, true)
 	if err != nil {
 		return err
 	}
@@ -282,7 +320,7 @@ func (s *FileStore) prune(p Policy, wait bool) error {
 		if !entries[i].mod.Equal(entries[j].mod) {
 			return entries[i].mod.Before(entries[j].mod)
 		}
-		return entries[i].path < entries[j].path
+		return entries[i].rel < entries[j].rel
 	})
 	cutoff := time.Now().Add(-p.MaxAge)
 	var total int64
@@ -294,7 +332,7 @@ func (s *FileStore) prune(p Policy, wait bool) error {
 		if e.mod.After(cutoff) && count <= p.MaxCount && total <= p.MaxBytes {
 			break
 		}
-		if err := os.Remove(e.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := root.Remove(e.rel); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("failed to prune a receipt: %w", err)
 		}
 		count--
@@ -337,9 +375,72 @@ func (s *FileStore) lock(wait bool) (func(), error) {
 	}
 }
 
-// scan lists the receipt files, sweeping stale temp files as it goes.
-func (s *FileStore) scan() ([]entry, error) {
-	tops, err := os.ReadDir(s.dir)
+// Usage walks the shard folders and adds up the receipt files by name and
+// size: no file is opened or decoded, and nothing is swept or removed. A folder
+// that cannot be read counts as empty.
+func (s *FileStore) Usage() (int, int64, time.Time) {
+	root, err := os.OpenRoot(s.dir)
+	if err != nil {
+		return 0, 0, time.Time{}
+	}
+	defer root.Close() //nolint:errcheck
+	entries, err := list(root, false)
+	if err != nil {
+		return 0, 0, time.Time{}
+	}
+	var total int64
+	var oldest time.Time
+	for _, e := range entries {
+		total += e.size
+		if oldest.IsZero() || e.mod.Before(oldest) {
+			oldest = e.mod
+		}
+	}
+	return len(entries), total, oldest
+}
+
+// Clear removes every receipt file, under the prune lock so it does not run
+// beside a prune. It keeps the key (every process holding the workspace open
+// has it in memory, so rotating it would split new receipts into two families
+// that cannot be compared) and the folders. Only regular files named like a
+// receipt, inside a real <aa> folder, are removed: a symbolic link, at either
+// level, is never followed, and any other file (the key, the lock, a stray
+// note, a temp file another process is still writing) is left alone.
+func (s *FileStore) Clear() error {
+	unlock, err := s.lock(true)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	root, err := os.OpenRoot(s.dir)
+	if err != nil {
+		return fmt.Errorf("failed to open the receipts folder: %w", err)
+	}
+	defer root.Close() //nolint:errcheck
+	entries, err := list(root, false)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := root.Remove(e.rel); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("failed to delete a receipt: %w", err)
+		}
+	}
+	return nil
+}
+
+// list lists the receipt files under root (the receipts folder, opened with
+// os.OpenRoot, so no path can leave it): regular files named <id>.json in a real
+// <aa> folder (a link is neither a folder nor a regular file here). With sweep
+// it also removes stale temp files. Every access goes through root, so a shard
+// swapped for a link while the walk runs cannot reach a file outside the folder.
+func list(root *os.Root, sweep bool) ([]entry, error) {
+	d, err := root.Open(".")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the receipts folder: %w", err)
+	}
+	tops, err := d.ReadDir(-1)
+	_ = d.Close()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read the receipts folder: %w", err)
 	}
@@ -348,10 +449,9 @@ func (s *FileStore) scan() ([]entry, error) {
 		if !top.IsDir() || !isHex(top.Name(), 2) {
 			continue
 		}
-		dir := filepath.Join(s.dir, top.Name())
-		files, err := os.ReadDir(dir)
+		files, err := readShard(root, top.Name())
 		if err != nil {
-			return nil, fmt.Errorf("failed to read the receipts folder: %w", err)
+			return nil, err
 		}
 		for _, f := range files {
 			fi, err := f.Info()
@@ -359,17 +459,36 @@ func (s *FileStore) scan() ([]entry, error) {
 				continue
 			}
 			name := f.Name()
+			rel := top.Name() + "/" + name
 			switch {
 			case strings.HasPrefix(name, filestore.TempPrefix):
-				if time.Since(fi.ModTime()) > staleTempAge {
-					_ = os.Remove(filepath.Join(dir, name))
+				if sweep && time.Since(fi.ModTime()) > staleTempAge {
+					_ = root.Remove(rel)
 				}
 			case strings.HasSuffix(name, fileExt) && ValidID(strings.TrimSuffix(name, fileExt)):
-				out = append(out, entry{path: filepath.Join(dir, name), size: fi.Size(), mod: fi.ModTime()})
+				out = append(out, entry{rel: rel, size: fi.Size(), mod: fi.ModTime()})
 			}
 		}
 	}
 	return out, nil
+}
+
+// readShard lists one <aa> folder through root, refusing it when it is no longer
+// a real folder (swapped for a link since the folder list was read).
+func readShard(root *os.Root, name string) ([]fs.DirEntry, error) {
+	if fi, err := root.Lstat(name); err != nil || !fi.IsDir() {
+		return nil, nil
+	}
+	d, err := root.Open(name)
+	if err != nil {
+		return nil, nil // gone or refused: nothing to list
+	}
+	defer d.Close() //nolint:errcheck
+	files, err := d.ReadDir(-1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the receipts folder: %w", err)
+	}
+	return files, nil
 }
 
 // ensureShard makes the <aa> folder, refusing a link or a non-folder there.

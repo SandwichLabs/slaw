@@ -260,9 +260,9 @@ func TestRecordExecuted_AnEngineExpandedWildcardIsSummarised(t *testing.T) {
 }
 
 func TestOpenRecorder_ANilRootOrAnUnusableFolderRecordsNothing(t *testing.T) {
-	assert.Nil(t, OpenRecorder("", nil))
+	assert.Nil(t, OpenRecorder("", receipts.DefaultPolicy(), nil))
 	dir := t.TempDir()
-	rec := OpenRecorder(dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	rec := OpenRecorder(dir, receipts.DefaultPolicy(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	require.NotNil(t, rec)
 
 	ctx := intentCtx()

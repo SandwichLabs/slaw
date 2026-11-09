@@ -78,3 +78,28 @@ func (m *Mock) Prune(p Policy) error {
 	}
 	return nil
 }
+
+// Usage counts the kept receipts; a Mock holds no files, so the size is the
+// encoded size of each.
+func (m *Mock) Usage() (int, int64, time.Time) {
+	var total int64
+	var oldest time.Time
+	all := m.All()
+	for _, r := range all {
+		if b, err := Encode(r); err == nil {
+			total += int64(len(b))
+		}
+	}
+	if len(all) > 0 {
+		oldest = all[0].At
+	}
+	return len(all), total, oldest
+}
+
+// Clear removes every receipt.
+func (m *Mock) Clear() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.byID = map[string]Receipt{}
+	return nil
+}

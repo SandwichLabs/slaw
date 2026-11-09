@@ -74,6 +74,9 @@ type LocalConfig struct {
 	SignInServer map[string]string `yaml:"sign_in_server,omitempty"`
 	// Agent holds this person's agent loosening; see EffectivePolicy.
 	Agent LocalAgent `yaml:"agent,omitempty"`
+	// Receipts is this person's receipt retention and privacy setting
+	// (ReceiptPolicy). Never in slaw.yaml or a bundle.
+	Receipts LocalReceipts `yaml:"receipts,omitempty"`
 	// MCPPort is the loopback port Studio's MCP server last used for this
 	// workspace, so a client's saved address survives a restart (#112). 0 means
 	// none yet. It is not a secret and grants nothing: the bearer token is

@@ -25,18 +25,17 @@ import (
 // Recordable and RecordableStatement.
 
 // OpenRecorder opens the receipts of the workspace at root: its key and its
-// file store under .slaw-local/receipts/, under the default Policy (the
-// per-person settings come with the Settings slice). It never fails a run: a
-// store that cannot be opened is logged at warn level and the result is nil, and
-// a nil *receipts.Recorder records nothing.
-func OpenRecorder(root string, logger *slog.Logger) *receipts.Recorder {
+// file store under .slaw-local/receipts/, under the person's Policy (the
+// workspace reads it from their local settings, clamped here). It never fails a
+// run: a store that cannot be opened is logged at warn level and the result is
+// nil, and a nil *receipts.Recorder records nothing.
+func OpenRecorder(root string, policy receipts.Policy, logger *slog.Logger) *receipts.Recorder {
 	if root == "" {
 		return nil
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	policy := receipts.DefaultPolicy()
 	key, err := receipts.LoadKey(root)
 	if err != nil {
 		logger.Warn("run receipts are off: the receipt key cannot be used", "error", err)
