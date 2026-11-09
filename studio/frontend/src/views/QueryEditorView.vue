@@ -129,7 +129,7 @@ useModalKeys(showSaveModal, () => { showSaveModal.value = false }, saveModalEl)
       <!-- EDITOR + RESULTS -->
       <div class="col" style="flex: 1; gap: 0; min-width: 0;">
         <div class="editor" style="border-bottom: var(--sh-border);">
-          <SqlEditor v-model="sqlText" :connection="conn" placeholder="Enter SQL query…" @run="runQuery" />
+          <SqlEditor v-model="sqlText" :connection="conn" placeholder="Write a SQL query…" @run="runQuery" />
         </div>
 
         <div class="output-tabs" role="tablist" aria-label="Output">
@@ -194,8 +194,8 @@ useModalKeys(showSaveModal, () => { showSaveModal.value = false }, saveModalEl)
           </div>
           <div v-else class="empty-hero">
             <div class="glyph"><Icon name="terminal" :size="48" /></div>
-            <h2>Write a query, press Run</h2>
-            <p class="lead">Queries run on the embedded DuckDB engine — analytics and CRUD alike.</p>
+            <h2>Write a query and press Run</h2>
+            <p class="lead">Every query runs on the embedded DuckDB engine, reads and edits alike.</p>
           </div>
         </div>
         </div>

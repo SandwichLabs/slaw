@@ -42,7 +42,7 @@ describe('LauncherView', () => {
     expect(w.find('[data-testid="open-folder"]').exists()).toBe(true)
     expect(w.find('[data-testid="import-bundle"]').exists()).toBe(true)
     expect(w.text()).not.toMatch(/legacy/i)
-    expect(w.text()).toContain('notebooks, live views and pages')
+    expect(w.text()).toContain('Notebooks, live views, pages')
     expect(w.text()).toContain('Library')
     await w.find('[data-testid="new-workspace"]').trigger('click')
     expect(newWorkspaceOpen.value).toBe(true)

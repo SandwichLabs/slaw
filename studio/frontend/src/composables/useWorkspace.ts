@@ -52,7 +52,7 @@ export function startWorkspaceTracking(): void {
       if (p?.reason === 'switch') return
       workspaceInfo.value = null
       if (p?.reason === 'released') {
-        launcherNotice.value = 'Another program asked Slaw to let go of the workspace, so it was closed. Your notebooks were saved first.'
+        launcherNotice.value = 'Another program asked Slaw to let go of this workspace, so it was closed. Your notebooks were saved first.'
       }
     }),
     // Settings, MCP on/off, slaw.yaml edited elsewhere: re-read the summary.

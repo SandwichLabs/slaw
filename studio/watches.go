@@ -188,7 +188,7 @@ func saveWatch(ctx context.Context, st watches.Store, d WatchDraft) (string, err
 
 func deleteWatch(ctx context.Context, st watches.Store, name, rev string) error {
 	if rev == "" { // an unconditional delete would remove a file nobody has seen
-		return errors.New("a watch is deleted against the revision that was shown; reload the list and try again")
+		return errors.New("reload the list before deleting this watch: the revision shown is unknown")
 	}
 	return watchWriteErr(st.Delete(ctx, name, watches.WithRev(rev)))
 }

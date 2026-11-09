@@ -66,7 +66,7 @@ function onAnswerClick(e: MouseEvent) {
       </template>
       <p v-else-if="m.streaming && !m.cancelled" class="agent-text agent-dim">Thinking…</p>
       <p v-if="m.cancelled" class="agent-text agent-dim" data-testid="agent-cancelled">Cancelled</p>
-      <p v-if="m.verifying" class="agent-text agent-dim" data-testid="agent-verifying">Verifying that answer against the data…</p>
+      <p v-if="m.verifying" class="agent-text agent-dim" data-testid="agent-verifying">Checking that answer against the data…</p>
 
       <template v-for="(s, si) in m.steps" :key="si">
         <ToolStepChip :step="s" :preview-len="compact ? 48 : 80" @resolve="(ok) => emit('resolve', s, ok)" />

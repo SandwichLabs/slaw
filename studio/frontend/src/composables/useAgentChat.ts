@@ -47,9 +47,9 @@ async function errorHint(): Promise<string> {
   try {
     const s = await App.GetLLMSettings()
     if (s.provider === 'local' || s.provider === 'ollama') return `Is the model server at ${s.endpoint} running?`
-    return 'Check the API key and model in Settings \u2192 App.'
+    return 'Check the API key and model in Settings > App.'
   } catch {
-    return 'Check the model settings in Settings \u2192 App.'
+    return 'Check the model settings in Settings > App.'
   }
 }
 

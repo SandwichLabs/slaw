@@ -36,7 +36,7 @@ watch(svgUrl, () => { imageFailed.value = false })
           v-if="svgUrl" :key="svgUrl" :src="svgUrl" :alt="detail.title || name" class="custom-view__img" data-testid="custom-view-image"
           @load="imageFailed = false" @error="imageFailed = true"
         />
-        <div v-if="svgUrl && imageFailed" class="custom-view__error" role="alert" data-testid="custom-view-image-error">The drawing could not be shown.</div>
+        <div v-if="svgUrl && imageFailed" class="custom-view__error" role="alert" data-testid="custom-view-image-error">The drawing couldn't be shown.</div>
         <A2UIPage v-if="page" :page="page" class="custom-view__page" data-testid="custom-view-page" />
         <div v-if="!svgUrl && !page && !drawError" class="sh-mono custom-view__wait" role="status">Drawing…</div>
       </template>

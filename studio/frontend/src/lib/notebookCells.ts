@@ -99,7 +99,7 @@ export function blankCell(type: CellState['type']): RawCell {
   // internal/a2ui.Validate rejects zero components, so a freshly added
   // a2ui cell needs a placeholder or it would fail Coerce on the very
   // next autosave.
-  return { id, type, page: { title: 'Untitled', components: [{ id: 'placeholder', type: 'text', text: 'Empty A2UI cell — edit the source below.' }] } }
+  return { id, type, page: { title: 'Untitled', components: [{ id: 'placeholder', type: 'text', text: 'Empty card. Edit the source below.' }] } }
 }
 
 // envelopeToRaw converts a task-mode EnvelopeCell (the agent's proposal) into a

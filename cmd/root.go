@@ -29,7 +29,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:     "slaw",
 	Short:   "Analyze your data in a secure private workspace",
-	Long:    "Slaw builds your workspace from connections and text-based workspace files.\nStart with `slaw workspace init` or run `slaw studio --gui` for the desktop app.",
+	Long:    "Slaw is a workspace for data that stays where it lives: connections to your databases and files, plus notebooks, queries and skills as plain files in a folder.\nStart with `slaw workspace init`, or `slaw studio --gui` for the desktop app.",
 	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date),
 }
 

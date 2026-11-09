@@ -87,7 +87,7 @@ const onGone = () => router.push(libraryPath())
       <div v-else-if="loading && !detail" class="sh-mono" style="color: var(--sh-graphite);">Loading…</div>
       <div v-else-if="detail?.error" class="card card-pad col" style="gap: var(--sh-space-2); border-color: var(--sh-error);" role="alert" data-testid="artifact-errors">
         <strong>This artifact can't be shown yet.</strong>
-        <span class="sh-mono" style="font-size: var(--sh-fs-xs); color: var(--sh-graphite);">Fix <code>artifacts/{{ detail.name }}/artifact.yaml</code> or its view file (<code>view.a2ui.json</code>, <code>view.js</code> or <code>html/</code>); this page updates when the file is saved.</span>
+        <span class="sh-mono" style="font-size: var(--sh-fs-xs); color: var(--sh-graphite);">Fix <code>artifacts/{{ detail.name }}/artifact.yaml</code> or its view file (<code>view.a2ui.json</code>, <code>view.js</code> or <code>html/</code>). This page updates when the file is saved.</span>
         <pre class="sh-mono artifact-errors">{{ detail.error }}</pre>
       </div>
       <ArtifactViewTrust v-else-if="isScript" :key="name" :name="name" :detail="detail" :values="params.values" :refresh="pageTick" />

@@ -77,7 +77,7 @@ async function remove(w: WatchSummary) {
     <header class="watches__head">
       <div class="watches__title">
         <h2 class="card-title" style="margin: 0; font-size: 28px;">Watches</h2>
-        <p class="help" style="margin: 0;">Standing questions with a condition. Nothing checks them by itself: you press Check. Each watch is a file in <code>watches/</code>.</p>
+        <p class="help" style="margin: 0;">Standing questions with a condition. Nothing runs until you press Check. Each watch is a file in <code>watches/</code>.</p>
       </div>
       <div class="watches__actions">
         <button class="btn" type="button" :disabled="readOnly" data-testid="new-watch" @click="form.openNew()"><Icon name="plus" :size="16" /> New watch</button>
@@ -101,7 +101,7 @@ async function remove(w: WatchSummary) {
     <div v-else-if="!watches.length" class="col watches__empty" data-testid="watches-empty">
       <Icon name="eye" :size="40" />
       <h3>No watches yet</h3>
-      <p>A watch asks a saved query or a metric a question and fires when the answer meets a condition: orders stuck in pending, revenue above a ceiling, a table that should never have rows.</p>
+      <p>A watch asks a saved query or a metric a question and fires when the answer meets a condition: orders stuck in pending, or a table that should never have rows.</p>
       <p><button class="btn btn-primary" type="button" :disabled="readOnly" @click="form.openNew()">New watch</button> or write <code>watches/stuck_orders.yaml</code> yourself; it appears here when it is saved. <code>docs/reference/watches.md</code> has the format.</p>
     </div>
     <template v-else>

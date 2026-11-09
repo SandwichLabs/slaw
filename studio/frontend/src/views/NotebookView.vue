@@ -79,7 +79,7 @@ defineExpose({
       <div v-else class="col" style="gap: var(--sh-space-4); max-width: 920px; margin: 0 auto;">
         <div v-if="cells.length === 0" class="col" style="align-items: center; gap: var(--sh-space-3); margin-top: var(--sh-space-8); text-align: center;">
           <Icon name="layers" :size="28" style="color: var(--sh-graphite);" />
-          <div class="sh-mono" style="color: var(--sh-graphite);">This notebook is empty. Add a cell to get started.</div>
+          <div class="sh-mono" style="color: var(--sh-graphite);">This notebook is empty. Add a cell below.</div>
         </div>
 
         <NotebookCell
@@ -109,7 +109,7 @@ defineExpose({
             class="btn btn-ghost btn-sm"
             disabled
             style="opacity: 0.4; cursor: not-allowed;"
-            title="Assistant cell authoring lands in a later step (#66 part B)"
+            title="Not available yet"
           ><Icon name="sparkle" :size="14" /> Generate with AI</button>
         </div>
       </div>

@@ -56,10 +56,9 @@ not_null and range (checked at the metric's full dimension set) and unique
 Each entity and metric starts with a compile check: its SQL (an entity's table
 and declared columns, a metric's measure and dimensions against its saved
 query) is bound against the real connection and never run. Binding may read
-file headers or list object names, but no rows are scanned.
-A definition that does not compile fails with the database's own message and
-its assertions are not run. --compile runs only these checks, quickly enough
-for every edit.
+file headers or list object names, but no rows are scanned. A definition that
+does not compile fails with the database's own message and its assertions are
+not run. --compile runs only these checks; it is quick enough for every edit.
 
 Every other check is a read-only count of violating rows, run through the agent
 policy's read-only path whatever the sandbox setting, so a definition from a

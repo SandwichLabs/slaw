@@ -147,7 +147,7 @@ onUnmounted(() => { if (undoTimer) clearTimeout(undoTimer) })
         <div class="empty-hero" style="padding-top: 36px;">
           <span class="glyph"><Icon name="folderOpen" :size="48" /></span>
           <h2>Pick a folder to start</h2>
-          <p class="lead">A workspace is just a folder. Your notebooks, live views and pages, saved queries and skills are kept in it as ordinary files, so you can back it up or share it with git.</p>
+          <p class="lead">A workspace is a folder. Notebooks, live views, pages, saved queries and skills live in it as plain files, so you can back it up or share it with git.</p>
           <div class="row" style="gap: 14px; margin-top: 6px;">
             <button ref="newBtn" class="btn btn-primary" type="button" data-testid="new-workspace" @click="newWorkspaceOpen = true">
               <Icon name="plus" :size="16" /> New workspace…
@@ -165,9 +165,9 @@ onUnmounted(() => { if (undoTimer) clearTimeout(undoTimer) })
           <div class="body"><div class="ttl">Couldn't open that</div><div class="sub">{{ error }}</div></div>
         </div>
         <div class="hero-mini">
-          <div class="card"><b>Library</b><span>Notebooks, live views and pages that re-run on open. Answers are never frozen.</span></div>
-          <div class="card"><b>Connections</b><span>Point Slaw at Postgres, MotherDuck, SQLite files or cloud storage. Add them whenever you're ready.</span></div>
-          <div class="card"><b>The Slaw assistant</b><span>Ask in plain words. It reads freely and asks you before it changes anything.</span></div>
+          <div class="card"><b>Library</b><span>Notebooks, live views and pages. They run again when you open them, so the numbers are current.</span></div>
+          <div class="card"><b>Connections</b><span>Postgres, MotherDuck, SQLite files, cloud storage. Add them when you need them.</span></div>
+          <div class="card"><b>The Slaw assistant</b><span>Ask in plain English. It reads freely and asks before it changes anything.</span></div>
         </div>
       </template>
 
@@ -235,7 +235,7 @@ onUnmounted(() => { if (undoTimer) clearTimeout(undoTimer) })
               </button>
               <button ref="newBtn" class="card act-card" type="button" data-testid="new-workspace" :disabled="!!opening" @click="newWorkspaceOpen = true">
                 <span class="ai"><Icon name="plus" :size="20" /></span>
-                <span><span class="at">New workspace… <kbd>{{ shortcutLabel('N') }}</kbd></span><span class="ad">Make a new folder. Pick a name, turn on git if you like, start blank or from a template.</span></span>
+                <span><span class="at">New workspace… <kbd>{{ shortcutLabel('N') }}</kbd></span><span class="ad">Make a new folder, blank or from a template, with git if you like.</span></span>
               </button>
               <button class="card act-card" type="button" data-testid="import-bundle" :disabled="!!opening" @click="openBundleImport('new')">
                 <span class="ai"><Icon name="download" :size="20" /></span>

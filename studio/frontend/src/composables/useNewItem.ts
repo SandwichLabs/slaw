@@ -64,7 +64,7 @@ export function useNewItem(open: Ref<boolean>, preselect: Ref<LibraryType | null
       setPendingAsk(nb.id, text)
       onCreated(notebookPath(nb.id))
     } catch (e) {
-      error.value = 'Failed to create notebook: ' + errorText(e)
+      error.value = "Couldn't create the notebook: " + errorText(e)
     } finally {
       busy.value = false
     }
@@ -87,7 +87,7 @@ export function useNewItem(open: Ref<boolean>, preselect: Ref<LibraryType | null
         onCreated(artifactPath(n))
       }
     } catch (e) {
-      error.value = isNotebook.value ? 'Failed to create notebook: ' + errorText(e) : errorText(e)
+      error.value = isNotebook.value ? "Couldn't create the notebook: " + errorText(e) : errorText(e)
     } finally {
       busy.value = false
     }

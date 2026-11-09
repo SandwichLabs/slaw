@@ -74,7 +74,7 @@ function sourceBadgeClass(source: string) {
 
     <!-- Detail pane -->
     <div style="flex: 1; overflow: auto; padding: var(--sh-space-6);">
-      <div v-if="!selected" class="sh-mono" style="color: var(--sh-graphite); text-align: center; margin-top: var(--sh-space-10);">Select a skill to view</div>
+      <div v-if="!selected" class="sh-mono" style="color: var(--sh-graphite); text-align: center; margin-top: var(--sh-space-10);">Select a skill</div>
       <div v-else>
         <div class="row" style="justify-content: space-between; align-items: flex-start; margin-bottom: var(--sh-space-4);">
           <div>
@@ -116,11 +116,11 @@ function sourceBadgeClass(source: string) {
         </div>
         <div class="col" style="gap: 4px; margin-top: var(--sh-space-3);">
           <label class="sh-label" style="margin: 0;">Description</label>
-          <input v-model="formDescription" placeholder="One line — advertised to every agent up front" class="field-input" style="width: 100%;" data-testid="skill-description-input" />
+          <input v-model="formDescription" placeholder="One line, shown to every agent up front" class="field-input" style="width: 100%;" data-testid="skill-description-input" />
         </div>
         <div class="col" style="gap: 4px; margin-top: var(--sh-space-3);">
           <label class="sh-label" style="margin: 0;">Instructions (markdown)</label>
-          <textarea v-model="formInstructions" rows="10" class="field-input" style="width: 100%; min-height: 220px;" data-testid="skill-instructions-input" placeholder="Full instructions, loaded on demand via read_skill…"></textarea>
+          <textarea v-model="formInstructions" rows="10" class="field-input" style="width: 100%; min-height: 220px;" data-testid="skill-instructions-input" placeholder="The full instructions, loaded when an agent reads the skill…"></textarea>
         </div>
         <div class="col" style="gap: 4px; margin-top: var(--sh-space-3);">
           <label class="sh-label" style="margin: 0;">Bound table (optional)</label>
@@ -138,7 +138,7 @@ function sourceBadgeClass(source: string) {
       :visible="showConfirmDelete"
       title="Delete skill"
       confirm-label="Delete"
-      message="Delete this skill? This cannot be undone."
+      message="Delete this skill? This can't be undone."
       @confirm="confirmDelete"
       @cancel="showConfirmDelete = false; pendingDeleteName = null"
     />

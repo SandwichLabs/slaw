@@ -120,8 +120,8 @@ describe('useNotebookSave', () => {
     it('rejects, with a toast, when the write fails, so a close can ask the person first', async () => {
       const { save, cells, error } = setup({ SaveNotebook: vi.fn(async () => { throw new Error('failed to save: disk full') }) })
       cells.value[0].source = 'edited'
-      await expect(save.doFlush()).rejects.toThrow('Failed to save notebook: disk full')
-      expect(error).toHaveBeenCalledWith('Failed to save notebook: disk full')
+      await expect(save.doFlush()).rejects.toThrow("Couldn't save the notebook: disk full")
+      expect(error).toHaveBeenCalledWith("Couldn't save the notebook: disk full")
       await expect(save.flushSave()).resolves.toBeUndefined() // the internal variant never throws
     })
 

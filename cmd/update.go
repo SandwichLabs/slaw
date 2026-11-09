@@ -36,8 +36,8 @@ var (
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Check for a newer Slaw release and, if you confirm, install it",
-	Long: `Looks up the latest stable Slaw release on GitHub (a plain request to github.com; running this
-command is your consent for it) and says whether it is newer than this one.
+	Long: `Look up the latest stable Slaw release on GitHub (one plain request to github.com; running
+this command is your consent for it) and say whether it is newer than this one.
 
 When this Slaw was put in place by the Slaw installer, it offers to upgrade by running that release's
 own install.sh after verifying it against the release's checksums.txt. Nothing is installed without
@@ -149,7 +149,7 @@ func applyUpdate(cmd *cobra.Command, svc *selfupdate.Service, tag string) error 
 var configUpdatesCmd = &cobra.Command{
 	Use:   "updates [off|weekly]",
 	Short: "Show or set whether Studio checks GitHub for new releases weekly",
-	Long: `Mirrors Settings > About > Updates in Studio. Off by default until you answer (Studio asks once).
+	Long: `The same setting as Settings > About > Updates in Studio. Off until you answer (Studio asks once).
 "weekly" lets Studio make one plain request to github.com at startup when the last check is over
 a week old. "slaw update" and Studio's "Check now" always work, whatever this says. Nothing is ever
 installed without your confirmation.`,
