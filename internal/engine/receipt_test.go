@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -260,7 +262,24 @@ func TestRecordExecuted_AnEngineExpandedWildcardIsSummarised(t *testing.T) {
 }
 
 func TestOpenRecorder_ANilRootOrAnUnusableFolderRecordsNothing(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	assert.Nil(t, OpenRecorder("", receipts.DefaultPolicy(), nil))
+
+	// A file where .slaw-local should be: the folder cannot be made.
+	blocked := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(blocked, ".slaw-local"), []byte("x"), 0o600))
+	assert.Nil(t, OpenRecorder(blocked, receipts.DefaultPolicy(), quiet))
+
+	// A folder that cannot be written (not for root, which ignores modes).
+	if os.Geteuid() != 0 {
+		ro := t.TempDir()
+		require.NoError(t, os.Chmod(ro, 0o500))
+		t.Cleanup(func() { _ = os.Chmod(ro, 0o700) })
+		assert.Nil(t, OpenRecorder(ro, receipts.DefaultPolicy(), quiet))
+	}
+}
+
+func TestOpenRecorder_AUsableFolderRecordsAndRedactsText(t *testing.T) {
 	dir := t.TempDir()
 	rec := OpenRecorder(dir, receipts.DefaultPolicy(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	require.NotNil(t, rec)

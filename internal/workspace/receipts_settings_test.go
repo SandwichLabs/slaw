@@ -153,3 +153,20 @@ func TestReceiptSettings_ReloadReappliesAndUntrustedKeepsThePolicy(t *testing.T)
 	require.False(t, ws.LocalTrusted())
 	assert.Equal(t, 90*24*time.Hour, ws.Receipts().Policy().MaxAge, "an untrusted file never falls back to stricter defaults mid-run")
 }
+
+// An older Slaw decodes the local file strictly, so an all-default receipts
+// setting must leave no receipts: key at all (the CHANGELOG tells people to
+// restore the defaults before opening a workspace in an older Slaw).
+func TestSetLocalReceipts_AllDefaultsLeavesNoReceiptsKey(t *testing.T) {
+	ws, _ := newWorkspace(t)
+	require.NoError(t, SetLocalReceipts(ws, ReceiptSettings{KeepParams: false, Days: 7, MaxCount: 500, MaxMB: 8}))
+	data, err := MarshalLocalConfig(ws.Local())
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "receipts:")
+
+	require.NoError(t, SetLocalReceipts(ws, ReceiptSettings{KeepParams: true}))
+	data, err = MarshalLocalConfig(ws.Local())
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "receipts")
+	assert.NotContains(t, string(data), "keep_params")
+}

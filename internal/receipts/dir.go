@@ -47,5 +47,31 @@ func Dir(root string) (string, error) {
 	if err := os.Chmod(cur, dirMode); err != nil {
 		return "", fmt.Errorf("the receipts folder's permissions cannot be tightened: %w", err)
 	}
+	if err := ensureLocalGitignore(filepath.Dir(cur)); err != nil {
+		return "", err
+	}
 	return cur, nil
+}
+
+// ensureLocalGitignore writes <root>/.slaw-local/.gitignore ("*") when it is
+// missing, so a hand-made repo never offers the key and the statement text to a
+// commit (`slaw workspace init` adds the root .gitignore lines, but a repo made
+// any other way has none). An existing file, whatever it holds, is left alone;
+// O_EXCL never follows a link.
+func ensureLocalGitignore(localFolder string) error {
+	f, err := os.OpenFile(filepath.Join(localFolder, ".gitignore"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if errors.Is(err, fs.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("the local folder's .gitignore cannot be written: %w", err)
+	}
+	if _, err := f.WriteString("*\n"); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("the local folder's .gitignore cannot be written: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("the local folder's .gitignore cannot be written: %w", err)
+	}
+	return nil
 }

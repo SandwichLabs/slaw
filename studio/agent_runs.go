@@ -30,6 +30,10 @@ type turnRuns struct {
 	mu     sync.Mutex
 	values []llm.RunValues
 	runs   []ChatRun
+	// unrecorded counts reads that showed the model rows but made no receipt (a
+	// store that could not be used): their values are unknown here, so the answer
+	// cannot honestly be called "not from a query".
+	unrecorded int
 }
 
 // isReadTool reports whether a tool's result carries a receipt_id and rows.
@@ -45,6 +49,11 @@ func (t *turnRuns) add(callID, tool string, result any) (ChatRun, bool) {
 	}
 	rv, ok := llm.RunValuesFrom(result)
 	if !ok {
+		if m, isMap := result.(map[string]any); isMap && m["rows"] != nil {
+			t.mu.Lock()
+			t.unrecorded++
+			t.mu.Unlock()
+		}
 		return ChatRun{}, false
 	}
 	run := ChatRun{CallID: callID, Tool: tool, ReceiptID: rv.ReceiptID, Rows: len(rv.Rows)}
@@ -87,5 +96,21 @@ func (h *agentToolHandler) noteRun(req *agents.Request, resp *agents.Response) {
 // turn made (llm.MarkNumbers), and returns those reads for the result.
 func (t *turnRuns) answerNumbers(answer string) ([]llm.NumberMark, []ChatRun) {
 	values, runs := t.snapshot()
-	return llm.MarkNumbers(answer, values), runs
+	marks := llm.MarkNumbers(answer, values)
+	t.mu.Lock()
+	unrecorded := t.unrecorded
+	t.mu.Unlock()
+	if unrecorded == 0 {
+		return marks, runs
+	}
+	// A read without a receipt hid its values from the check: keep the ticks and
+	// the withheld numbers, drop every "not from a query" underline, and keep
+	// the chips.
+	kept := marks[:0]
+	for _, m := range marks {
+		if m.Matched || m.Withheld {
+			kept = append(kept, m)
+		}
+	}
+	return kept, runs
 }

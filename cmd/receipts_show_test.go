@@ -39,7 +39,7 @@ func TestReceiptsShow_PrintsTheDrawersSections(t *testing.T) {
 		"Columns: 1", "answer  INTEGER",
 		"Fingerprint: ", "never the rows",
 		"You, with slaw query",
-		"Kept on this computer, never in the folder.",
+		"Kept on this computer, in .slaw-local/ (never in git or a bundle).",
 	} {
 		assert.Contains(t, out, want)
 	}
