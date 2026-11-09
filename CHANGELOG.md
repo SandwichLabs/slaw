@@ -4,7 +4,7 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [Unreleased]
 
-**Opening in an older Slaw:** once you change a receipt setting (Settings > Workspace > Receipts or `slaw receipts settings`), Slaw 0.8.0 and older refuse to open that workspace on this computer (`field receipts not found`). Set every receipt setting back to its default (`slaw receipts settings --keep-params on --days default --max-count default --max-mb default`), or remove the `receipts:` block from your per-workspace `local.yaml` in the config directory, before opening it in an older Slaw.
+**Opening in an older Slaw:** once you change a receipt setting (Settings > Workspace > Receipts or `slaw receipts settings`), Slaw 0.8.0 and older refuse to open that workspace on this computer (`field receipts not found`). Clear every limit box in Settings (leave it blank) and tick Keep parameter values, or run `slaw receipts settings --keep-params on --days default --max-count default --max-mb default`, or remove the `receipts:` block from your per-workspace `local.yaml` in the config directory, before opening it in an older Slaw.
 
 ### Added
 
