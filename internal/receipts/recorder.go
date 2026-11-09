@@ -194,3 +194,12 @@ func (r *Recorder) fillParams(rec *Receipt, in Intent) {
 		}
 	}
 }
+
+// Policy is the policy new receipts are made under (clamped); the default on a
+// nil Recorder.
+func (r *Recorder) Policy() Policy {
+	if r == nil {
+		return DefaultPolicy()
+	}
+	return r.currentPolicy()
+}

@@ -94,6 +94,10 @@ interface AppApi {
   AllowDotEnv(): Promise<DotEnvStatus>
   DenyDotEnv(): Promise<DotEnvStatus>
   RevokeDotEnv(): Promise<DotEnvStatus>
+  // Receipt settings (Settings > Workspace > Receipts): this person's retention, usage and clear
+  GetReceiptSettings(): Promise<ReceiptSettingsInfo>
+  SetReceiptSettings(s: ReceiptSettings): Promise<void>
+  ClearReceipts(): Promise<void>
   GetClaudeConfig(): Promise<{ name: string; desktop: string; code: string }>
   CancelQuit(): Promise<void>
   HoldQuit(): Promise<void>
@@ -561,6 +565,18 @@ interface DotEnvStatus {
   trackedByGit: boolean
   loaded: boolean
   satisfies: DotEnvSatisfies[]
+}
+
+interface ReceiptSettings { keepParams: boolean; days: number; maxCount: number; maxMB: number }
+interface ReceiptUsage { count: number; bytes: number; oldest: string }
+interface ReceiptSettingsInfo {
+  settings: ReceiptSettings
+  effective: ReceiptSettings
+  defaults: ReceiptSettings
+  floors: ReceiptSettings
+  ceilings: ReceiptSettings
+  usage: ReceiptUsage
+  available: boolean
 }
 
 interface MCPStatus { running: boolean; url: string; canStart: boolean; reason: string; startError: string; remembered: boolean; saveError: string }

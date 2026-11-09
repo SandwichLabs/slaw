@@ -524,7 +524,7 @@ func (w *workspace) WatchHistory() watches.History { return w.wh }
 func (w *workspace) Proposals() proposals.Store { return w.pr }
 
 func (w *workspace) Receipts() *receipts.Recorder {
-	w.rcOnce.Do(func() { w.rc = engine.OpenRecorder(w.root, w.logger) })
+	w.rcOnce.Do(func() { w.rc = engine.OpenRecorder(w.root, ReceiptPolicy(w.Local()), w.logger) })
 	return w.rc
 }
 

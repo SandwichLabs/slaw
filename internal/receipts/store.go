@@ -46,6 +46,11 @@ type Store interface {
 	Get(id string) (Receipt, error)
 	// Prune removes the oldest receipts until the policy (clamped) holds.
 	Prune(p Policy) error
+	// Usage counts the receipts kept, their total size and the oldest one's time
+	// (zero when there is none), without decoding any of them.
+	Usage() (count int, bytes int64, oldest time.Time)
+	// Clear removes every receipt and nothing else.
+	Clear() error
 }
 
 // Encode is the one file encoding of a receipt: compact canonical JSON.
@@ -337,8 +342,57 @@ func (s *FileStore) lock(wait bool) (func(), error) {
 	}
 }
 
+// Usage walks the shard folders and adds up the receipt files by name and
+// size: no file is opened or decoded, and nothing is swept or removed. A folder
+// that cannot be read counts as empty.
+func (s *FileStore) Usage() (int, int64, time.Time) {
+	entries, err := s.list(false)
+	if err != nil {
+		return 0, 0, time.Time{}
+	}
+	var total int64
+	var oldest time.Time
+	for _, e := range entries {
+		total += e.size
+		if oldest.IsZero() || e.mod.Before(oldest) {
+			oldest = e.mod
+		}
+	}
+	return len(entries), total, oldest
+}
+
+// Clear removes every receipt file, under the prune lock so it does not run
+// beside a prune. It keeps the key (every process holding the workspace open
+// has it in memory, so rotating it would split new receipts into two families
+// that cannot be compared) and the folders. Only regular files named like a
+// receipt, inside a real <aa> folder, are removed: a symbolic link, at either
+// level, is never followed, and any other file (the key, the lock, a stray
+// note, a temp file another process is still writing) is left alone.
+func (s *FileStore) Clear() error {
+	unlock, err := s.lock(true)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	entries, err := s.list(false)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := os.Remove(e.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("failed to delete a receipt: %w", err)
+		}
+	}
+	return nil
+}
+
 // scan lists the receipt files, sweeping stale temp files as it goes.
-func (s *FileStore) scan() ([]entry, error) {
+func (s *FileStore) scan() ([]entry, error) { return s.list(true) }
+
+// list lists the receipt files: regular files named <id>.json in a real <aa>
+// folder (a link is neither a folder nor a regular file here). With sweep it
+// also removes stale temp files.
+func (s *FileStore) list(sweep bool) ([]entry, error) {
 	tops, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read the receipts folder: %w", err)
@@ -361,7 +415,7 @@ func (s *FileStore) scan() ([]entry, error) {
 			name := f.Name()
 			switch {
 			case strings.HasPrefix(name, filestore.TempPrefix):
-				if time.Since(fi.ModTime()) > staleTempAge {
+				if sweep && time.Since(fi.ModTime()) > staleTempAge {
 					_ = os.Remove(filepath.Join(dir, name))
 				}
 			case strings.HasSuffix(name, fileExt) && ValidID(strings.TrimSuffix(name, fileExt)):
