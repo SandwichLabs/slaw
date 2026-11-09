@@ -286,6 +286,25 @@ describe('NotebookView', () => {
     expect(app.RunA2UIQuery).toHaveBeenCalled()
   })
 
+  it('an empty cell disables Run and says to write a query first, without calling the binding (#3)', async () => {
+    const app = makeApp()
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    vm.cells[0].source = '   '
+    await wrapper.vm.$nextTick()
+    const calls = (app.RunA2UIQuery as any).mock.calls.length
+    expect(wrapper.find('[data-testid="run-cell"]').attributes('disabled')).toBeDefined()
+
+    await vm.runCell(vm.cells[0])
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="cell-error"]').text()).toBe('Write a query first.')
+    expect((app.RunA2UIQuery as any).mock.calls.length).toBe(calls)
+  })
+
   it('picking an unfit view shows a mismatch note instead of the chart', async () => {
     makeApp()
     const wrapper = mountView()

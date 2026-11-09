@@ -31,7 +31,9 @@ func TestPlanCheckAcceptsIcebergReaders(t *testing.T) {
 
 	for _, fn := range []string{"iceberg_scan", "iceberg_metadata", "iceberg_snapshots"} {
 		stmt := fmt.Sprintf("SELECT * FROM %s('%s')", fn, loc)
-		assert.Empty(t, planCheck(context.Background(), db, stmt, nil, readerCount{plain: 1}), stmt)
-		assert.Contains(t, planCheck(context.Background(), db, stmt, nil, readerCount{}), "not written out as a literal", "uncounted reader: "+stmt)
+		reason, _ := planCheck(context.Background(), db, stmt, nil, readerCount{plain: 1})
+		assert.Empty(t, reason, stmt)
+		reason, _ = planCheck(context.Background(), db, stmt, nil, readerCount{})
+		assert.Contains(t, reason, "not written out as a literal", "uncounted reader: "+stmt)
 	}
 }

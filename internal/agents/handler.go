@@ -705,25 +705,3 @@ func (e *BindFailure) Error() string           { return e.Err.Error() }
 func (e *BindFailure) Unwrap() error           { return e.Err }
 func (e *BindFailure) DefinitionProblem() bool { return true }
 func (e *BindFailure) BindFailure() bool       { return true }
-
-// binderErrorPrefixes are DuckDB's stable error-class names for a statement
-// that is wrong. This is the one place the vet looks at the database's message
-// text: EXPLAIN's failure reaches the policy as a string.
-var binderErrorPrefixes = []string{"Binder Error", "Catalog Error", "Parser Error"}
-
-// definitionReason reports whether a read-only denial reason is about the
-// statement. A policy denial always is; "could not validate query: ..." is
-// only when the database says Binder, Catalog or Parser Error (an I/O error
-// from a dropped remote, or no database at all, is not).
-func definitionReason(reason string) bool {
-	rest, ok := strings.CutPrefix(reason, "could not validate query:")
-	if !ok {
-		return true
-	}
-	for _, p := range binderErrorPrefixes {
-		if strings.Contains(rest, p) {
-			return true
-		}
-	}
-	return false
-}

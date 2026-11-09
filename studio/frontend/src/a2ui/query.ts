@@ -37,7 +37,12 @@ export interface LiveQueryResult {
 // resolves after the caller stopped caring — callers check this instead of
 // applying a stale result to state that has since moved on to different
 // content.
+export const EMPTY_QUERY_MESSAGE = 'Write a query first.'
+
 export async function runLiveQuery(sql: string, signal?: AbortSignal, priority: QueryPriority = 'low', connection?: string): Promise<LiveQueryResult & { aborted?: boolean }> {
+  // A blank statement is not sent: the read-only gate would refuse it with a
+  // message about live bindings, not about the missing query (#3).
+  if (!sql.trim()) return { columns: [], types: [], rows: [], error: EMPTY_QUERY_MESSAGE }
   const aborted = { columns: [], types: [], rows: [], aborted: true }
   try {
     // Notebook format v2: an optional `connection` makes that connection the
