@@ -60,6 +60,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
   clearTimeout(copiedTimer)
   offs.splice(0).forEach((off) => off())
+  // The drawer unmounts only with the shell: whatever closed it, the next
+  // workspace starts with no target and no remembered runs.
+  resetEvidence()
 })
 
 async function copyId() {
