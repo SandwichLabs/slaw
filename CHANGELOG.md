@@ -4,6 +4,15 @@ All notable changes to Slaw are recorded here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-11-10
+
+Dependency updates. No behaviour changes.
+
+### Changed
+
+- **Go dependencies (#364):** the AWS SDK for Go v2 (sign-in) and smithy-go patch releases, `mcp-go` 1.5.0, `fantasy` 0.46.0, `pflag` 1.1.0 and Wails 2.17.1. The Wails CLI pin in CI and release follows to v2.17.1.
+- **Frontend dev dependencies (#363):** `@types/node` 26.6.6 and `knip` 6.44.1.
+
 ## [0.9.1] - 2026-11-09
 
 Plainer, shorter wording across Studio and the CLI. No behaviour changes.
@@ -527,7 +536,8 @@ The first public release. Vibe is an agentic desktop workspace for working with 
 - Older data-holding `.vibe` (SQLCipher) files are not opened.
 - Linux builds target glibc 2.35 or newer and WebKitGTK 4.1; musl and older distributions are unsupported.
 
-[Unreleased]: https://github.com/SandwichLabs/slaw/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/SandwichLabs/slaw/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/SandwichLabs/slaw/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/SandwichLabs/slaw/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/SandwichLabs/slaw/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/SandwichLabs/slaw/compare/v0.7.0...v0.8.0
