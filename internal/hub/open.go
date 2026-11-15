@@ -252,6 +252,7 @@ func openWith(ctx context.Context, root string, o OpenOptions, st steps) (opened
 	if err != nil {
 		return nil, &OpenError{StepSession, fmt.Errorf("failed to start the query engine: %w", err)}
 	}
+	eng.SetRoot(ws.Root())
 	out.Eng = eng
 	return out, nil
 }

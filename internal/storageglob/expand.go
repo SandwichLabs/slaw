@@ -56,6 +56,14 @@ type Options struct {
 	// RequirePlain refuses a matching object whose name is not a plain storage
 	// URL (a space, "?", "#", "%" or "*" in it), which the agent never reads.
 	RequirePlain bool
+	// Root, when set, is the workspace folder: a relative local path in a
+	// reader's path argument (read_csv('data/x.csv'), './data/*.parquet') or in
+	// FROM is rewritten to the absolute path under Root, so DuckDB's own working
+	// directory never decides which file a statement reads. Confine refuses to
+	// resolve a path with ".." or one that leaves Root (the agent's rule): it is
+	// left as written and the path policy refuses it.
+	Root    string
+	Confine bool
 }
 
 // Rewrite describes what an expansion did. The zero value and nil mean
@@ -72,6 +80,9 @@ type Rewrite struct {
 type sub struct {
 	repl, orig, probe string
 	n                 int // objects the pattern expanded to
+	// abs, for a relative local path, is the absolute path that took its place
+	// and lit the path as written; n is 0 and the record keeps no count.
+	abs, lit string
 }
 
 // Changed reports whether the text was rewritten.
@@ -87,8 +98,18 @@ func (r *Rewrite) Redact(msg string) string {
 	if !r.Changed() {
 		return msg
 	}
+	local := false
 	for _, s := range r.subs {
 		msg = strings.ReplaceAll(msg, s.repl, s.orig)
+		if s.abs != "" {
+			msg = strings.ReplaceAll(msg, s.abs, s.lit)
+			local = true
+		}
+	}
+	if i := strings.Index(msg, "\nLINE "); local && i >= 0 {
+		// The statement excerpt may be cut anywhere inside a resolved path, so
+		// it cannot be put back reliably: drop it.
+		msg = msg[:i]
 	}
 	lines := strings.Split(msg, "\n")
 	out := make([]string, 0, len(lines))
@@ -137,6 +158,10 @@ func (r *Rewrite) Summarize(sql string) (text string, n int) {
 		}
 		changed = true
 		n += s.n
+		if s.abs != "" {
+			text = strings.Replace(text, s.repl, s.orig, 1) // the path as written, no count
+			continue
+		}
 		text = strings.Replace(text, s.repl, s.orig+fmt.Sprintf(" /* expanded to %d objects */", s.n), 1)
 	}
 	if !changed {
@@ -167,7 +192,7 @@ func FromContext(ctx context.Context) (*Rewrite, bool) {
 // objects it matches. It returns text unchanged (and a nil Rewrite) when there
 // is nothing to expand, which costs one substring scan and no parse.
 func Expand(ctx context.Context, text string, o Options) (string, *Rewrite, error) {
-	if !mayHavePattern(text) {
+	if !mayHavePattern(text) && o.Root == "" {
 		return text, nil, nil
 	}
 	if o.Parser == nil {
@@ -176,20 +201,30 @@ func Expand(ctx context.Context, text string, o Options) (string, *Rewrite, erro
 	if o.Max <= 0 {
 		o.Max = DefaultMax
 	}
+	w := wanted{root: o.Root}
 	var sites []site
 	for _, toks := range statements(text) {
-		if !hasPatternToken(toks) {
+		pat := hasPatternToken(toks)
+		cp, hasCopy := copyToSite(toks, o.Root, o.Confine)
+		if !pat && !hasCopy && !(w.root != "" && hasRelToken(toks)) {
 			continue
 		}
-		if copiesFrom(toks) {
+		if hasCopy {
+			sites = append(sites, cp)
+		}
+		if pat && copiesFrom(toks) {
 			return "", nil, fmt.Errorf("COPY ... FROM does not take a wildcard on s3, gcs or r2: load the files with INSERT INTO t SELECT * FROM read_csv('s3://bucket/dir/*.csv') (or read_parquet, read_json)")
 		}
-		ss, err := findSites(ctx, o.Parser, text, toks)
+		ss, err := findSites(ctx, o.Parser, text, toks, w, o.Confine)
 		if err != nil {
 			return "", nil, err
 		}
-		if len(ss) > 0 && persistsSQL(toks) {
-			return "", nil, fmt.Errorf("a view or macro cannot hold the wildcard %q: Slaw expands wildcards on s3, gcs and r2 when a query runs, so it would keep today's list of files; create a table from the query, or name the files", ss[0].pattern)
+		if persistsSQL(toks) {
+			for _, st := range ss {
+				if st.abs == "" {
+					return "", nil, fmt.Errorf("a view or macro cannot hold the wildcard %q: Slaw expands wildcards on s3, gcs and r2 when a query runs, so it would keep today's list of files; create a table from the query, or name the files", st.pattern)
+				}
+			}
 		}
 		sites = append(sites, ss...)
 	}
@@ -256,7 +291,7 @@ func rewrite(ctx context.Context, text string, sites []site, o Options) (string,
 	total := 0
 	rw := &Rewrite{}
 	for _, s := range sites {
-		if _, done := keys[s.pattern]; done {
+		if _, done := keys[s.pattern]; done || s.abs != "" {
 			continue
 		}
 		ks, err := listPattern(ctx, s.pattern, o, o.Max-total)
@@ -274,6 +309,14 @@ func rewrite(ctx context.Context, text string, sites []site, o Options) (string,
 	for _, s := range sites {
 		if s.start < prev {
 			return "", nil, fmt.Errorf("could not rewrite the wildcard pattern %q: it overlaps another", s.pattern)
+		}
+		if s.abs != "" {
+			repl := session.QuoteLiteral(s.abs)
+			b.WriteString(text[prev:s.start])
+			b.WriteString(repl)
+			rw.subs = append(rw.subs, sub{repl: repl, orig: text[s.start:s.end], abs: s.abs, lit: s.pattern})
+			prev = s.end
+			continue
 		}
 		if len(keys[s.pattern]) == 0 && (s.role != roleGlob || o.RequirePlain) {
 			return "", nil, fmt.Errorf("no files found that match the pattern %q", s.pattern)

@@ -87,7 +87,7 @@ func instructionsText(in instructionsInput) string {
 	fmt.Fprintf(&b, "Slaw workspace %q at %s.\n", in.Workspace, in.Root)
 	fmt.Fprintf(&b, "At connect time the agent's sandbox was %s (%q) and \"Ask before changes\" was %s. %s\n",
 		in.Policy.Mode, agents.TierLabel(in.Policy.Mode), onOff(in.Policy.AskBeforeWrites), gateSentence(in))
-	fmt.Fprintf(&b, "Files: file readers only read inside %s (use absolute paths; relative paths are refused).\n",
+	fmt.Fprintf(&b, "Files: file readers only read inside %s (a relative path like data/x.csv is read from the workspace folder; no ..).\n",
 		filepath.Join(in.Root, "data")+string(filepath.Separator))
 	fmt.Fprintf(&b, "Connections (a name is the catalog in SQL): %s.\n", connectionList(in.Connections))
 	b.WriteString("Start with help_search \"\" for an index of every topic, and read_skill duckdb-sql and data-artifacts before writing SQL or artifacts, and a2ui before create_dashboard or an artifact view; read_skill semantic-layer before working on semantics/.\n")

@@ -33,6 +33,12 @@ type Manager struct {
 // Option configures a Manager.
 type Option func(*Manager)
 
+// WithRoot sets the workspace folder a relative file path in a statement the
+// engine runs resolves against, instead of the process working directory.
+func WithRoot(root string) Option {
+	return func(m *Manager) { m.SetRoot(root) }
+}
+
 // WithLogger sets the logger for the Manager.
 func WithLogger(logger *slog.Logger) Option {
 	return func(m *Manager) {
@@ -65,6 +71,13 @@ func NewManager(sess session.Session, opts ...Option) *Manager {
 func (m *Manager) ExecuteIn(ctx context.Context, connection, query string, params map[string]any) (*ResultSet, error) {
 	rs, _, err := m.execute(ctx, connection, query, params, 0)
 	return rs, err
+}
+
+// SetRoot is WithRoot for a Manager that is already built.
+func (m *Manager) SetRoot(root string) {
+	if m.duckdb != nil {
+		m.duckdb.root = root
+	}
 }
 
 // Session returns the session the Manager runs on (nil when unavailable).
