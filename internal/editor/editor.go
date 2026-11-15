@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/SandwichLabs/slaw/internal/filestore"
+	"github.com/SandwichLabs/slaw/internal/slawlocal"
 )
 
 // EnvWorkspace names the workspace root for the editor and the `slaw lsp` it
@@ -104,6 +105,9 @@ func Check(argv []string) error {
 // ignored folder) is refused: another user could otherwise swap the buffer
 // while the editor is open and have the edited query run as the person.
 func scratchDir(root string) (string, error) {
+	if _, err := slawlocal.Ensure(root); err != nil {
+		return "", fmt.Errorf("refusing to use the scratch directory: %w", err)
+	}
 	dir, err := filestore.Resolve(root, filepath.ToSlash(filepath.Join(".slaw-local", "edit")))
 	if err != nil {
 		return "", fmt.Errorf("refusing to use the scratch directory: %w", err)

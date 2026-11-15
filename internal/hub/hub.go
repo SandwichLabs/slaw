@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/SandwichLabs/slaw/internal/filelock"
+	"github.com/SandwichLabs/slaw/internal/slawlocal"
 	"github.com/SandwichLabs/slaw/internal/workspace"
 )
 
@@ -157,6 +158,10 @@ func acquireAt(root, app string, opts ...Option) (*Hold, error) {
 	dir, err := openLocalDir(root, true)
 	if err != nil {
 		return nil, err
+	}
+	if _, err := slawlocal.Ensure(root); err != nil {
+		_ = dir.Close()
+		return nil, fmt.Errorf("failed to prepare %s: %w", workspace.LocalDir, err)
 	}
 	h := Holder{App: app, PID: os.Getpid()}
 	if name, err := os.Hostname(); err == nil {
