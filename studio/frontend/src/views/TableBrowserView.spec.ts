@@ -480,10 +480,9 @@ describe('TableBrowserView inline datasheet editing', () => {
     expect(amtCell.classes()).toContain('cell-num')
   })
 
-  // A STRUCT/LIST cell's editor opens seeded with the exact JSON text
-  // the cell displays, not
-  // String(value) ("[object Object]"/a bare comma-joined list).
-  it('a STRUCT cell opens the editor seeded with the displayed JSON text', async () => {
+  // A nested cell shows DuckDB-style text and is never editable: the editor
+  // would round-trip a display string through a cast and could corrupt it.
+  it('a STRUCT cell shows DuckDB-style text and refuses to open an editor', async () => {
     makeApp({
       columns: [
         { name: 'id', type: 'INTEGER', not_null: true, pk: true },
@@ -496,10 +495,16 @@ describe('TableBrowserView inline datasheet editing', () => {
     await openTable(wrapper)
 
     const cell = wrapper.findAll('tbody tr')[0].findAll('td')[1]
-    expect(cell.text()).toContain('{"a":1,"b":"x"}')
+    expect(cell.text()).toContain("{'a': 1, 'b': x}")
+    expect(cell.attributes('aria-readonly')).toBe('true')
+    // A plain click (selecting or copying a value) stays silent.
+    await cell.trigger('click')
+    expect(cell.find('input').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain("Can't edit this cell here")
+    // A deliberate edit attempt says why.
     await cell.trigger('dblclick')
-    const input = cell.find('input.cell-input')
-    expect((input.element as HTMLInputElement).value).toBe('{"a":1,"b":"x"}')
+    expect(cell.find('input').exists()).toBe(false)
+    expect(wrapper.text()).toContain("Can't edit this cell here")
   })
 })
 

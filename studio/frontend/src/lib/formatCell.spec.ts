@@ -6,7 +6,7 @@
 // dev/CI environment (verified: `new Intl.NumberFormat().resolvedOptions().locale`
 // === 'en-US'). formatCell.ts has no locale parameter to pin explicitly.
 import { describe, it, expect } from 'vitest'
-import { formatCell, cellEditText, cellClass, decimalScale, typeFamily, isNumericType, groupDigits, type FormattedCell } from './formatCell'
+import { formatCell, cellEditText, cellClass, isEditableType, decimalScale, typeFamily, isNumericType, groupDigits, type FormattedCell } from './formatCell'
 
 interface Case {
   name: string
@@ -140,15 +140,15 @@ const cases: Case[] = [
     name: 'LIST',
     value: [1, 2, 3],
     dbType: 'INTEGER[]',
-    grid: { text: '[1,2,3]', kind: 'nested', align: 'left' },
-    report: { text: '[1,2,3]', kind: 'nested', align: 'left' },
+    grid: { text: '[1, 2, 3]', kind: 'nested', align: 'left' },
+    report: { text: '[1, 2, 3]', kind: 'nested', align: 'left' },
   },
   {
     name: 'STRUCT',
     value: { a: 1, b: 'x' },
     dbType: 'STRUCT("a" INTEGER, "b" VARCHAR)',
-    grid: { text: '{"a":1,"b":"x"}', kind: 'nested', align: 'left' },
-    report: { text: '{"a":1,"b":"x"}', kind: 'nested', align: 'left' },
+    grid: { text: "{'a': 1, 'b': x}", kind: 'nested', align: 'left' },
+    report: { text: "{'a': 1, 'b': x}", kind: 'nested', align: 'left' },
   },
 ]
 
@@ -240,21 +240,102 @@ describe('cellEditText', () => {
     expect(cellEditText(15675.3, 'DECIMAL(12,2)')).not.toContain(',')
   })
 
-  // A nested value seeds with the SAME JSON text formatCell displays, not
-  // String(value) ("[object Object]"
-  // for a struct, a bare comma-joined list for an array) — so the editor
-  // never disagrees with the cell the user just clicked, and DuckDB's own
-  // `'[1,null,3]'::INTEGER[]` cast accepts the text back.
-  it('seeds a STRUCT editor with the same JSON text the cell displays', () => {
+  // A nested value seeds with the text formatCell displays (the editor never
+  // opens on one, but the untouched-cell guard compares like for like).
+  it('seeds a STRUCT with the text the cell displays', () => {
     const value = { a: 1, b: 'x' }
-    expect(cellEditText(value, 'STRUCT("a" INTEGER, "b" VARCHAR)')).toBe('{"a":1,"b":"x"}')
-    expect(cellEditText(value, 'STRUCT("a" INTEGER, "b" VARCHAR)')).toBe(formatCell(value, 'STRUCT("a" INTEGER, "b" VARCHAR)').text)
+    const t = 'STRUCT("a" INTEGER, "b" VARCHAR)'
+    expect(cellEditText(value, t)).toBe("{'a': 1, 'b': x}")
+    expect(cellEditText(value, t)).toBe(formatCell(value, t).text)
   })
 
-  it('seeds a LIST editor with the same JSON text the cell displays, including a null element', () => {
+  it('seeds a LIST with the text the cell displays, including a null element', () => {
     const value = [1, null, 3]
-    expect(cellEditText(value, 'INTEGER[]')).toBe('[1,null,3]')
+    expect(cellEditText(value, 'INTEGER[]')).toBe('[1, NULL, 3]')
     expect(cellEditText(value, 'INTEGER[]')).toBe(formatCell(value, 'INTEGER[]').text)
+  })
+})
+
+describe('isEditableType', () => {
+  it('refuses nested types and VARIANT, allows the rest', () => {
+    for (const t of ['INTEGER[]', 'INTEGER[3]', 'STRUCT("a" INTEGER)', 'MAP(VARCHAR, INTEGER)', 'UNION("n" INTEGER)', 'VARIANT', 'variant']) {
+      expect(isEditableType(t), t).toBe(false)
+    }
+    for (const t of ['INTEGER', 'VARCHAR', 'JSON', 'DECIMAL(10,2)', 'DATE', undefined]) {
+      expect(isEditableType(t), String(t)).toBe(true)
+    }
+  })
+})
+
+describe('formatCell — nested values (#18, #388)', () => {
+  const cell = (v: unknown, t?: string) => formatCell(v, t).text
+
+  it('prints the reported [{foo: bar}] the way DuckDB does, not [OBJECT]', () => {
+    expect(cell([{ foo: 'bar' }], 'STRUCT("foo" VARCHAR)[]')).toBe("[{'foo': bar}]")
+    // No column type (model-authored inline data): compact JSON, as it always was.
+    expect(cell([{ foo: 'bar' }])).toBe('[{"foo":"bar"}]')
+  })
+
+  it('keeps a struct in its declared field order, not the wire order', () => {
+    expect(cell({ a: 2, b: 1 }, 'STRUCT("b" INTEGER, "a" INTEGER)')).toBe("{'b': 1, 'a': 2}")
+  })
+
+  it('prints a MAP as {k=v} in key order', () => {
+    expect(cell({ k: 1, j: 2 }, 'MAP(VARCHAR, INTEGER)')).toBe('{j=2, k=1}')
+  })
+
+  it('keeps a DECIMAL element at its declared scale', () => {
+    expect(cell([12.5, 3], 'DECIMAL(10,2)[]')).toBe('[12.50, 3.00]')
+    expect(cell({ p: 12.5 }, 'STRUCT("p" DECIMAL(10,2))')).toBe("{'p': 12.50}")
+  })
+
+  it('shows exact big integers unquoted', () => {
+    expect(cell({ h: '170141183460469231731687303715884105727' }, 'STRUCT("h" HUGEINT)')).toBe("{'h': 170141183460469231731687303715884105727}")
+  })
+
+  it('prints NULL, booleans, nesting and quoted field names', () => {
+    expect(cell([[1, null], [true]], 'INTEGER[][]')).toBe('[[1, NULL], [true]]')
+    expect(cell({ 'a b': 1 }, 'STRUCT("a b" INTEGER)')).toBe("{'a b': 1}")
+  })
+
+  it('prints a UNION value and an empty list', () => {
+    expect(cell(2, 'UNION("num" INTEGER)')).toBe('2')
+    expect(cell([], 'INTEGER[]')).toBe('[]')
+  })
+
+  it('truncates a long value in the cell and puts the full text in the title', () => {
+    const long = Array.from({ length: 400 }, (_, i) => i)
+    const fc = formatCell(long, 'INTEGER[]')
+    expect(fc.text.length).toBe(501)
+    expect(fc.text.endsWith('…')).toBe(true)
+    expect(fc.title).toBe('[' + long.join(', ') + ']')
+  })
+
+  it('titles a medium value and leaves a short one bare', () => {
+    expect(formatCell([1, 2], 'INTEGER[]').title).toBeUndefined()
+    expect(formatCell(['x'.repeat(60)], 'VARCHAR[]').title).toContain('x'.repeat(60))
+  })
+
+  it('a JSON column shows its decoded document as compact JSON, not [object Object]', () => {
+    expect(cell({ a: [1, 2], b: 'x' }, 'JSON')).toBe('{"a":[1,2],"b":"x"}')
+    expect(cell([{ foo: 'bar' }], 'JSON')).toBe('[{"foo":"bar"}]')
+    expect(formatCell({ a: 1 }, 'JSON').kind).toBe('nested')
+  })
+
+  it('a JSON string scalar and number show as they did (unquoted)', () => {
+    expect(cell('books', 'JSON')).toBe('books')
+    expect(cell(3, 'JSON')).toBe('3')
+  })
+
+  it('a JSON cell seeds its editor with the JSON text', () => {
+    expect(cellEditText({ a: 1 }, 'JSON')).toBe('{"a":1}')
+  })
+
+  it('does not split a surrogate pair at the cut', () => {
+    const fc = formatCell(['a'.repeat(497) + '😀' + 'zzz'], 'VARCHAR[]')
+    // "[" + 497 a's + the pair would put the high surrogate at unit 499.
+    expect(fc.text.endsWith('…')).toBe(true)
+    expect(/[\ud800-\udbff]…$/.test(fc.text)).toBe(false)
   })
 })
 

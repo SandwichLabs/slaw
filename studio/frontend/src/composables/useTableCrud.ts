@@ -7,7 +7,7 @@
 import { ref, triggerRef, onMounted, onUnmounted } from 'vue'
 import { App } from '../lib/bindings'
 import { errorText } from '../lib/errors'
-import { cellEditText } from '../lib/formatCell'
+import { cellEditText, isEditableType } from '../lib/formatCell'
 import type { TableBrowser } from './useTableBrowser'
 
 const blankColumn = (): ColumnInfo => ({ name: '', type: 'TEXT', not_null: false, pk: false })
@@ -69,7 +69,10 @@ export function useTableCrud(b: TableBrowser) {
   // startEdit opens an inline editor for a cell. Editing is only allowed when the
   // table has a primary key (so UpdateRow has something to target) and the cell
   // being edited is not itself the primary-key column (PKs are immutable here).
-  function startEdit(rowIdx: number, colIdx: number) {
+  // `explicit` is a deliberate edit attempt (double-click): a cell that cannot
+  // be edited says why then, and stays silent on a plain click, which is how a
+  // person selects or copies a value.
+  function startEdit(rowIdx: number, colIdx: number, explicit = false) {
     const td = b.tableData.value
     if (!td || b.locked.value) return
     // If already editing this exact cell, keep the in-flight value (avoids a
@@ -81,6 +84,10 @@ export function useTableCrud(b: TableBrowser) {
       return
     }
     if (td.columns[colIdx] === pk.name) return
+    if (!isEditableType(b.colType(colIdx))) {
+      if (explicit) b.errorMessage.value = "Can't edit this cell here: a list, struct, map, union or variant value is shown but not edited in the datasheet. Change it with an UPDATE statement."
+      return
+    }
     // Clear any stale cell error when (re)opening an editor on a different cell.
     if (cellError.value && !isCellError(td.rows[rowIdx], colIdx)) {
       cellError.value = null

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/SandwichLabs/slaw/internal/engine"
@@ -70,16 +71,22 @@ func Page(ctx context.Context, db *sql.DB, ref session.TableRef, req PageRequest
 		pageSize = DefaultPageSize
 	}
 
-	// The column allowlist is only needed to check a filter or a sort column.
-	var known map[string]bool
-	if len(req.Filter.Conditions) > 0 || req.SortCol != "" {
-		cols, err := engine.TableColumns(ctxQuerier{ctx, db}, ref)
-		if err != nil {
-			return nil, fmt.Errorf("failed to introspect columns: %w", err)
-		}
-		known = make(map[string]bool, len(cols))
-		for _, c := range cols {
-			known[c.Name] = true
+	// This lookup runs on every page. For a lazily resolved Iceberg catalog table
+	// it asks the remote catalog each time; caching it per table for the
+	// datasheet's lifetime needs an invalidation rule for schema changes, so it is
+	// left as a known cost (see the A10 report).
+	// The table's columns: the allowlist for a filter or a sort column, and the
+	// VARIANT columns, which duckdb-go cannot scan and so are read as JSON.
+	cols, err := engine.TableColumns(ctxQuerier{ctx, db}, ref)
+	if err != nil {
+		return nil, fmt.Errorf("failed to introspect columns: %w", err)
+	}
+	known := make(map[string]bool, len(cols))
+	var variants []string
+	for _, c := range cols {
+		known[c.Name] = true
+		if engine.IsVariantType(c.Type) {
+			variants = append(variants, c.Name)
 		}
 	}
 
@@ -95,17 +102,17 @@ func Page(ctx context.Context, db *sql.DB, ref session.TableRef, req PageRequest
 		}
 	}
 
-	query := "SELECT * FROM " + ref.SQL() + where + OrderClause(req.SortCol, req.SortDir, known) + " LIMIT ? OFFSET ?"
+	tail := " FROM " + ref.SQL() + where + OrderClause(req.SortCol, req.SortDir, known) + " LIMIT ? OFFSET ?"
 	queryArgs := append(append([]any{}, args...), pageSize, (page-1)*pageSize)
-	rows, err := db.QueryContext(ctx, query, queryArgs...)
-	if err != nil {
-		return nil, session.MapStorageDenyError(fmt.Errorf("failed to query table: %w", err))
-	}
-	defer rows.Close() //nolint:errcheck
-
-	rs, _, err := engine.ScanRows(rows, 0, 0)
+	rs, err := scanPage(ctx, db, engine.VariantCastProjection(variants), tail, queryArgs)
 	if err != nil {
 		return nil, err
+	}
+	// A cast column scans as a JSON value; the column is still a VARIANT.
+	for i := range rs.Columns {
+		if slices.Contains(variants, rs.Columns[i].Name) {
+			rs.Columns[i].Type = "VARIANT"
+		}
 	}
 	names, types := rs.NamesAndTypes()
 
@@ -120,6 +127,17 @@ func Page(ctx context.Context, db *sql.DB, ref session.TableRef, req PageRequest
 		Columns: names, Types: types, Rows: rs.Rows,
 		Page: page, PageSize: pageSize, TotalRows: total, TotalPages: totalPages,
 	}, nil
+}
+
+// scanPage runs "SELECT <projection><tail>" and scans every row.
+func scanPage(ctx context.Context, db *sql.DB, projection, tail string, args []any) (*engine.ResultSet, error) {
+	rows, err := db.QueryContext(ctx, "SELECT "+projection+tail, args...)
+	if err != nil {
+		return nil, session.MapStorageDenyError(fmt.Errorf("failed to query table: %w", err))
+	}
+	defer rows.Close() //nolint:errcheck
+	rs, _, err := engine.ScanRows(rows, 0, 0)
+	return rs, err
 }
 
 // ctxQuerier makes a *sql.DB's reads honour ctx for engine.TableColumns.

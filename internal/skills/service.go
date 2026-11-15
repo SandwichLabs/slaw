@@ -618,7 +618,7 @@ func importColumnFacts(duckDB *sql.DB, tref session.TableRef, table, quotedTable
 // CAST ... AS VARCHAR, not a bare %s scanned with %v: DuckDB's own text
 // rendering is the source of truth for what a sample "looks like as stored"
 // (DATE gives "2025-04-06", DECIMAL keeps its scale, UUID gives text),
-// matching CSV export. This is deliberately not engine.NormalizeColumnValue —
+// matching CSV export. This is deliberately not the engine's column normalising —
 // skill text should be exactly what DuckDB prints, not the JSON-friendly Go
 // value.
 func columnSamples(duckDB *sql.DB, quotedCol, quotedTable string) []string {

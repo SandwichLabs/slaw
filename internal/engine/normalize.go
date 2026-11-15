@@ -132,7 +132,7 @@ func NormalizeValue(v any) any {
 	return v
 }
 
-// NormalizeColumnValue is NormalizeValue plus formatting that needs the
+// normalizeColumn is NormalizeValue plus formatting that needs the
 // column's DuckDB type (dbType = (*sql.ColumnType).DatabaseTypeName()):
 // DATE/TIME/TIMETZ/TIMESTAMP*/TIMESTAMPTZ (all scan as time.Time, and only
 // the column type says which one), UUID (scans as []byte, needs the
@@ -142,43 +142,67 @@ func NormalizeValue(v any) any {
 // bytes happen to be valid UTF-8 — a BLOB is bytes, not text, and the grid
 // must show it exactly as `COPY ... FORMAT csv` would).
 //
+// A nested type (LIST, ARRAY, STRUCT, MAP, UNION) is parsed from the same
+// type name and every element, field and map entry gets the formatting its
+// own declared type asks for (normalizeTyped), so a UUID, DATE or TIMESTAMP
+// inside a list or struct reads like one in its own column. A JSON column
+// stays the decoded value the driver scans it into (the display layers print
+// it as JSON text).
+//
 // Everything else falls through to NormalizeValue, which has no column type
 // information and must stay type-agnostic — do not duplicate its logic here.
-func NormalizeColumnValue(v any, dbType string) any {
+//
+// ScanRows parses each column's nested type once and calls this per cell.
+func normalizeColumn(v any, dbType string, t *colType) any {
+	if v == nil {
+		return nil
+	}
+	if t != nil {
+		return normalizeTyped(v, t)
+	}
+	if out, ok := scalarColumnValue(v, dbType); ok {
+		return out
+	}
+	return NormalizeValue(v)
+}
+
+// scalarColumnValue is the type-aware formatting of one non-nested value, or
+// false when the type has none (the caller falls back to NormalizeValue).
+func scalarColumnValue(v any, dbType string) (any, bool) {
 	switch dbType {
 	case "DATE":
 		if t, ok := v.(time.Time); ok {
-			return t.Format("2006-01-02")
+			return t.Format("2006-01-02"), true
 		}
 	case "TIME":
 		if t, ok := v.(time.Time); ok {
-			return t.Format("15:04:05.999999")
+			return t.Format("15:04:05.999999"), true
 		}
 	case "TIMETZ":
 		// go-duckdb scans TIMETZ into a UTC time.Time and drops the
 		// original zone offset entirely, so the best this can do is show
 		// the same instant with a UTC "+00" suffix. Known gap.
 		if t, ok := v.(time.Time); ok {
-			return t.UTC().Format("15:04:05.999999") + "+00"
+			return t.UTC().Format("15:04:05.999999") + "+00", true
 		}
 	case "TIMESTAMP", "TIMESTAMP_S", "TIMESTAMP_MS", "TIMESTAMP_NS":
 		if t, ok := v.(time.Time); ok {
-			return t.Format("2006-01-02 15:04:05.999999999")
+			return t.Format("2006-01-02 15:04:05.999999999"), true
 		}
 	case "TIMESTAMPTZ":
 		if t, ok := v.(time.Time); ok {
-			return timestampTZText(t)
+			return timestampTZText(t), true
 		}
 	case "UUID":
 		if b, ok := v.([]byte); ok {
-			return uuidText(b)
+			return uuidText(b), true
 		}
 	case "BLOB":
 		if b, ok := v.([]byte); ok {
-			return blobEscape(b)
+			return blobEscape(b), true
 		}
 	}
-	return NormalizeValue(v)
+	return nil, false
 }
 
 // safeInt returns i as a JSON number when a JS double holds it exactly, or
@@ -294,7 +318,7 @@ func uuidText(b []byte) string {
 // bytesText is the generic (column-type-agnostic) rule for a raw []byte
 // value: valid UTF-8 bytes cross as a plain string, anything else as
 // DuckDB's own `\xHH` escape text. Column-aware callers (BLOB, UUID) apply
-// a stricter rule instead — see NormalizeColumnValue.
+// a stricter rule instead — see normalizeColumn.
 func bytesText(b []byte) string {
 	if utf8.Valid(b) {
 		return string(b)

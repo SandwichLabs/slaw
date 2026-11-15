@@ -20,6 +20,8 @@
 // place a numeric value becomes text, so #96 adds one switch there — no
 // other call site changes.
 
+import { jsonText, nestedText } from './nestedValue'
+
 type CellContext = 'grid' | 'report'
 
 interface CellFormatOptions {
@@ -38,6 +40,9 @@ export interface FormattedCell {
 type TypeFamily = 'integer' | 'decimal' | 'float' | 'boolean' | 'temporal' | 'text' | 'nested'
 
 const TITLE_LEN_THRESHOLD = 40
+// A nested value can be a whole document; the cell shows its first characters
+// and the title (hover) carries the rest, as for any other long cell.
+const NESTED_CELL_MAX = 500
 
 // typeFamily classifies a DuckDB type name (or, absent one — model-authored
 // inline A2UI data has no column type — infers from the JS value's own
@@ -48,6 +53,7 @@ export function typeFamily(dbType: string | undefined, value: unknown): TypeFami
     // Checked first: a LIST/ARRAY element type or a STRUCT field type can
     // itself contain "INT" (INTEGER[], STRUCT("a" INTEGER, ...)) — nested
     // must win before the plain-INT substring check below sees it.
+    if (t === 'JSON') return value !== null && typeof value === 'object' ? 'nested' : 'text'
     if (/\[\d*\]$/.test(t) || t.startsWith('STRUCT') || t.startsWith('MAP') || t.startsWith('UNION')) return 'nested'
     // Checked before the generic INT substring test: INTERVAL contains
     // "INT" too.
@@ -148,6 +154,22 @@ function newlineMark(s: string): string {
   return s.replace(/\r\n|\n/g, '↵').replace(/\t/g, '→')
 }
 
+// isJsonType reports whether a column is DuckDB's JSON type.
+const isJsonType = (dbType: string | undefined) => (dbType || '').toUpperCase() === 'JSON'
+
+// nestedDisplay is a nested value's cell text. A JSON column's document (or a
+// value with no column type, which is model-authored inline data) reads as
+// compact JSON; a LIST, STRUCT, MAP or UNION reads as DuckDB's CLI prints it.
+function nestedDisplay(value: unknown, dbType: string | undefined): string {
+  return !dbType || isJsonType(dbType) ? jsonText(value) : nestedText(value, dbType)
+}
+
+// cutAt cuts s to at most n UTF-16 units without splitting a surrogate pair.
+function cutAt(s: string, n: number): string {
+  const c = s.charCodeAt(n - 1)
+  return s.slice(0, c >= 0xd800 && c <= 0xdbff ? n - 1 : n)
+}
+
 // formatCell turns one wire value into display text, kind, alignment and an
 // optional title, given the column's DuckDB type (undefined for
 // model-authored inline A2UI data) and a context.
@@ -192,8 +214,10 @@ export function formatCell(value: unknown, dbType?: string, opts?: CellFormatOpt
   }
 
   if (family === 'nested') {
-    const text = JSON.stringify(value)
-    const title = text.length > TITLE_LEN_THRESHOLD ? text : undefined
+    const raw = nestedDisplay(value, dbType)
+    const flat = newlineMark(raw)
+    const text = flat.length > NESTED_CELL_MAX ? cutAt(flat, NESTED_CELL_MAX) + '…' : flat
+    const title = raw.length > TITLE_LEN_THRESHOLD || text !== raw ? raw : undefined
     return { text, kind: 'nested', align: 'left', title }
   }
 
@@ -211,23 +235,26 @@ export function formatCell(value: unknown, dbType?: string, opts?: CellFormatOpt
 // report/grid number formatting above are display-only and must never reach
 // an editor.
 //
-// A nested (LIST/ARRAY/STRUCT/MAP) value seeds with the exact same
-// JSON.stringify text formatCell displays — not `String(value)`, which
-// stringifies an object/array to
-// "[object Object]"/comma-joined text that disagrees with what the user
-// just clicked and that DuckDB can't CAST back. DuckDB's own `::type` cast
-// accepts JSON-shaped list/struct literals fine (`'[1,null,3]'::INTEGER[]`),
-// so "editor seed == display minus grouping" holds for every family, and
-// the untouched-cell guard in TableBrowserView.vue (which also calls
-// cellEditText) still compares like for like.
+// A nested (LIST/ARRAY/STRUCT/MAP/UNION) value seeds with the text formatCell
+// displays. The datasheet never opens an editor on one (isEditableType), so this
+// is only the like-for-like comparison the untouched-cell guard makes.
 export function cellEditText(value: unknown, dbType?: string): string {
   if (value === null || value === undefined) return ''
   const scale = decimalScale(dbType)
   if (scale !== null) {
     return typeof value === 'number' ? value.toFixed(scale) : String(value)
   }
-  if (typeFamily(dbType, value) === 'nested') return JSON.stringify(value)
+  if (typeFamily(dbType, value) === 'nested') return nestedDisplay(value, dbType)
   return String(value)
+}
+
+// isEditableType reports whether the datasheet may open an inline editor on a
+// column of this DuckDB type. A nested value (LIST, ARRAY, STRUCT, MAP, UNION)
+// and a VARIANT are shown but not edited: the editor would round-trip a display
+// string through a cast and could silently change the value. Change them with
+// an UPDATE statement instead.
+export function isEditableType(dbType: string | undefined): boolean {
+  return typeFamily(dbType, undefined) !== 'nested' && (dbType || '').toUpperCase() !== 'VARIANT'
 }
 
 // cellClass returns the CSS classes a formatted cell should render with

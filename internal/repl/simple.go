@@ -34,7 +34,7 @@ func renderLine(ctx context.Context, w io.Writer, rs *engine.ResultSet, o render
 			if i < len(row) {
 				v = row[i]
 			}
-			c := displayCell(v, o.st.nullvalue)
+			c := displayCell(v, o.st.nullvalue, rs.Columns[i].Type)
 			text := c.text
 			if c.null {
 				text = o.pal.dim(text)
@@ -72,7 +72,7 @@ func renderCSV(ctx context.Context, w io.Writer, rs *engine.ResultSet, o renderO
 				rec[i] = safeMultiline(o.st.nullvalue)
 				continue
 			}
-			rec[i] = safeMultiline(cellText(v, ""))
+			rec[i] = safeMultiline(cellText(v, "", rs.Columns[i].Type))
 		}
 		if err := cw.Write(rec); err != nil {
 			return err
@@ -146,7 +146,7 @@ func jsonValue(v any) any {
 		return safeMultiline(x)
 	case float64:
 		if math.IsNaN(x) || math.IsInf(x, 0) {
-			return cellText(x, "")
+			return cellText(x, "", "")
 		}
 		return x
 	case float32:
@@ -164,7 +164,7 @@ func jsonValue(v any) any {
 		}
 		return out
 	}
-	return safeMultiline(cellText(v, ""))
+	return safeMultiline(cellText(v, "", ""))
 }
 
 // renderMarkdown prints a pipe table: numbers right-aligned.

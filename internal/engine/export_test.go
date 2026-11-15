@@ -20,3 +20,9 @@ func ResolveTable(ctx context.Context, sess session.Session, name string) (sessi
 	}
 	return sess.Resolve(ctx, ref)
 }
+
+// NormalizeColumnValue is normalizeColumn for one value, parsing a nested
+// type name on the spot (ScanRows parses it once per column).
+func NormalizeColumnValue(v any, dbType string) any {
+	return normalizeColumn(v, dbType, compositeType(dbType))
+}

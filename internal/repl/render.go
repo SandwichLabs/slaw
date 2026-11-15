@@ -86,11 +86,11 @@ func render(ctx context.Context, w io.Writer, rs *engine.ResultSet, total int, o
 }
 
 // displayCell is a value as one safe line.
-func displayCell(v any, null string) cell {
+func displayCell(v any, null, dbType string) cell {
 	if v == nil {
 		return cell{text: safe(null), null: true}
 	}
-	return cell{text: safe(oneLine.Replace(cellText(v, null)))}
+	return cell{text: safe(oneLine.Replace(cellText(v, null, dbType)))}
 }
 
 // buildGrid turns rs into a grid. With rowElision it keeps DuckDB's head and
@@ -114,7 +114,7 @@ func buildGrid(rs *engine.ResultSet, total int, st settings, typeRow, rowElision
 			if c < len(rs.Rows[i]) {
 				v = rs.Rows[i][c]
 			}
-			row[c] = displayCell(v, st.nullvalue)
+			row[c] = displayCell(v, st.nullvalue, rs.Columns[c].Type)
 		}
 		g.rows = append(g.rows, row)
 		g.rowIdx = append(g.rowIdx, i)

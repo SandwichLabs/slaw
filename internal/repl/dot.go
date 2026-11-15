@@ -274,7 +274,7 @@ func (s *Session) dotSchema(_ []string, rest string) error {
 		if len(row) == 0 || row[0] == nil {
 			continue
 		}
-		text := strings.TrimRight(safeMultiline(cellText(row[0], "")), "\n")
+		text := strings.TrimRight(safeMultiline(cellText(row[0], "", "")), "\n")
 		if !strings.HasSuffix(text, ";") {
 			text += ";"
 		}

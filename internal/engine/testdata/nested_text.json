@@ -1,0 +1,18 @@
+[
+  {"name": "list of struct (#18)", "type": "STRUCT(\"foo\" VARCHAR)[]", "value": [{"foo": "bar"}], "text": "[{'foo': bar}]"},
+  {"name": "untyped struct sorts its keys", "type": "", "value": {"b": 1, "a": 2}, "text": "{'a': 2, 'b': 1}"},
+  {"name": "typed struct keeps declared order", "type": "STRUCT(\"b\" INTEGER, \"a\" INTEGER)", "value": {"a": 2, "b": 1}, "text": "{'b': 1, 'a': 2}"},
+  {"name": "map with integer-like keys sorts as text", "type": "MAP(INTEGER, VARCHAR)", "value": {"10": "x", "2": "y", "1": "z"}, "text": "{1=z, 10=x, 2=y}"},
+  {"name": "untyped struct with integer-like keys", "type": "", "value": {"10": 1, "2": 2, "a": 3}, "text": "{'10': 1, '2': 2, 'a': 3}"},
+  {"name": "doubles use DuckDB's exponent and .0 rules", "type": "DOUBLE[]", "value": [1e-7, 0.0001, 0.00001, 1e15, 1e16, 1e21, 3, 1.5, 1.5e-7, 1.2345e17], "text": "[1e-07, 0.0001, 1e-05, 1000000000000000.0, 1e+16, 1e+21, 3.0, 1.5, 1.5e-07, 1.2345e+17]"},
+  {"name": "untyped numbers", "type": "", "value": [1e-7, 3, 1.5], "text": "[1e-07, 3, 1.5]"},
+  {"name": "integers stay plain", "type": "INTEGER[]", "value": [1, 20, -3], "text": "[1, 20, -3]"},
+  {"name": "decimal keeps its scale", "type": "DECIMAL(10,2)[]", "value": [12.5, 3], "text": "[12.50, 3.00]"},
+  {"name": "NULL, booleans and nesting", "type": "", "value": [[1, null], [true]], "text": "[[1, NULL], [true]]"},
+  {"name": "quoted field name", "type": "STRUCT(\"a b\" INTEGER)", "value": {"a b": 1}, "text": "{'a b': 1}"},
+  {"name": "union value", "type": "UNION(\"n\" INTEGER)", "value": 2, "text": "2"},
+  {"name": "empty list", "type": "INTEGER[]", "value": [], "text": "[]"},
+  {"name": "exact big integer string", "type": "STRUCT(\"h\" HUGEINT)", "value": {"h": "170141183460469231731687303715884105727"}, "text": "{'h': 170141183460469231731687303715884105727}"},
+  {"name": "json column sorts keys as text at every level", "type": "JSON", "value": {"10": 1, "2": {"b": [1, "x"], "a": null}}, "text": "{\"10\":1,\"2\":{\"a\":null,\"b\":[1,\"x\"]}}"},
+  {"name": "map of lists", "type": "MAP(VARCHAR, INTEGER[])", "value": {"k": [1, 2], "j": []}, "text": "{j=[], k=[1, 2]}"}
+]
