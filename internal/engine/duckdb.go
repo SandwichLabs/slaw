@@ -10,6 +10,9 @@ import (
 // DuckDBEngine executes queries against a DuckDB session.
 type DuckDBEngine struct {
 	sess session.Session
+	// root is the workspace folder a relative file path in a statement is
+	// resolved against (storageglob.Options.Root); "" leaves such paths alone.
+	root string
 }
 
 // NewDuckDBEngine creates a DuckDB engine over the given session.

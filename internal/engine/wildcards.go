@@ -15,14 +15,16 @@ import (
 //
 // SQL that already went through the agent policy arrives with its rewrite
 // attached to ctx (storageglob.WithRewrite): it was expanded before it was
-// vetted and runs as written. Text with no pattern comes back unchanged and
-// costs a substring scan.
+// vetted and runs as written. A relative file path (read_csv('data/x.csv')) is
+// resolved against the workspace root here too (Options.Root), so the process
+// working directory never decides which file runs. Text with nothing to
+// rewrite comes back unchanged and costs a substring scan.
 func (e *DuckDBEngine) expandWildcards(ctx context.Context, sqlText string) (string, *storageglob.Rewrite, error) {
 	if rw, ok := storageglob.FromContext(ctx); ok {
 		return sqlText, rw, nil
 	}
 	lister, _ := e.sess.(storageglob.Lister)
-	out, rw, err := storageglob.Expand(ctx, sqlText, storageglob.Options{Lister: lister})
+	out, rw, err := storageglob.Expand(ctx, sqlText, storageglob.Options{Lister: lister, Root: e.root})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to expand a wildcard: %w", err)
 	}

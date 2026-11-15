@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,11 +54,22 @@ func (h *Handler) expand(ctx context.Context, raw string) (string, context.Conte
 		Lister:       lister,
 		Vet:          h.policyEnv().pathPolicy().vetPattern,
 		RequirePlain: true,
+		Root:         h.workspaceRoot(),
+		Confine:      true,
 	})
 	if err != nil {
 		return "", ctx, err
 	}
 	return text, storageglob.WithRewrite(ctx, rw), nil
+}
+
+// workspaceRoot is the folder a relative file path in agent SQL resolves against
+// (the parent of data/), "" when there is no workspace.
+func (h *Handler) workspaceRoot() string {
+	if p, ok := h.access.(DataDirProvider); ok && p.DataDir() != "" {
+		return filepath.Dir(p.DataDir())
+	}
+	return ""
 }
 
 // expandMetrics is the first step of every expansion: metric('name', by => ...)

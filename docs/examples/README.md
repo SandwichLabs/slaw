@@ -10,7 +10,7 @@ Three small Slaw workspaces that show the [semantic layer](../reference/semantic
 
 ## Run one
 
-The data is committed as CSV under each `data/` folder. An entity's `table` is a SQL name, not a file path, and the read-only policy that every metric runs under accepts a file in `data/` only by its absolute path, which a committed query can't portably name, so the first step in every workspace loads the CSVs into the workspace's local DuckDB (`data/local.duckdb`, git-ignored):
+The data is committed as CSV under each `data/` folder. An entity's `table` is a SQL name, not a file path, so the first step in every workspace loads the CSVs into the workspace's local DuckDB (`data/local.duckdb`, git-ignored). (A query can also read a file in `data/` without the import, by a path relative to the workspace, such as `read_csv('data/penguins.csv')`; the entities and metrics here name tables, so they need the import.)
 
 ```
 cd docs/examples/penguins

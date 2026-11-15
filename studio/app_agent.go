@@ -378,7 +378,7 @@ func (a *App) newAgentToolHandler(ceiling agents.SandboxMode) *agentToolHandler 
 		// closed anyway.
 		a.logger.Error("failed to build the agent handler", "error", err)
 		sc := &agents.SandboxConfig{Mode: agents.ModeReadOnly, MaxQueryRows: 10000, RequireApproval: true}
-		inner = agents.NewHandler(workspace.NewAgentAccess(a.ws, a.sess), engine.NewManager(a.sess, engine.WithLogger(a.logger)), sc, a.logger)
+		inner = agents.NewHandler(workspace.NewAgentAccess(a.ws, a.sess), engine.NewManager(a.sess, engine.WithLogger(a.logger), engine.WithRoot(a.ws.Root())), sc, a.logger)
 		inner.SetReceipts(a.ws.Receipts())
 	}
 	inner.SetActiveNotebook(a.activeNotebookID)

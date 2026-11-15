@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,6 +27,104 @@ var readerFuncs = []string{
 	"read_text", "read_blob", "read_avro",
 }
 
+// localReaderFuncs are single-path readers that never glob on s3: a relative
+// local path given to one of them is resolved against the workspace root
+// (Options.Root) like the globbing readers'.
+var localReaderFuncs = []string{
+	"iceberg_scan", "iceberg_metadata", "iceberg_snapshots", "delta_scan",
+	"read_xlsx", "st_read", "sniff_csv",
+}
+
+// wanted says which path literals findSites reports: s3-like patterns, and,
+// when root is set, relative local paths.
+type wanted struct{ root string }
+
+// ok reports whether s, the path argument of function fn ("" = a FROM name),
+// is a literal to rewrite.
+func (w wanted) ok(fn, s string) bool {
+	if (fn == "" || fn == "glob" || slices.Contains(readerFuncs, fn)) && isPattern(s) {
+		return true
+	}
+	if w.root == "" || !isRelPath(s) {
+		return false
+	}
+	// A FROM name is a file only when it is written as a path: a table may be
+	// called "my.table" or "q.csv".
+	return fn != "" || strings.Contains(s, "/")
+}
+
+var urlScheme = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.\-]*:`)
+
+// isRelPath reports whether s names a local file relative to the workspace:
+// not a URL, not absolute, not a home-directory path, and shaped like a path
+// (a separator, a wildcard or an extension) so a bare value is not touched.
+func isRelPath(s string) bool {
+	return isRelLocal(s) && (strings.ContainsAny(s, `/\*`) || filepath.Ext(s) != "")
+}
+
+// isRelLocal reports whether s is a local path that is not absolute: not a
+// URL, not a home-directory path.
+func isRelLocal(s string) bool {
+	return s != "" && !urlScheme.MatchString(s) && !filepath.IsAbs(s) && !strings.HasPrefix(s, "~") && !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, `\\`)
+}
+
+// copyToSite is the target of COPY ... TO '<relative path>', resolved like a
+// reader's path so a write and a read of data/out.csv name one file. The agent
+// policy still vets the resolved target (vetWrite).
+func copyToSite(toks []tok, root string, confine bool) (site, bool) {
+	if root == "" || len(toks) < 3 || !toks[0].isWord("COPY") {
+		return site{}, false
+	}
+	depth := 0
+	for i, t := range toks[1:] {
+		switch {
+		case t.isParen("("):
+			depth++
+		case t.isParen(")"):
+			depth--
+		case depth == 0 && t.isWord("TO"):
+			n := i + 2 // index in toks of the token after TO
+			if n >= len(toks) || toks[n].Kind != tkString || !toks[n].Plain || !isRelLocal(toks[n].Text) {
+				return site{}, false
+			}
+			abs := resolveRel(root, toks[n].Text, confine)
+			return site{pattern: toks[n].Text, abs: abs, start: toks[n].Start, end: toks[n].End}, abs != ""
+		}
+	}
+	return site{}, false
+}
+
+// resolveRel is the absolute path a relative literal names under root. With
+// confine set, a path that holds ".." or leaves root is not resolved (""), so
+// the agent policy refuses it as it is written.
+func resolveRel(root, lit string, confine bool) string {
+	if root == "" || strings.ContainsAny(root, "*?[") || strings.ContainsFunc(lit, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return ""
+	}
+	if confine {
+		for _, seg := range strings.FieldsFunc(lit, func(r rune) bool { return r == '/' || r == '\\' }) {
+			if seg == ".." {
+				return ""
+			}
+		}
+	}
+	abs := filepath.Join(root, filepath.FromSlash(lit))
+	if confine && abs != root && !strings.HasPrefix(abs, root+string(filepath.Separator)) {
+		return ""
+	}
+	return abs
+}
+
+// hasRelToken is the cheap pre-filter for relative paths.
+func hasRelToken(toks []tok) bool {
+	for _, t := range toks {
+		if (t.Kind == tkString || t.Kind == tkIdent) && isRelPath(t.Text) {
+			return true
+		}
+	}
+	return false
+}
+
 // role says where a pattern literal sits, and so what replaces it.
 type role int
 
@@ -40,6 +140,9 @@ type site struct {
 	pattern    string
 	role       role
 	start, end int // byte span of the literal's token in the whole text
+	// abs is set for a relative local path: the absolute path that takes its
+	// place (Options.Root). "" = an s3, gcs or r2 pattern.
+	abs string
 }
 
 // isPattern reports whether s is an S3-like URL holding a wildcard.
@@ -103,7 +206,7 @@ func candidates(toks []tok) []span {
 
 // findSites returns the pattern literals of one statement, each located in toks
 // and verified to be what the parser said it is.
-func findSites(ctx context.Context, p Parser, text string, toks []tok) ([]site, error) {
+func findSites(ctx context.Context, p Parser, text string, toks []tok, w wanted, confine bool) ([]site, error) {
 	var sites []site
 	covered := 0 // end of the last piece the parser accepted
 	budget := maxParseBytes
@@ -125,11 +228,21 @@ func findSites(ctx context.Context, p Parser, text string, toks []tok) ([]site, 
 		var found []rawSite
 		ctes := map[string]bool{}
 		collectCTEs(tree, ctes)
-		collect(tree, ctes, &found)
+		collect(tree, ctes, w, &found)
 		for _, r := range found {
 			s, err := locate(toks, c.start, r)
 			if err != nil {
+				if !isPattern(r.pattern) {
+					continue // a relative path written as E'..' or $$..$$: left as written
+				}
 				return nil, err
+			}
+			if !isPattern(r.pattern) {
+				// A relative local path; one that escapes the root is left as
+				// written, for the policy to refuse.
+				if s.abs = resolveRel(w.root, r.pattern, confine); s.abs == "" {
+					continue
+				}
 			}
 			sites = append(sites, s)
 		}
@@ -144,28 +257,28 @@ type rawSite struct {
 	loc     int // offset into the parsed piece
 }
 
-func collect(node any, ctes map[string]bool, out *[]rawSite) {
+func collect(node any, ctes map[string]bool, w wanted, out *[]rawSite) {
 	switch v := node.(type) {
 	case []any:
 		for _, x := range v {
-			collect(x, ctes, out)
+			collect(x, ctes, w, out)
 		}
 	case map[string]any:
 		switch v["type"] {
 		case "TABLE_FUNCTION":
 			if fn, ok := v["function"].(map[string]any); ok {
-				collectFunction(fn, out)
+				collectFunction(fn, w, out)
 			}
 		case "BASE_TABLE":
 			name, _ := v["table_name"].(string)
 			cat, _ := v["catalog_name"].(string)
 			sch, _ := v["schema_name"].(string)
-			if loc, ok := location(v); ok && cat == "" && sch == "" && isPattern(name) && !ctes[name] {
+			if loc, ok := location(v); ok && cat == "" && sch == "" && w.ok("", name) && !ctes[name] {
 				*out = append(*out, rawSite{name, roleFrom, loc})
 			}
 		}
 		for _, x := range v {
-			collect(x, ctes, out)
+			collect(x, ctes, w, out)
 		}
 	}
 }
@@ -195,11 +308,11 @@ func collectCTEs(node any, out map[string]bool) {
 	}
 }
 
-func collectFunction(fn map[string]any, out *[]rawSite) {
+func collectFunction(fn map[string]any, w wanted, out *[]rawSite) {
 	name, _ := fn["function_name"].(string)
 	name = strings.ToLower(name)
 	isGlob := name == "glob"
-	if !isGlob && !slices.Contains(readerFuncs, name) {
+	if !isGlob && !slices.Contains(readerFuncs, name) && !(w.root != "" && slices.Contains(localReaderFuncs, name)) {
 		return
 	}
 	children, _ := fn["children"].([]any)
@@ -209,7 +322,7 @@ func collectFunction(fn map[string]any, out *[]rawSite) {
 		}
 		// The first positional argument is the path.
 		if s, loc, ok := constString(c); ok {
-			if isPattern(s) {
+			if w.ok(name, s) {
 				r := roleArg
 				if isGlob {
 					r = roleGlob
@@ -221,7 +334,7 @@ func collectFunction(fn map[string]any, out *[]rawSite) {
 		if m, ok := c.(map[string]any); ok && m["function_name"] == "list_value" {
 			elems, _ := m["children"].([]any)
 			for _, e := range elems {
-				if s, loc, ok := constString(e); ok && isPattern(s) {
+				if s, loc, ok := constString(e); ok && w.ok(name, s) {
 					*out = append(*out, rawSite{s, roleElem, loc})
 				}
 			}

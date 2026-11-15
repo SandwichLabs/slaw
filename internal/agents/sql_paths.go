@@ -15,16 +15,18 @@ import (
 // pathPolicy decides which files and URLs agent SQL may read or write (#116).
 //
 //   - A file is readable only when it is written out as a plain string literal,
-//     is an absolute path, and (after resolving symlinks) lies inside the
+//     is an absolute path (a relative one was resolved before this point), and (after resolving symlinks) lies inside the
 //     workspace's data/ folder.
 //   - A URL is readable only when it lies inside the scope of a ready storage
 //     connection (s3, gcs, r2, azure): a literal prefix match, with no "..", query or
 //     fragment, so it cannot wander to another bucket or object.
 //   - COPY ... TO may only write inside data/.
 //
-// Relative paths are refused: DuckDB resolves them against the process's
-// working directory, which is not the workspace, so a path vetted as
-// "data/x.csv" could read a different file when run.
+// A relative path is made absolute under the workspace root before the policy
+// sees the statement (Handler.expand, storageglob.Options.Root), because DuckDB
+// would resolve it against the process's working directory, which is not the
+// workspace. One that reaches this policy still relative (it holds "..", or
+// sits where no path is read) is refused.
 type pathPolicy struct {
 	dataDir string   // symlink-resolved absolute path of the workspace data/ folder; "" = no file access
 	scopes  []string // normalised URL prefixes of ready storage connections
@@ -129,7 +131,7 @@ func (p *pathPolicy) vetReaderPath(fn, lit string) string {
 	return ""
 }
 
-const dataDirHint = "the agent can only read files inside the workspace's data/ folder, by absolute path"
+const dataDirHint = "the agent can only read files inside the workspace's data/ folder (a path like data/x.csv is read relative to the workspace root; an absolute path works too)"
 
 // vetRead returns "" when lit may be read, else the reason it may not.
 func (p *pathPolicy) vetRead(lit string) string {
@@ -142,11 +144,11 @@ func (p *pathPolicy) vetRead(lit string) string {
 	if p.dataDir == "" {
 		return "file reads are not available here (this file has no workspace data/ folder)"
 	}
-	if !filepath.IsAbs(lit) {
-		return fmt.Sprintf("%q is a relative path; %s: use %s", lit, dataDirHint, filepath.Join(p.dataDir, "<file>"))
-	}
 	if hasDotDot(lit) {
 		return fmt.Sprintf("%q contains \"..\"; %s", lit, dataDirHint)
+	}
+	if !filepath.IsAbs(lit) {
+		return fmt.Sprintf("%q is a relative path that is not read relative to the workspace root here; %s: write it as data/<file> in a reader's path or FROM, or use %s", lit, dataDirHint, filepath.Join(p.dataDir, "<file>"))
 	}
 	glob := strings.IndexAny(lit, "*?[")
 	if glob >= 0 {

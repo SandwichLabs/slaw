@@ -46,7 +46,7 @@ func NewAgentHandler(ws workspace.Workspace, sess session.Session, tighten strin
 	}
 	policy := agents.FilePolicy{Mode: mode, AskBeforeWrites: base.AskBeforeWrites}
 	cfg := &agents.SandboxConfig{Mode: policy.Mode, MaxQueryRows: 10000, RequireApproval: policy.AskBeforeWrites}
-	eng := engine.NewManager(sess, engine.WithLogger(logger))
+	eng := engine.NewManager(sess, engine.WithLogger(logger), engine.WithRoot(ws.Root()))
 	h := agents.NewHandler(workspace.NewAgentAccess(ws, sess), eng, cfg, logger)
 	// Every read this handler runs keeps a receipt (nil when the store cannot be
 	// opened: the run goes on without one).
