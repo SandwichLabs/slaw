@@ -12,10 +12,23 @@ import {
   workspaceOpen, openWorkspacePath, openFolderDialog, launcherNotice, appNotice, newWorkspaceOpen, switcherOpen,
 } from './useWorkspace'
 
-// beforeCloseTimeoutMs bounds how long the quit flow waits for flushAll() — a
-// hung frontend (a stuck save, a broken promise) must never be able to block
-// the app from quitting forever.
-const BEFORE_CLOSE_TIMEOUT_MS = 3000
+// The quit flow's waits. A frontend that has not finished flushing after
+// SLOW_FLUSH_MS is still alive (it is running JS), so it tells Go to stop the
+// 5 s hung-webview watchdog (HoldQuit) and keeps waiting, up to
+// FLUSH_TIMEOUT_MS. A flush that outlasts even that is treated as a FAILURE
+// (the save may not have landed), never as success: the person is asked.
+export const SLOW_FLUSH_MS = 3000
+export const FLUSH_TIMEOUT_MS = 30000
+
+async function flushWithTimeout() {
+  const slow = setTimeout(() => { void Promise.resolve(App.HoldQuit()).catch(() => { /* an older backend */ }) }, SLOW_FLUSH_MS)
+  try {
+    // each entry that is still running at the limit fails under its own label
+    return await flushAll({ timeoutMs: FLUSH_TIMEOUT_MS })
+  } finally {
+    clearTimeout(slow)
+  }
+}
 
 // Wails' OnBeforeClose (studio/main.go's app.beforeClose) intercepts the FIRST
 // window-close/quit attempt and emits this event instead of letting the process
@@ -24,10 +37,7 @@ const BEFORE_CLOSE_TIMEOUT_MS = 3000
 // sets a server-side flag so the NEXT close attempt goes through. There is no
 // Save / Don't save prompt any more: data writes go straight to the connection.
 export async function handleBeforeClose() {
-  const res = await Promise.race([
-    flushAll(),
-    new Promise<{ failed: { label: string; error: string }[] }>((resolve) => setTimeout(() => resolve({ failed: [] }), BEFORE_CLOSE_TIMEOUT_MS)),
-  ])
+  const res = await flushWithTimeout()
   if (res.failed.length > 0) {
     // An edit that could not be written (say, the file changed on disk and the
     // conflict is unresolved) must not vanish silently with the window.

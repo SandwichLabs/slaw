@@ -87,6 +87,40 @@ describe('useNotebookSave', () => {
   })
 
   describe('flush on close', () => {
+    it('two flushes racing send one write, the second skipping as already saved', async () => {
+      let release!: () => void
+      const gate = new Promise<void>((r) => { release = r })
+      const { save, cells, api } = setup()
+      api.SaveNotebook.mockImplementationOnce(async (nb: any) => { await gate; return { notebook: { ...nb, rev: 'rev-new' }, warnings: [] } })
+      cells.value[0].source = 'A'
+      const first = save.doFlush()
+      const second = save.doFlush()
+      release()
+      await first
+      await second
+      expect(api.SaveNotebook).toHaveBeenCalledTimes(1)
+      expect(api.SaveNotebook.mock.calls[0][0].rev).toBe('rev-0')
+    })
+
+    it('a flush during an in-flight autosave waits and sends the adopted rev, not the old one', async () => {
+      let release!: () => void
+      const gate = new Promise<void>((r) => { release = r })
+      const { save, cells, api } = setup()
+      api.SaveNotebook.mockImplementationOnce(async (nb: any) => { await gate; return { notebook: { ...nb, rev: 'rev-new' }, warnings: [] } })
+      cells.value[0].source = 'A'
+      const autosave = save.saveNow()
+      await flushPromises() // the write is now in flight with its payload captured
+      cells.value[0].source = 'B'
+      const flush = save.doFlush()
+      await flushPromises()
+      expect(api.SaveNotebook).toHaveBeenCalledTimes(1) // the flush is waiting
+      release()
+      await autosave
+      await flush
+      expect(api.SaveNotebook).toHaveBeenCalledTimes(2)
+      expect(api.SaveNotebook.mock.calls[1][0].rev).toBe('rev-new')
+    })
+
     it('cancels the pending debounce and saves now', async () => {
       const { save, cells, api } = setup()
       cells.value[0].source = 'edited'

@@ -254,6 +254,7 @@ rodney js 'window.go.main.App.OpenWorkspace("/tmp/qa/qa").then(r => r.status)'  
 - Qualified table names flow to the datasheet: `rodney js 'location.hash = "#/tables?table=local.main.customers"'`.
 - Read-only / Take over: start `sleep 300 | slaw mcp serve --workspace DIR &` first, then `OpenWorkspace(DIR)`; the banner (`[data-testid=readonly-banner]`) offers Take over. Never `pkill -f` for cleanup.
 - A change on disk (conflict banner): edit a `notebooks/*.slnb` file in a shell while the notebook is open; an unsaved edit in the title field shows `[data-testid=conflict-banner]`, no edit reloads quietly.
+- The quit flow (`app:before-close`, a save slower than 3 s, "Quit anyway?") cannot be driven headless: Wails fires `OnBeforeClose` only from a real native window close, and `App.Quit()` really exits the dev app. Check it by hand in the `task studio:dev` desktop window (close the window during a slow save); the logic is pinned by `useAppEvents.spec.ts`. With `wails dev` the native window and a Rodney tab both answer `app:before-close`, and the one with nothing pending can call `Quit` first; that two-window race is a harness artefact, not an app bug.
 
 ## The Semantics view (E4)
 
