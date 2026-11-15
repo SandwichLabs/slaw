@@ -91,62 +91,6 @@ func (h *Handler) handleDropTable(ctx context.Context, req *Request) *Response {
 	return NewResponse(req.ID, map[string]any{"table": name, "dropped": true})
 }
 
-func (h *Handler) handleImportCSV(ctx context.Context, req *Request) *Response {
-	table, _ := req.Params["table"].(string)
-	data, _ := req.Params["data"].(string)
-	hasHeader := true
-	if h, ok := req.Params["has_header"].(bool); ok {
-		hasHeader = h
-	}
-
-	lines := strings.Split(strings.TrimSpace(data), "\n")
-	if len(lines) == 0 {
-		return NewErrorResponse(req.ID, ErrInvalidParams, "CSV data is empty")
-	}
-
-	startIdx := 0
-	if hasHeader {
-		startIdx = 1
-	}
-
-	db, errResp := h.duckDB(req.ID)
-	if errResp != nil {
-		return errResp
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return NewErrorResponse(req.ID, ErrInternal, fmt.Sprintf("failed to begin transaction: %v", err))
-	}
-
-	var inserted int64
-	for i := startIdx; i < len(lines); i++ {
-		fields := strings.Split(lines[i], ",")
-		placeholders := make([]string, len(fields))
-		args := make([]any, len(fields))
-		for j, f := range fields {
-			placeholders[j] = "?"
-			args[j] = strings.TrimSpace(f)
-		}
-		tblSQL, tblErr := h.tableSQL(ctx, table)
-		if tblErr != nil {
-			return NewErrorResponse(req.ID, ErrInvalidParams, tblErr.Error())
-		}
-		query := fmt.Sprintf("INSERT INTO %s VALUES (%s)", tblSQL, strings.Join(placeholders, ", "))
-		_, err := tx.ExecContext(ctx, query, args...)
-		if err != nil {
-			_ = tx.Rollback()
-			return NewErrorResponse(req.ID, ErrInternal, fmt.Sprintf("failed to import row %d: %v", i, err))
-		}
-		inserted++
-	}
-
-	if err := tx.Commit(); err != nil {
-		return NewErrorResponse(req.ID, ErrInternal, fmt.Sprintf("failed to commit import: %v", err))
-	}
-
-	return NewResponse(req.ID, map[string]any{"table": table, "rows_imported": inserted})
-}
-
 // stringParam coerces an any value to a string, returning "" for nil.
 func stringParam(v any) string {
 	if v == nil {

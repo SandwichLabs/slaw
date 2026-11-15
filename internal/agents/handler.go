@@ -561,8 +561,6 @@ func (h *Handler) dispatch(ctx context.Context, req *Request) *Response {
 		return h.handleAddColumn(ctx, req)
 	case "drop_table":
 		return h.handleDropTable(ctx, req)
-	case "import_csv":
-		return h.handleImportCSV(ctx, req)
 
 	// Query Wizard
 	case "build_query":

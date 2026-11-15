@@ -249,7 +249,7 @@ func writeGates(targets []sqlTarget) (nonLocal []string, err error) {
 func (h *Handler) toolTarget(ctx context.Context, req *Request) (sqlTarget, bool) {
 	param := ""
 	switch req.Method {
-	case "create_record", "update_record", "delete_record", "bulk_insert", "add_column", "import_csv":
+	case "create_record", "update_record", "delete_record", "bulk_insert", "add_column":
 		param = "table"
 	case "create_table", "drop_table":
 		param = "name"

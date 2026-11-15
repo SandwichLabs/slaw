@@ -46,7 +46,7 @@ func TestListToolsForMode_TaskModeSeesTaskOnlyToolsPlusShared(t *testing.T) {
 // fix (finding 1): task mode must see EXACTLY the eight tools in
 // TaskAllowedToolNames — nothing else, regardless of Category or a Modes
 // field left empty. Before this fix, every Modes-unrestricted tool in the
-// whole registry (create_table, drop_table, bulk_insert, import_csv,
+// whole registry (create_table, drop_table, bulk_insert,
 // add_query_cell, create_dashboard, create_form, ...) was visible to task
 // mode, and — combined with AgentTask running the file's sandbox (often
 // "full") — a task turn could call drop_table directly.
@@ -65,7 +65,7 @@ func TestListToolsForMode_TaskModeIsExactlyTheAllowlist(t *testing.T) {
 	assert.Len(t, got, 8)
 
 	// Every write/schema/page tool in the registry must be absent.
-	for _, denied := range []string{"drop_table", "create_table", "add_column", "import_csv", "bulk_insert", "create_record", "update_record", "delete_record", "add_query_cell", "create_dashboard", "create_page", "update_page", "delete_page", "create_form", "create_relationship", "create_report", "create_switchboard", "create_macro", "create_or_update_skill"} {
+	for _, denied := range []string{"drop_table", "create_table", "add_column", "bulk_insert", "create_record", "update_record", "delete_record", "add_query_cell", "create_dashboard", "create_page", "update_page", "delete_page", "create_form", "create_relationship", "create_report", "create_switchboard", "create_macro", "create_or_update_skill"} {
 		assert.False(t, got[denied], "task mode must NOT see %q", denied)
 	}
 }
@@ -87,7 +87,6 @@ func TestHandler_TaskMode_DeniesEveryToolOutsideTheAllowlist(t *testing.T) {
 		{"drop_table", map[string]any{"name": "t"}},
 		{"create_table", map[string]any{"name": "x", "columns": []any{map[string]any{"name": "id", "type": "INTEGER"}}}},
 		{"bulk_insert", map[string]any{"table": "t", "columns": []any{"id"}, "rows": []any{[]any{1}}}},
-		{"import_csv", map[string]any{"table": "t", "data": "a\n1"}},
 		{"add_query_cell", map[string]any{"sql": "SELECT 1"}},
 		{"create_dashboard", map[string]any{"page": map[string]any{"title": "x", "components": []any{}}}},
 	}
@@ -96,6 +95,19 @@ func TestHandler_TaskMode_DeniesEveryToolOutsideTheAllowlist(t *testing.T) {
 		require.NotNil(t, resp.Error, "%q must be denied from a task handler", d.method)
 		assert.Equal(t, ErrMethodNotFound, resp.Error.Code, "%q", d.method)
 	}
+}
+
+// import_csv was retired (#386): it split rows on bare commas. An agent loads
+// a file with run_query over read_csv; people import through `slaw import`.
+func TestRegistry_ImportCSVIsRetired(t *testing.T) {
+	assert.Nil(t, GetTool("import_csv"))
+	for _, td := range ListTools() {
+		assert.NotEqual(t, "import_csv", td.Name)
+	}
+	handler, _ := newRealDuckDBHandler(t, ModeFull)
+	resp := handler.Handle(context.Background(), &Request{JSONRPC: "2.0", ID: "1", Method: "import_csv", Params: map[string]any{"table": "t", "data": "a\n1"}})
+	require.NotNil(t, resp.Error)
+	assert.Equal(t, ErrMethodNotFound, resp.Error.Code)
 }
 
 // TestHandler_TaskMode_RunQueryDeniesWrite: run_query IS on the allow-list

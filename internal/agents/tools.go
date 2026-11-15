@@ -239,16 +239,6 @@ var Tools = []ToolDef{
 			{Name: "name", Type: "string", Required: true, Desc: "Name of the table to drop"},
 		},
 	},
-	{
-		Name:        "import_csv",
-		Description: "Import CSV data into a table",
-		Category:    "schema",
-		Params: []ParamDef{
-			{Name: "table", Type: "string", Required: true, Desc: "Target table name"},
-			{Name: "data", Type: "string", Required: true, Desc: "CSV data as a string"},
-			{Name: "has_header", Type: "boolean", Required: false, Desc: "Whether the CSV has a header row (default: true)"},
-		},
-	},
 
 	// Query Wizard tool (plan §2.4 / §4.3). Builds a named query from a QBE-style
 	// filter spec and saves it to queries/ like save_query: a content tool.
@@ -637,7 +627,7 @@ const (
 // and only the user's own Apply click (a separate write path: SaveNotebook)
 // commits it. Before this fix, ListToolsForMode(ModeTask) returned every
 // Modes-unrestricted tool in the WHOLE registry (introspect_schema alongside
-// create_table, drop_table, bulk_insert, import_csv, add_query_cell, ...)
+// create_table, drop_table, bulk_insert, add_query_cell, ...)
 // because "empty Modes = visible everywhere including task" was too broad —
 // combined with AgentTask running the file's own (often "full") sandbox
 // mode, a task turn could call drop_table directly from prompt text alone.

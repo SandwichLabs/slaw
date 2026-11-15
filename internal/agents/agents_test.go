@@ -144,7 +144,6 @@ func TestSandbox_ReadOnlyBlocksWrite(t *testing.T) {
 	assert.Error(t, sc.Check("create_table"))
 	assert.Error(t, sc.Check("add_column"))
 	assert.Error(t, sc.Check("drop_table"))
-	assert.Error(t, sc.Check("import_csv"))
 }
 
 func TestSandbox_ReadWriteAllowsDataAndContentButBlocksSchema(t *testing.T) {
@@ -178,7 +177,6 @@ func TestSandbox_FullAllowsEverything(t *testing.T) {
 	assert.NoError(t, sc.Check("create_dashboard"))
 	assert.NoError(t, sc.Check("create_table"))
 	assert.NoError(t, sc.Check("drop_table"))
-	assert.NoError(t, sc.Check("import_csv"))
 }
 
 func TestSandbox_BlockedOperations(t *testing.T) {

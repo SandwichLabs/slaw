@@ -118,7 +118,7 @@ func TestToolsList_FollowsTheTier(t *testing.T) {
 	writeTools := map[string]string{ // tool -> lowest tier that lists it
 		"create_record": "read-write", "bulk_insert": "read-write", "save_query": "read-write",
 		"write_artifact": "read-write", "add_query_cell": "read-write", "create_or_update_skill": "read-write",
-		"create_table": "full", "drop_table": "full", "add_column": "full", "import_csv": "full",
+		"create_table": "full", "drop_table": "full", "add_column": "full",
 	}
 	rank := map[string]int{"read-only": 0, "read-write": 1, "full": 2}
 	for _, mode := range []agents.SandboxMode{agents.ModeReadOnly, agents.ModeReadWrite, agents.ModeFull} {

@@ -224,9 +224,6 @@ func describeWrite(ctx context.Context, req *Request, userDB *sql.DB, class sqlC
 	case "add_column":
 		ar.Rows = -1
 		ar.Summary = fmt.Sprintf("Add column %s %s to %s", stringParam(req.Params["name"]), stringParam(req.Params["type"]), table)
-	case "import_csv":
-		ar.Rows = -1
-		ar.Summary = fmt.Sprintf("Import CSV data into %s", table)
 	case "build_query":
 		ar.Rows = -1
 		ar.Summary = fmt.Sprintf("Save query %q", stringParam(req.Params["name"]))
