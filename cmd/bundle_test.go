@@ -1,7 +1,12 @@
 package cmd
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -150,6 +155,45 @@ func TestNotebook_ExportImportThroughTheSharedPath(t *testing.T) {
 	bad := writeFile(t, t.TempDir(), "bad.slnb", "nope")
 	_, _, err = runSlaw("import", "notebook", bad, "--workspace", dst)
 	require.Error(t, err)
+}
+
+// writeBundleWithUnknownKind writes a v2 bundle by hand: one query, and one
+// entry of a kind this Slaw has no store for.
+func writeBundleWithUnknownKind(t *testing.T) string {
+	t.Helper()
+	query := []byte("-- title: Top customers\nSELECT 1\n")
+	future := []byte("a: 1\n")
+	entry := func(path string, kind bundle.ItemKind, id string, b []byte) bundle.Entry {
+		sum := sha256.Sum256(b)
+		return bundle.Entry{Path: path, Kind: kind, ID: id, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(b))}
+	}
+	man := bundle.Manifest{Kind: bundle.Kind, FormatVersion: bundle.FormatVersion, WorkspaceName: "x", Contents: []bundle.Entry{
+		entry("queries/top.sql", bundle.KindQuery, "top", query), entry("dashboards/a.yaml", "dashboard", "", future),
+	}}
+	mb, err := json.Marshal(man)
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, b := range map[string][]byte{bundle.ManifestName: mb, "queries/top.sql": query, "dashboards/a.yaml": future} {
+		w, err := zw.Create(name)
+		require.NoError(t, err)
+		_, err = w.Write(b)
+		require.NoError(t, err)
+	}
+	require.NoError(t, zw.Close())
+	out := filepath.Join(t.TempDir(), "future.slaw")
+	require.NoError(t, os.WriteFile(out, buf.Bytes(), 0o600))
+	return out
+}
+
+func TestBundle_ImportSkipsUnknownKindsAndWarnsOnStderr(t *testing.T) {
+	file := writeBundleWithUnknownKind(t)
+	dst := newWS(t)
+	stdout, stderr, err := runSlaw("import", "bundle", file, "--workspace", dst)
+	require.NoError(t, err, stderr)
+	assert.Contains(t, stdout, "query/top")
+	assert.Contains(t, stderr, "warning: This bundle has entries this version of Slaw doesn't know (dashboard). They were skipped; update Slaw to import them.")
+	assert.NoFileExists(t, filepath.Join(dst, "dashboards", "a.yaml"))
 }
 
 func TestBundle_ImportPreviewShowsConnectionDetailsAndRisks(t *testing.T) {

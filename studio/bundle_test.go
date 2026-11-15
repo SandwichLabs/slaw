@@ -1,6 +1,11 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -106,6 +111,36 @@ func TestBundle_ImportIntoNewWorkspaceFromTheLauncher(t *testing.T) {
 	require.NotNil(t, res.Opened)
 	assert.Zero(t, res.Result.Failed())
 	assert.FileExists(t, filepath.Join(app.ws.Root(), "notebooks", "quarterly-review.slnb"))
+}
+
+func TestBundle_PreviewWarnsAboutUnknownKinds(t *testing.T) {
+	app := newOpenApp(t)
+	query := []byte("-- title: Top customers\nSELECT 1\n")
+	future := []byte("a: 1\n")
+	entry := func(path string, kind bundle.ItemKind, id string, b []byte) bundle.Entry {
+		sum := sha256.Sum256(b)
+		return bundle.Entry{Path: path, Kind: kind, ID: id, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(b))}
+	}
+	mb, err := json.Marshal(bundle.Manifest{Kind: bundle.Kind, FormatVersion: bundle.FormatVersion, Contents: []bundle.Entry{
+		entry("queries/top.sql", bundle.KindQuery, "top", query), entry("dashboards/a.yaml", "dashboard", "", future),
+	}})
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, b := range map[string][]byte{bundle.ManifestName: mb, "queries/top.sql": query, "dashboards/a.yaml": future} {
+		w, err := zw.Create(name)
+		require.NoError(t, err)
+		_, err = w.Write(b)
+		require.NoError(t, err)
+	}
+	require.NoError(t, zw.Close())
+	path := filepath.Join(t.TempDir(), "future.slaw")
+	require.NoError(t, os.WriteFile(path, buf.Bytes(), 0o600))
+
+	pv, err := app.PreviewBundleImport(path, "")
+	require.NoError(t, err)
+	require.Len(t, pv.Items, 1)
+	assert.Contains(t, pv.Warnings, "This bundle has entries this version of Slaw doesn't know (dashboard). They were skipped; update Slaw to import them.")
 }
 
 func TestBundle_RefusesOlderAndForeignFiles(t *testing.T) {
