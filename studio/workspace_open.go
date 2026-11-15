@@ -98,7 +98,40 @@ func (a *App) open(path string, mode openMode) (*OpenWorkspaceResult, error) {
 	return a.openLocked(path, mode)
 }
 
+// openLocked opens path, letting go of the open workspace first (its hub lock,
+// DuckDB files and session-only credentials must not be shared with the next
+// one). When that fails after the old workspace was let go, everything the
+// attempt took is released and the old workspace is reopened, so a failed
+// switch is a notice and not an empty window (#64).
 func (a *App) openLocked(path string, mode openMode) (*OpenWorkspaceResult, error) {
+	prevRoot, prevName, prevRO, had := "", "", false, a.ws != nil
+	if had {
+		prevRoot, prevName, prevRO = a.ws.Root(), a.ws.Name(), a.readOnly
+	}
+	res, err := a.openOnceLocked(path, mode)
+	if err == nil || !had || a.ws != nil {
+		return res, err // opened, nothing was open, or it was never let go
+	}
+	back := openAuto
+	if prevRO {
+		back = openReadOnly
+	}
+	if _, rerr := a.openOnceLocked(prevRoot, back); rerr != nil {
+		a.logger.Warn("failed to reopen the workspace after a failed switch", "error", rerr)
+		return nil, fmt.Errorf("%w. %s could not be reopened either (%v), so nothing is open", err, prevName, rerr)
+	}
+	if a.readOnly && !prevRO {
+		// Another program took the workspace's database in the meantime.
+		who := "another program"
+		if a.holder != nil {
+			who = a.holder.String()
+		}
+		return nil, fmt.Errorf("%w (%s was reopened read-only: %s has its database)", err, prevName, who)
+	}
+	return nil, fmt.Errorf("%w (%s was reopened)", err, prevName)
+}
+
+func (a *App) openOnceLocked(path string, mode openMode) (*OpenWorkspaceResult, error) {
 	root, err := workspace.Discover(path)
 	if errors.Is(err, workspace.ErrNotWorkspace) {
 		abs, _ := filepath.Abs(path)
@@ -134,7 +167,11 @@ func (a *App) openLocked(path string, mode openMode) (*OpenWorkspaceResult, erro
 			}
 		}
 	}
-	opened, err := hub.Open(a.ctxOrBackground(), root, hub.OpenOptions{
+	openHub := a.openHub
+	if openHub == nil {
+		openHub = hub.Open
+	}
+	opened, err := openHub(a.ctxOrBackground(), root, hub.OpenOptions{
 		SessionOptions: []session.Option{session.WithStatusListener(onStatus)},
 		App:            hub.AppStudio, Mode: hmode, FallbackReadOnly: true, RepairMissingID: true,
 		TakeOverTimeout: 10 * time.Second,
@@ -318,15 +355,8 @@ func (a *App) TakeOverWorkspace() (*OpenWorkspaceResult, error) {
 		return &OpenWorkspaceResult{Status: "opened", Path: a.ws.Root(), Info: a.infoLocked()}, nil
 	}
 	root := a.ws.Root()
-	res, err := a.openLocked(root, openTakeOver)
-	if err != nil {
-		// openLocked closed the read-only workspace before trying: put it back.
-		if _, rerr := a.openLocked(root, openReadOnly); rerr != nil {
-			a.logger.Warn("failed to reopen the workspace read-only after a failed take-over", "error", rerr)
-		}
-		return nil, err
-	}
-	return res, nil
+	// openLocked puts the read-only workspace back when the take-over fails.
+	return a.openLocked(root, openTakeOver)
 }
 
 func (a *App) startWatcherLocked() {

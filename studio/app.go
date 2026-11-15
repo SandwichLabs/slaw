@@ -104,6 +104,9 @@ type App struct {
 	sessionID string
 	// liveSess is the session the status listener may speak for (nil: none open).
 	liveSess atomic.Pointer[session.Session]
+	// openHub opens a workspace's hub; nil means hub.Open. A test seam for the
+	// steps of a switch that cannot be made to fail from outside.
+	openHub func(ctx context.Context, root string, o hub.OpenOptions) (*hub.Opened, error)
 	// liveCat is the catalog SQL completion reads (nil: no workspace open). It
 	// is atomic because afterRun feeds it under a.mu and ConnectConnection
 	// without it.

@@ -5,7 +5,7 @@ import { register, _resetForTests as resetSaves } from '../composables/usePendin
 vi.mock('../wailsjs/runtime/runtime', () => ({ EventsOn: () => () => {}, EventsOff: () => {} }))
 
 import WorkspaceSwitcher from './WorkspaceSwitcher.vue'
-import { workspaceInfo, switcherOpen, newWorkspaceOpen, _resetForTests } from '../composables/useWorkspace'
+import { workspaceInfo, switcherOpen, newWorkspaceOpen, launcherNotice, _resetForTests } from '../composables/useWorkspace'
 
 const INFO = { root: '/w/acme', name: 'Acme Analytics', gitBranch: 'main', sessionId: 's1' } as unknown as WorkspaceInfo
 const recents: RecentWorkspace[] = [
@@ -127,8 +127,26 @@ describe('WorkspaceSwitcher', () => {
     w.unmount()
   })
 
+  it('shows the error on the Launcher when a failed switch leaves nothing open', async () => {
+    makeApp({
+      OpenWorkspace: vi.fn(async () => { throw new Error('nope. Acme could not be reopened either, so nothing is open') }),
+      IsWorkspaceOpen: vi.fn(async () => false),
+    })
+    const w = mountSwitcher()
+    await w.find('[data-testid="ws-switch"]').trigger('click')
+    await flushPromises()
+    await w.findAll('[data-testid="ws-recent"]').find((x) => x.text().includes('Harbor'))!.trigger('click')
+    await flushPromises()
+    expect(w.emitted('error')).toBeUndefined()
+    expect(launcherNotice.value).toContain('nothing is open')
+    w.unmount()
+  })
+
   it('emits an error when the switch fails', async () => {
-    makeApp({ OpenWorkspace: vi.fn(async () => { throw new Error('Couldn\'t open this workspace: nope') }) })
+    makeApp({
+      OpenWorkspace: vi.fn(async () => { throw new Error('Couldn\'t open this workspace: nope') }),
+      GetWorkspaceInfo: vi.fn(async () => INFO),
+    })
     const w = mountSwitcher()
     await w.find('[data-testid="ws-switch"]').trigger('click')
     await flushPromises()

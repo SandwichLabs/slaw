@@ -85,8 +85,10 @@ type OpenOptions struct {
 	Redactor *secrets.Redactor // nil: none
 
 	// OnWorkspaceOpened runs once the workspace parsed, before the hub step.
-	// Studio uses it to let go of the workspace it has open, which must
-	// happen after the new one validated and before the lock is taken.
+	// Studio uses it to let go of the workspace it has open (its lock, DuckDB
+	// files and in-memory credentials are not shared with the next one), which
+	// happens after the new one validated and before the lock is taken. When a
+	// later step fails Studio reopens the old workspace itself (#64).
 	OnWorkspaceOpened func(ws workspace.Workspace)
 	// SessionOptions are passed to the DuckDB session (session.New): Studio's
 	// WithStatusListener.

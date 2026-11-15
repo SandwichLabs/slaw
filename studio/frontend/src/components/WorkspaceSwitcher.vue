@@ -8,7 +8,7 @@ import { App } from '../lib/bindings'
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import Icon from './Icon.vue'
 import {
-  workspaceInfo, switcherOpen, newWorkspaceOpen, openWorkspacePath, openFolderDialog,
+  workspaceInfo, workspaceOpen, launcherNotice, switcherOpen, newWorkspaceOpen, openWorkspacePath, openFolderDialog,
   closeWorkspace, relativeTime,
 } from '../composables/useWorkspace'
 import { shortcutLabel } from '../composables/useModal'
@@ -82,7 +82,13 @@ async function switchTo(r: RecentWorkspace) {
   if (r.missing) return
   close(false)
   const res = await openWorkspacePath(r.path)
-  if (!res.ok && res.error) emit('error', res.error)
+  if (!res.ok && res.error) report(res.error)
+}
+
+// With nothing open the shell (and this menu) is gone: the Launcher shows it.
+function report(error: string) {
+  if (workspaceOpen.value) emit('error', error)
+  else launcherNotice.value = error
 }
 
 async function locate(r: RecentWorkspace) {
@@ -99,7 +105,7 @@ async function locate(r: RecentWorkspace) {
 async function openFolder() {
   close(false)
   const res = await openFolderDialog()
-  if (!res.ok && res.error) emit('error', res.error)
+  if (!res.ok && res.error) report(res.error)
 }
 
 function newWorkspace() {
