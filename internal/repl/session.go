@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
@@ -313,6 +314,9 @@ func (s *Session) complete(line string, pos int, key rune) (string, int, bool) {
 	if key == useRune {
 		s.serveUse(line)
 		return line, pos, true // the key is a signal, never text
+	}
+	if key == '\t' && s.buf == "" && strings.HasPrefix(strings.TrimLeftFunc(line, unicode.IsSpace), ".") {
+		return dotCompleteLine(line, pos) // a dot command is never SQL: the closed set, lower-case
 	}
 	if key != '\t' || s.o.Complete == nil || pos < 0 || pos > len(line) {
 		return "", 0, false

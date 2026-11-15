@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/lsp"
@@ -471,4 +472,70 @@ func (s *Session) setCurrent(name string) {
 	if s.o.Hooks.Conn != nil {
 		s.o.Hooks.Conn(name)
 	}
+}
+
+// dotArgValues is the closed set of values a dot command's first argument
+// takes, where there is one.
+func dotArgValues(cmd string) []string {
+	switch cmd {
+	case "mode":
+		return modeNames()
+	case "timer", "headers", "receipts":
+		return []string{"on", "off"}
+	}
+	return nil
+}
+
+// dotCompleteLine is Tab on a dot command line, which may start with spaces
+// (the line is trimmed before it runs). Nothing completes with the cursor in
+// the leading spaces, before the dot or past the end.
+func dotCompleteLine(line string, pos int) (string, int, bool) {
+	t := strings.TrimLeftFunc(line, unicode.IsSpace)
+	off := len(line) - len(t)
+	if pos < off+1 || pos > len(line) {
+		return "", 0, false
+	}
+	out, p, ok := dotComplete(t, pos-off)
+	if !ok {
+		return "", 0, false
+	}
+	return line[:off] + out, p + off, true
+}
+
+// dotComplete is Tab on a line that starts with ".": the command name, then
+// the first argument of a command with a closed set of values. It completes
+// the word before pos against lower-case candidates; a unique match fills in,
+// an ambiguous one fills the common prefix, as the SQL completion does.
+func dotComplete(line string, pos int) (string, int, bool) {
+	head := line[:pos]
+	var cands []string
+	start := 0
+	if !strings.ContainsAny(head, " \t") {
+		start = 1 // after the dot
+		for _, c := range commandTable() {
+			cands = append(cands, c.name)
+		}
+	} else {
+		name, rest, _ := strings.Cut(head[1:], " ")
+		if strings.ContainsAny(strings.TrimLeft(rest, " \t"), " \t") {
+			return "", 0, false // only the first argument has a closed set
+		}
+		start = pos - len(strings.TrimLeft(rest, " \t"))
+		cands = dotArgValues(name)
+	}
+	frag := strings.ToLower(line[start:pos])
+	var match []string
+	for _, c := range cands {
+		if strings.HasPrefix(c, frag) {
+			match = append(match, c)
+		}
+	}
+	if len(match) == 0 {
+		return "", 0, false
+	}
+	word := commonPrefix(match)
+	if len(match) > 1 && len(word) <= len(frag) {
+		return "", 0, false
+	}
+	return line[:start] + word + line[pos:], start + len(word), true
 }

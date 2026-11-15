@@ -43,7 +43,7 @@ Statements end with `;` and may span lines (the prompt changes to `·`). Dot com
 | Ctrl+T | Swap the two characters around the cursor |
 | Ctrl+L | Clear the screen |
 | Up / Down | Walk the history |
-| Tab | Complete names from the live catalog (never connects a connection, never runs SQL) |
+| Tab | Complete names from the live catalog (never connects a connection, never runs SQL). On a line that starts with `.` (ignoring leading spaces) it completes the dot command (lower-case) and the fixed values of `.mode`, `.timer`, `.headers` and `.receipts` instead |
 | Ctrl+Shift+C | Copy the selection (Cmd+C on macOS) |
 | Paste | Your platform's paste shortcut (Shift+Insert, Cmd+V); a multi-line paste runs line by line |
 
