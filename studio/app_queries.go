@@ -161,7 +161,7 @@ func (a *App) runQuery(ctx context.Context, req RunQueryRequest) (*QueryResult, 
 	rec := a.ws.Receipts()
 	rctx := receipts.WithIntent(ctx, editorIntent(req, params))
 	rs, total, err := a.engine.ExecuteCappedIn(rctx, req.Connection, sqlStr, params, queryGridRowCap)
-	a.afterRun(a.sess, before, sqlStr)
+	a.afterRun(a.sess, before, sqlStr, req.Connection)
 	duration := time.Since(start)
 
 	if err != nil {
@@ -332,7 +332,7 @@ func (a *App) RunA2UIQueryIn(sqlStr, connection string, source RenderSource) (*A
 	ws, _, _, _ := a.snapshot() // the workspace is open: readOnlyRunner just said so
 	origin := renderOrigin(ctx, ws, &a.renderIndex, source)
 	rs, truncated, err := handler.RunReadOnlySQLIn(receipts.WithOrigin(agents.ArtifactQueryContext(ctx), origin), connection, sqlStr, nil, a2uiQueryRowCap)
-	a.afterRun(runSess, before, sqlStr)
+	a.afterRun(runSess, before, sqlStr, connection)
 	if err != nil {
 		return nil, a.explainReadOnlyDenial(err)
 	}

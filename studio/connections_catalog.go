@@ -5,10 +5,12 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/SandwichLabs/slaw/internal/agents"
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/session"
+	"github.com/SandwichLabs/slaw/internal/sqllex"
 )
 
 // CatalogRequest, CatalogNode and CatalogListing are one lazy level of a
@@ -71,27 +73,80 @@ func (a *App) catalogChanged(conn string) {
 }
 
 // afterRun tells the rail what a run changed: a connection that attached (or
-// failed) gets its status refreshed, and anything that is not a plain read, or
-// that attached something, emits catalog:changed so open levels reload.
-func (a *App) afterRun(sess session.Session, before map[string]session.StatusKind, sqlText string) {
-	changed := a.settleRun(sess, before)
-	if changed || !agents.IsReadOnlyStatement(a.ctxOrBackground(), sess.DB(), sqlText, nil) {
-		a.catalogChanged("")
+// failed) gets its status refreshed and its catalog reported changed, and a run
+// that is not a plain read reports the catalogs it may have written: the run's
+// connection (conn, "" = the default) and every connection the statement names.
+// Only those are announced and rebuilt (#267). Every connection is announced
+// where the run's connection is unknown (the console, which can switch
+// connections: it passes unknownConn) or the text ATTACHes, DETACHes or USEs.
+func (a *App) afterRun(sess session.Session, before map[string]session.StatusKind, sqlText, conn string) {
+	moved := a.settleRun(sess, before)
+	if !agents.IsReadOnlyStatement(a.ctxOrBackground(), sess.DB(), sqlText, nil) {
+		written, all := writtenCatalogs(sess, sqlText, conn)
+		if all {
+			a.catalogChanged("")
+			return
+		}
+		moved = append(moved, written...)
+	}
+	a.catalogsChanged(moved)
+}
+
+// writtenCatalogs is the connections a non-read run may have written: conn (""
+// = the default catalog) plus every registered connection named by an
+// identifier of the statement, compared case-insensitively. all reports that
+// the run could have changed any of them (conn unknown, or ATTACH/DETACH/USE).
+func writtenCatalogs(sess session.Session, sqlText, conn string) (names []string, all bool) {
+	if conn == unknownConn {
+		return nil, true
+	}
+	if conn == "" {
+		conn = sess.DefaultCatalog()
+	}
+	names = []string{conn}
+	registered := sess.Connections()
+	for _, stmt := range sqllex.Statements(sqlText) {
+		for _, t := range stmt {
+			if t.Kind == sqllex.Word && (t.Text == "ATTACH" || t.Text == "DETACH" || t.Text == "USE") {
+				return nil, true
+			}
+			if !t.IsName() {
+				continue
+			}
+			for _, st := range registered {
+				if strings.EqualFold(t.Text, st.Name) {
+					names = append(names, st.Name)
+				}
+			}
+		}
+	}
+	return names, false
+}
+
+// unknownConn is afterRun's "the run's connection is not known" marker.
+const unknownConn = "\x00"
+
+// catalogsChanged announces each name once.
+func (a *App) catalogsChanged(names []string) {
+	seen := map[string]bool{}
+	for _, n := range names {
+		if !seen[n] {
+			seen[n] = true
+			a.catalogChanged(n)
+		}
 	}
 }
 
 // afterReadOnlyRun is afterRun for a run already vetted as a plain read (an
 // artifact query): the S3 URL setting and connection status are settled as
-// usual, but the catalog is only reported changed when a connection attached.
+// usual, but a catalog is only reported changed when its connection attached.
 func (a *App) afterReadOnlyRun(sess session.Session, before map[string]session.StatusKind) {
-	if a.settleRun(sess, before) {
-		a.catalogChanged("")
-	}
+	a.catalogsChanged(a.settleRun(sess, before))
 }
 
 // settleRun re-checks the S3 URL setting and publishes any connection status
-// that moved; it reports whether one did.
-func (a *App) settleRun(sess session.Session, before map[string]session.StatusKind) bool {
+// that moved; it returns the names of the connections whose status did.
+func (a *App) settleRun(sess session.Session, before map[string]session.StatusKind) []string {
 	// Defence in depth (#138): whatever the run did, the S3 URL setting is on
 	// again before the next one. A no-op unless httpfs is loaded. Residual: a
 	// session-level override on the editor's own pinned connection is reset only
@@ -100,12 +155,12 @@ func (a *App) settleRun(sess session.Session, before map[string]session.StatusKi
 	if err := session.DenyUncoveredStorage(a.ctxOrBackground(), sess.DB()); err != nil && a.logger != nil {
 		a.logger.Warn("could not re-check the S3 URL setting after a run", "error", err)
 	}
-	changed := false
+	var moved []string
 	for _, st := range sess.Connections() {
 		if before[st.Name] != st.Kind {
-			changed = true
+			moved = append(moved, st.Name)
 			a.emitStatus(sess, st.Name)
 		}
 	}
-	return changed
+	return moved
 }

@@ -111,9 +111,12 @@ export function useConnectionEditor(form: ConnectionForm, md: MotherDuckPicker) 
       if (!probe.available) { keychainDetail.value = probe.detail ?? ''; keychainBlocked.value = true; return }
     }
     saving.value = true
+    let movedFrom: ConnScope | '' = ''
+    let defSaved = false
     try {
       if (!isNew.value && connScope.value !== origScope.value) {
         await App.MoveConnection({ name, to: connScope.value })
+        movedFrom = origScope.value
       }
       const saveReq = { scope: connScope.value, def: form.buildDef(), isNew: isNew.value, signIn: needsSignIn.value ? methodString.value : '', confirmRebind }
       let d: ConnectionDetail
@@ -126,6 +129,7 @@ export function useConnectionEditor(form: ConnectionForm, md: MotherDuckPicker) 
         confirmRebind = true
         d = await App.SaveConnection({ ...saveReq, confirmRebind })
       }
+      defSaved = true
       if (needsSignIn.value && credsChanged && (creds.username || creds.keyId || wantsSecret)) {
         await App.SetConnectionCredentials({ name, method: methodString.value, ...creds, remember: false, confirmRebind })
       }
@@ -155,7 +159,16 @@ export function useConnectionEditor(form: ConnectionForm, md: MotherDuckPicker) 
         savedNote.value = `Saved to ${scopeLabel(d.scope)}.`
       }
     } catch (e: unknown) {
-      saveError.value = errorText(e)
+      // A save that failed must not leave the scope moved: put it back.
+      let stuck = ''
+      if (movedFrom && !defSaved) {
+        await App.MoveConnection({ name, to: movedFrom }).catch(() => {
+          // The move back failed too: say where it is now, and let a retry save in place.
+          stuck = ` ${name} is now in ${scopeLabel(connScope.value)}.`
+          origScope.value = connScope.value
+        })
+      }
+      saveError.value = errorText(e) + stuck
       await nextTick()
       errorEl.value?.focus()
     }

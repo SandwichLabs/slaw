@@ -45,8 +45,11 @@ func TestNotifyAgentToolChange(t *testing.T) {
 
 			if tc.wantChange {
 				assert.Contains(t, events, "data:changed", "method %q should emit data:changed", tc.method)
+				// The rail lists tables from the catalog (#71).
+				assert.Contains(t, events, "catalog:changed", "method %q may change tables, so the rail reloads", tc.method)
 			} else {
 				assert.NotContains(t, events, "data:changed", "method %q should NOT emit data:changed", tc.method)
+				assert.NotContains(t, events, "catalog:changed", tc.method)
 			}
 		})
 	}

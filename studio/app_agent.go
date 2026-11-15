@@ -610,6 +610,9 @@ func (a *App) notifyAgentToolChange(method string, result any) {
 	switch td.Category {
 	case "data", "schema", "content":
 		a.emitEvent("data:changed")
+		// The tool may have created or dropped a table: the rail reloads (#71).
+		// The call's connection is not known here, so every one is announced.
+		a.catalogChanged("")
 		// save_query and friends change what a page that reads a metric reads.
 		// (async: the tool call that got here still holds the workspace lock)
 		go a.recheckGrants()

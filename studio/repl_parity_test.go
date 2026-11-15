@@ -44,7 +44,7 @@ func TestConsoleTakesRunQuerysGates(t *testing.T) {
 	s, err := repl.New(context.Background(), out, repl.Options{
 		Engine: app.engine, Sess: app.sess, Workspace: "App Test", Cols: 80, Rows: 24,
 		Hooks: repl.Hooks{AfterRun: func(before map[string]session.StatusKind, sqlText string) {
-			app.afterRun(app.sess, before, sqlText)
+			app.afterRun(app.sess, before, sqlText, unknownConn)
 		}},
 	})
 	require.NoError(t, err)
