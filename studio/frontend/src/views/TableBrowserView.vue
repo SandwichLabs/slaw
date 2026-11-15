@@ -10,7 +10,7 @@ import Icon from '../components/Icon.vue'
 import { useModalKeys } from '../composables/useModal'
 import { useTableBrowser, FILTER_OPS } from '../composables/useTableBrowser'
 import { useTableCrud } from '../composables/useTableCrud'
-import { cellClass, isNumericType } from '../lib/formatCell'
+import { cellClass, isEditableType, isNumericType } from '../lib/formatCell'
 
 const router = useRouter()
 const browser = useTableBrowser()
@@ -161,9 +161,9 @@ const vFocus = {
                   <td
                     v-for="(cell, j) in row"
                     :key="j"
-                    :aria-readonly="locked ? 'true' : undefined"
+                    :aria-readonly="locked || !isEditableType(colType(j)) ? 'true' : undefined"
                     @click="startEdit(i, j)"
-                    @dblclick="startEdit(i, j)"
+                    @dblclick="startEdit(i, j, true)"
                     :class="[
                       editorType(tableData.columns[j]) === 'checkbox' ? [] : cellClass(formattedRows[i][j], colType(j)),
                       {

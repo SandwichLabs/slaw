@@ -27,6 +27,22 @@ slaw repl --workspace ~/work/sales
 
 The terminal is put in raw mode while it runs and restored on exit. Ctrl+C cancels the running statement and Ctrl+D leaves; the console follows terminal resizes. The terminal UI's REPL (`slaw studio` without `--gui`) draws its results with this console's duckbox renderer.
 
+## Nested and structured values
+
+The Console, the result grid, the datasheet, notebook SQL cells and A2UI tables show a nested value the way DuckDB's own CLI prints it, so the same value reads the same everywhere:
+
+| Type | Shown as |
+|---|---|
+| `LIST`, `ARRAY` | `[1, 2, NULL]` |
+| `STRUCT` | `{'a': 1, 'b': x}`, fields in the order the type declares them |
+| `MAP` | `{k=1, j=2}` |
+| `UNION` | the value of the member that is set |
+| `JSON` | the document as compact JSON, `{"a":[1,2]}`; a JSON string or number shows as itself, unquoted |
+
+Strings are not quoted, and nesting goes to any depth: `SELECT [{'foo': 'bar'}]` shows `[{'foo': bar}]`. Elements get the formatting their own type asks for, so a `UUID`, `DATE`, `TIMESTAMP`, `BLOB` or `HUGEINT` inside a list or struct reads like one in its own column, a `DECIMAL(10,2)` keeps its scale (`12.50`) and a number beyond 2^53 is its exact digits. A long value is cut in the cell and its full text is the tooltip. A `MAP`'s entries and an untyped object's keys are listed in key order (text order, so `1, 10, 2`), not insertion order. A double prints as DuckDB prints it: `3.0`, `1e-07`, `1e+16`.
+
+A JSON column's value is **not** changed on the way to the screen: the driver decodes it, so it reaches Studio, the agent, MCP, `--json` output and artifact queries as the decoded value (an object, a list, a string, a number), as before. Because it was decoded first, its keys come out sorted and a number beyond double precision is rounded; cast with `::VARCHAR` to get DuckDB's exact text. The grid and the console only change how it is drawn. The formatting is in `lib/formatCell.ts`, `lib/nestedValue.ts` and `internal/engine/nested.go`, and `internal/engine/testdata/nested_text.json` holds vectors both sides must agree on.
+
 ## Typing
 
 Statements end with `;` and may span lines (the prompt changes to `·`). Dot commands start a line.

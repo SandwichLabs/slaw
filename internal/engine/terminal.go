@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"strings"
+
+	"github.com/SandwichLabs/slaw/internal/jsonenc"
 )
 
 // TerminalOpts selects how TerminalText treats the characters that need care.
@@ -58,14 +60,28 @@ func TerminalText(s string, o TerminalOpts) string {
 }
 
 // CellText is a result cell as display text: null for a SQL NULL, a string as
-// it is, anything else through %v. It does not sanitize; pass the result to
-// TerminalText.
+// it is, a LIST or STRUCT as DuckDB prints it (NestedText), anything else
+// through %v. It does not sanitize; pass the result to TerminalText.
 func CellText(v any, null string) string {
+	return CellTextTyped(v, null, "")
+}
+
+// CellTextTyped is CellText for a column of a known type: dbType tells a MAP
+// (`{k=1}`) from a STRUCT and gives a STRUCT its declared field order.
+func CellTextTyped(v any, null, dbType string) string {
 	switch x := v.(type) {
 	case nil:
 		return null
 	case string:
 		return x
+	case []any, map[string]any:
+		if strings.EqualFold(dbType, "JSON") {
+			// A JSON column holds a decoded document: print it as JSON.
+			if b, err := jsonenc.Encode(x, ""); err == nil {
+				return strings.TrimSpace(string(b))
+			}
+		}
+		return NestedText(x, dbType)
 	}
 	return fmt.Sprintf("%v", v)
 }

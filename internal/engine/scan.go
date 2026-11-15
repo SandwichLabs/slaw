@@ -110,8 +110,10 @@ func ScanRows(rows *sql.Rows, maxRows int, maxBytes int64) (*ResultSet, int, err
 
 	columns := make([]Column, len(colTypes))
 	dbTypes := make([]string, len(colTypes))
+	nodes := make([]*colType, len(colTypes)) // each column's nested type, parsed once
 	for i, ct := range colTypes {
 		dbTypes[i] = ct.DatabaseTypeName()
+		nodes[i] = compositeType(dbTypes[i])
 		columns[i] = Column{
 			Name: ct.Name(),
 			Type: dbTypes[i],
@@ -134,7 +136,7 @@ func ScanRows(rows *sql.Rows, maxRows int, maxBytes int64) (*ResultSet, int, err
 
 		row := make([]any, len(columns))
 		for i, v := range scanDest {
-			row[i] = deref(v, dbTypes[i])
+			row[i] = deref(v, dbTypes[i], nodes[i])
 			if maxBytes > 0 {
 				kept += cellBytes(row[i])
 			}
@@ -166,8 +168,8 @@ func makeScanDest(n int) []any {
 }
 
 // deref dereferences a pointer to any, returning the underlying value
-// normalized for downstream consumers (see NormalizeColumnValue).
-func deref(v any, dbType string) any {
+// normalized for downstream consumers (see normalizeColumn).
+func deref(v any, dbType string, t *colType) any {
 	if v == nil {
 		return nil
 	}
@@ -176,7 +178,7 @@ func deref(v any, dbType string) any {
 		if rv.IsNil() {
 			return nil
 		}
-		return NormalizeColumnValue(rv.Elem().Interface(), dbType)
+		return normalizeColumn(rv.Elem().Interface(), dbType, t)
 	}
-	return NormalizeColumnValue(v, dbType)
+	return normalizeColumn(v, dbType, t)
 }

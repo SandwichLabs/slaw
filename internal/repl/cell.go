@@ -1,46 +1,28 @@
 package repl
 
 import (
-	"fmt"
-	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/SandwichLabs/slaw/internal/engine"
 )
 
 // cellText is the DuckDB-like text of a normalised result value (see
-// engine.NormalizeColumnValue); a SQL NULL reads as null. It is not yet safe
-// to print: pass it through safe.
-func cellText(v any, null string) string {
+// the engine's column normalising); a SQL NULL reads as null and dbType (which may
+// be empty) tells a MAP from a STRUCT. It is not yet safe to print: pass it
+// through safe.
+func cellText(v any, null, dbType string) string {
 	switch x := v.(type) {
 	case nil:
 		return null
-	case string:
-		return x
 	case bool:
 		return strconv.FormatBool(x)
 	case float64:
 		return strconv.FormatFloat(x, 'g', -1, 64)
 	case float32:
 		return strconv.FormatFloat(float64(x), 'g', -1, 32)
-	case []any:
-		parts := make([]string, len(x))
-		for i, e := range x {
-			parts[i] = cellText(e, "NULL")
-		}
-		return "[" + strings.Join(parts, ", ") + "]"
-	case map[string]any:
-		keys := make([]string, 0, len(x))
-		for k := range x {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		parts := make([]string, len(keys))
-		for i, k := range keys {
-			parts[i] = "'" + k + "': " + cellText(x[k], "NULL")
-		}
-		return "{" + strings.Join(parts, ", ") + "}"
 	}
-	return fmt.Sprintf("%v", v)
+	return engine.CellTextTyped(v, null, dbType)
 }
 
 // oneLine shows a value's line breaks as the two characters \n and \r, as

@@ -84,6 +84,10 @@ func (e *DuckDBEngine) executeWith(ctx context.Context, query string, params map
 	defer rows.Close() //nolint:errcheck
 
 	rs, total, err := ScanRows(rows.Rows, maxRows, maxResultBytes(ctx))
+	if IsVariantScanError(err) {
+		_ = rows.Close()
+		err = variantScanFailure(boundSQL, args, run)
+	}
 	if err == nil {
 		recordExecuted(ctx, query, boundSQL, rw, rs)
 	}
