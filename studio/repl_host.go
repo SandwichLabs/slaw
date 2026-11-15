@@ -73,7 +73,7 @@ func (h *consoleHost) open(a *App, connection string) (string, error) {
 		Engine: a.engine, Sess: sess, Workspace: a.ws.Name(), Root: a.ws.Root(), Queries: a.ws.Queries(),
 		Connection: connection, ConnectTimeout: connTimeout, Cols: 80, Rows: 24, Color: true, Logger: a.logger, Limiter: h.limiter,
 		Hooks: repl.Hooks{
-			AfterRun: func(before map[string]session.StatusKind, text string) { a.afterRun(sess, before, text) },
+			AfterRun: func(before map[string]session.StatusKind, text string) { a.afterRun(sess, before, text, unknownConn) },
 			Exit:     func() { h.ended(id, "exit") },
 			Conn:     func(name string) { a.emitEvent("repl:conn:"+id, name) },
 		},

@@ -516,6 +516,18 @@ describe('ConnectionEditorView', () => {
       expect(app.SaveConnection).toHaveBeenCalledWith(expect.objectContaining({ isNew: false, scope: 'local' }))
     })
 
+    it('a failed save puts the scope back where it was (#71)', async () => {
+      const app = makeApp({ SaveConnection: vi.fn(async () => { throw new Error('path must be absolute') }) })
+      const w = mountView()
+      await flushPromises()
+      await w.find('[data-testid="scope-local"]').trigger('click')
+      await w.find('form').trigger('submit')
+      await flushPromises()
+      expect(app.MoveConnection).toHaveBeenCalledTimes(2)
+      expect(app.MoveConnection).toHaveBeenNthCalledWith(1, { name: 'prod_pg', to: 'local' })
+      expect(app.MoveConnection).toHaveBeenNthCalledWith(2, { name: 'prod_pg', to: 'shared' })
+    })
+
     it('says so when this is a private copy that overrides a Team connection', async () => {
       makeApp({ GetConnectionInScope: vi.fn(async () => detail({ scope: 'local', shadows: ['shared'] })) })
       const w = mountView()

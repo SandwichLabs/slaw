@@ -180,9 +180,30 @@ func (a *App) ImportFile(o importer.Options) (*importer.Summary, error) {
 			a.logger.Warn("failed to write import skill", "table", summary.Table, "error", err)
 		}
 		a.emitEvent("data:changed")
+		// The rail lists tables from the catalog, so it reloads (#71); only the
+		// connection the import wrote to, or all when its name does not resolve.
+		a.catalogChanged(a.importCatalog(o.Table))
 	}
 
 	return summary, nil
+}
+
+// importCatalog is the connection a table name (as the import was given it)
+// lives on: its catalog when it is three-part, the default when it is a bare
+// name, and "" (every connection) otherwise, since a two-part name is a schema
+// of the current catalog first (the importer's own rule) and an attached
+// catalog second. The caller holds a.mu.
+func (a *App) importCatalog(table string) string {
+	ref, err := engine.ParseTable(table)
+	switch {
+	case err != nil:
+		return ""
+	case ref.Catalog != "" && ref.Schema != "":
+		return ref.Catalog
+	case ref.Catalog == "" && ref.Schema == "":
+		return a.sess.DefaultCatalog()
+	}
+	return ""
 }
 
 // --- Helpers ---

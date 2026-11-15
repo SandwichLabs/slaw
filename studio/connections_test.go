@@ -576,7 +576,7 @@ func TestAfterRun_RefreshesTheRailOnlyForNonReads(t *testing.T) {
 
 	for _, s := range []string{"select 1", "  WITH x AS (select 1) select * from x", "-- c\nSELECT 1", "/* c */ from t", "(select 1)", "EXPLAIN select 1", "show tables", "describe t", "PRAGMA table_info('t')"} {
 		before := ev.count("catalog:changed")
-		app.afterRun(app.sess, session.StatusSnapshot(app.sess), s)
+		app.afterRun(app.sess, session.StatusSnapshot(app.sess), s, "")
 		assert.Equal(t, before, ev.count("catalog:changed"), "read must not refresh the rail: %s", s)
 	}
 	for _, s := range []string{
@@ -585,7 +585,7 @@ func TestAfterRun_RefreshesTheRailOnlyForNonReads(t *testing.T) {
 		"select 1; create table z(a int)", "WITH x AS (INSERT INTO t VALUES (1) RETURNING *) SELECT * FROM x", "EXPLAIN ANALYZE INSERT INTO t VALUES (1)",
 	} {
 		before := ev.count("catalog:changed")
-		app.afterRun(app.sess, session.StatusSnapshot(app.sess), s)
+		app.afterRun(app.sess, session.StatusSnapshot(app.sess), s, "")
 		assert.Equal(t, before+1, ev.count("catalog:changed"), "non-read must refresh the rail: %s", s)
 	}
 }

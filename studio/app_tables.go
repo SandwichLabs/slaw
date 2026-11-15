@@ -317,7 +317,7 @@ func (a *App) CreateTable(name string, columns []ColumnInfo) error {
 		return err
 	}
 	a.emitEvent("data:changed")
-	a.catalogChanged("")
+	a.catalogChanged(tref.Catalog)
 	return nil
 }
 
@@ -342,7 +342,7 @@ func (a *App) DropTable(name string) error {
 		return err
 	}
 	a.emitEvent("data:changed")
-	a.catalogChanged("")
+	a.catalogChanged(tref.Catalog)
 	return nil
 }
 

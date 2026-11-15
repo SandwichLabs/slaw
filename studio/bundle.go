@@ -358,10 +358,12 @@ func (a *App) commitPackage(handle string, pkg *bundle.Package, d BundleDecision
 }
 
 func (a *App) afterBundleImport(res bundle.Result) {
-	touchedConns := false
+	// A bundle holds no data, so it never creates a table; a connection it
+	// wrote is re-registered, and the rail and completion reload (#71).
+	touched := false
 	for _, o := range res.Outcomes {
 		if o.Kind == bundle.KindConnection && o.Error == "" && o.Result != "skipped" {
-			touchedConns = true
+			touched = true
 		}
 	}
 	// The stores' own writes are not reported by the file watcher, so tell the
@@ -375,9 +377,11 @@ func (a *App) afterBundleImport(res bundle.Result) {
 			a.emitEvent("workspace:changed-on-disk", map[string]any{"kind": "artifact", "id": o.FinalID, "op": "changed"})
 		}
 	}
-	if touchedConns {
+	if touched {
 		a.syncConnections()
 		a.emitEvent("workspace:changed", map[string]any{"kind": "connections"})
+		// syncConnections also re-registers what depends on a touched connection.
+		a.catalogChanged("")
 	}
 }
 
