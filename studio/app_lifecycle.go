@@ -71,9 +71,11 @@ func (a *App) CancelQuit() {
 	a.closePending.Store(false)
 }
 
-// HoldQuit stops the hung-webview watchdog. The frontend calls it before it
-// asks "Quit anyway?": a frontend that can show a question is not hung, and the
-// timer must not quit the app while the person is deciding.
+// HoldQuit stops the hung-webview watchdog. The frontend calls it when a flush
+// outlasts 3 s (it keeps waiting, bounded, and treats a timeout as a failed
+// save: #62) and before it asks "Quit anyway?": a frontend that can show a
+// question is not hung, and the timer must not quit the app while the person
+// is deciding.
 func (a *App) HoldQuit() {
 	a.watchdogMu.Lock()
 	stop := a.watchdogStop

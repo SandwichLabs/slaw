@@ -47,6 +47,8 @@ export function useNotebookSave(opts: NotebookSaveOptions) {
   let loadedRev = ''
   let lastPersisted = ''
   let saveSeq = 0
+  // every write goes through one chain, so each sees the rev and lastPersisted the previous one left
+  let chain: Promise<void> = Promise.resolve()
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   // true while loading, so the initial populate doesn't trigger a save
   let suppressAutosave = true
@@ -123,7 +125,17 @@ export function useNotebookSave(opts: NotebookSaveOptions) {
     }
   }
 
-  async function saveNow() {
+  function serial(write: () => Promise<void>): Promise<void> {
+    const run = chain.then(write)
+    chain = run.catch(() => {})
+    return run
+  }
+
+  function saveNow(): Promise<void> {
+    return serial(saveNowInner)
+  }
+
+  async function saveNowInner() {
     const payload = capture()
     if (!payload) return
     const seq = ++saveSeq
@@ -156,10 +168,16 @@ export function useNotebookSave(opts: NotebookSaveOptions) {
   // have nowhere to propagate a failure use flushSave, which never throws.
   async function doFlush(payload?: SavePayload | null) {
     cancelTimer()
+    // Captured now, before anything can tear the view down; the write itself
+    // queues behind any save in flight so it sends the rev that one adopted.
+    const p = payload ?? capture()
+    return serial(() => flushWrite(p))
+  }
+
+  async function flushWrite(p: SavePayload | null) {
     // An unresolved conflict means the edits here were NOT written: say so, so a
     // workspace switch or close can ask before they are lost.
     if (cf.conflict.value) throw new Error(CONFLICT_UNSAVED)
-    const p = payload ?? capture()
     if (!p) return
     // #95 carry-over: nothing has changed since the last load/save, so there's
     // nothing local to write.

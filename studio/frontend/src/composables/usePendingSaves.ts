@@ -56,6 +56,17 @@ interface FlushAllResult {
   failed: FlushFailure[]
 }
 
+// withTimeout rejects a flush that is still running after ms, so that entry
+// (and only that entry) is reported as failed under its own label.
+function withTimeout(p: Promise<void>, ms?: number): Promise<void> {
+  if (!ms) return p
+  let t: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => {
+    t = setTimeout(() => reject(new Error('saving is taking too long')), ms)
+  })
+  return Promise.race([p, late]).finally(() => clearTimeout(t))
+}
+
 /**
  * Await every registered flush and report which ones failed. Unlike a
  * bare Promise.all, one failing flush never stops the others from being
@@ -63,9 +74,9 @@ interface FlushAllResult {
  * it comes back in `failed` for the caller to act on (see AppShell.closeFile
  * / UnlockView.openFile, which ask the person before proceeding).
  */
-export async function flushAll(): Promise<FlushAllResult> {
+export async function flushAll(opts: { timeoutMs?: number } = {}): Promise<FlushAllResult> {
   const entries = Array.from(registry)
-  const results = await Promise.allSettled(entries.map((e) => e.fn()))
+  const results = await Promise.allSettled(entries.map((e) => withTimeout(e.fn(), opts.timeoutMs)))
   const failed: FlushFailure[] = []
   results.forEach((r, i) => {
     if (r.status === 'rejected') {
