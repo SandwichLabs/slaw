@@ -254,13 +254,14 @@ func statements(s string) []statement {
 			}
 			if j < len(rs) && rs[j] == '$' && (j == i+1 || !(rs[i+1] >= '0' && rs[i+1] <= '9')) {
 				delim := string(rs[i : j+1])
+				dl := j + 1 - i // the tag's length in runes: rs indexes runes, len(delim) counts bytes
 				flushWord()
 				quoted()
 				k := j + 1
-				for k < len(rs) && !strings.HasPrefix(string(rs[k:min(k+len(delim), len(rs))]), delim) {
+				for k < len(rs) && !strings.HasPrefix(string(rs[k:min(k+dl, len(rs))]), delim) {
 					k++
 				}
-				i = k + len(delim) - 1
+				i = k + dl - 1
 			} else {
 				flushWord()
 			}
