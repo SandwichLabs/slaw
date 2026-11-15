@@ -135,7 +135,7 @@ export async function openWorkspacePath(path: string): Promise<FlowResult> {
     if (workspaceOpen.value && !(await flushOrConfirm('Switch'))) return { ok: false }
     return await finishOpen(await App.OpenWorkspace(path))
   } catch (e: unknown) {
-    await syncWorkspaceState() // the old workspace is closed even when the new one failed
+    await syncWorkspaceState() // a failed open reopens the old workspace (#64); re-read what is open
     return { ok: false, error: errorText(e) }
   }
 }
