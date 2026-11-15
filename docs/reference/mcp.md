@@ -250,7 +250,7 @@ See "Copy Claude config" above: no passphrase and no token are needed. The older
 | introspect (every tier) | `list_connections`, `introspect_schema`, `describe_table`, `list_notebooks`, `get_notebook`, `list_queries`, `run_saved_query`, `list_skills`, `read_skill`, `list_artifacts`, `get_artifact`, `list_definitions`, `get_definition`, `list_watches`, `get_watch`, `help_search`, `propose_schema`, `preview_query`, `get_receipt` |
 | data | `run_query`, `create_record`, `update_record`, `delete_record`, `bulk_insert` |
 | content | `add_query_cell`, `add_markdown_cell`, `update_cell`, `delete_cell`, `move_cell`, `create_dashboard`, `create_or_update_skill`, `write_artifact`, `save_query`, `build_query`, `propose_definition`, `write_watch` |
-| schema (`full` only) | `create_table`, `add_column`, `drop_table`, `import_csv` |
+| schema (`full` only) | `create_table`, `add_column`, `drop_table` |
 
 **The two surfaces differ in three places, none of them in gating.** `present_data` is
 chat-only (`ToolDef.Modes: ["chat"]`): it renders a page inline in Studio's chat, so over MCP
