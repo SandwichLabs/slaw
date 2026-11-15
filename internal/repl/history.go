@@ -14,6 +14,7 @@ import (
 	duckdb "github.com/duckdb/duckdb-go/v2"
 
 	"github.com/SandwichLabs/slaw/internal/engine"
+	"github.com/SandwichLabs/slaw/internal/slawlocal"
 	"github.com/SandwichLabs/slaw/internal/usersql"
 )
 
@@ -50,6 +51,9 @@ func foldEntry(text string) string {
 // safeDir returns the history directory under root, creating it (0700) and
 // tightening it, and refusing a symbolic link or a non-directory at any step.
 func safeDir(root string) (string, error) {
+	if _, err := slawlocal.Ensure(root); err != nil {
+		return "", fmt.Errorf("the history folder cannot be prepared: %w", err)
+	}
 	real, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return "", errors.New("the workspace folder cannot be resolved")

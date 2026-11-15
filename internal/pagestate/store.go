@@ -26,6 +26,7 @@ import (
 
 	"github.com/SandwichLabs/slaw/internal/filestore"
 	"github.com/SandwichLabs/slaw/internal/jsonenc"
+	"github.com/SandwichLabs/slaw/internal/slawlocal"
 )
 
 // Limits (H5).
@@ -401,6 +402,9 @@ func (s *Store) Flush() error {
 		data, err := jsonenc.Encode(fileDoc{Version: fileVersion, Values: doc}, "")
 		if err != nil {
 			return ErrCorrupt
+		}
+		if _, lerr := slawlocal.Ensure(s.root); lerr != nil {
+			return fmt.Errorf("pagestate: failed to prepare the local folder: %w", lerr)
 		}
 		_, err = filestore.WriteAtomic(s.root, filestore.Write{Rel: s.rel, Data: data, Expect: rev}, nil)
 		if err == nil {

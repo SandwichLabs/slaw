@@ -15,6 +15,7 @@ import (
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/filestore"
 	"github.com/SandwichLabs/slaw/internal/session"
+	"github.com/SandwichLabs/slaw/internal/slawlocal"
 )
 
 // Catalog is the schema snapshot completion reads: connections, their schemas,
@@ -181,8 +182,8 @@ func resolveSnapshot(root string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("refusing to write the catalog snapshot: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return "", fmt.Errorf("failed to create %s: %w", filepath.Dir(path), err)
+	if _, err := slawlocal.Ensure(root); err != nil {
+		return "", fmt.Errorf("refusing to write the catalog snapshot: %w", err)
 	}
 	return path, nil
 }

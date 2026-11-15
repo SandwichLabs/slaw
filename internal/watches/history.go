@@ -15,6 +15,7 @@ import (
 
 	"github.com/SandwichLabs/slaw/internal/connname"
 	"github.com/SandwichLabs/slaw/internal/filelock"
+	"github.com/SandwichLabs/slaw/internal/slawlocal"
 )
 
 // Status is the outcome of one check.
@@ -267,6 +268,11 @@ var _ History = (*FileHistory)(nil)
 // refusing a symbolic link or a non-directory at any step. A missing folder
 // without create is ("", nil).
 func (h *FileHistory) dir(create bool) (string, error) {
+	if create {
+		if _, err := slawlocal.Ensure(h.root); err != nil {
+			return "", fmt.Errorf("the watch history folder cannot be prepared: %w", err)
+		}
+	}
 	real, err := filepath.EvalSymlinks(h.root)
 	if err != nil {
 		return "", errors.New("the workspace folder cannot be resolved")

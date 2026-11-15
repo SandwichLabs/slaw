@@ -2,6 +2,7 @@ package proposals
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/SandwichLabs/slaw/internal/filestore"
+	"github.com/SandwichLabs/slaw/internal/slawlocal"
 )
 
 // FileStore keeps proposals as .slaw-local/proposals/<id>.yaml under a
@@ -62,6 +64,9 @@ func (f *fileBackend) read(id string) ([]byte, string, error) {
 }
 
 func (f *fileBackend) write(id string, data []byte, expect string) error {
+	if _, err := slawlocal.Ensure(f.root); err != nil {
+		return fmt.Errorf("the proposals folder cannot be prepared: %w", err)
+	}
 	_, err := filestore.WriteAtomic(f.root, filestore.Write{Rel: rel(id), Data: data, Expect: expect}, f.obs)
 	return err
 }

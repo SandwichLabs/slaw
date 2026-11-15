@@ -75,7 +75,7 @@ Your own settings for a workspace are **not** in the folder (review vibe-app#109
 
 A relative `SLAW_CONFIG_DIR` is ignored with a warning, since it would mean a different folder for every launch.
 
-`Init` creates everything above except `.slaw-local/`, which appears on the first open (it holds the folder's mark, below). It merges into an existing `.gitignore` and `.gitattributes` and never replaces them, leaves other files in the folder alone, and refuses a folder that already is, or sits inside, a workspace. `slaw.yaml` is written last, so a failed init never leaves something that looks like a workspace but is not. With git on your PATH it can also run `git init`.
+`Init` creates everything above except `.slaw-local/`, which appears on the first open (it holds the folder's mark, below). It merges into an existing `.gitignore` and `.gitattributes` and never replaces them, leaves other files in the folder alone, and refuses a folder that already is, or sits inside, a workspace. `slaw.yaml` is written last, so a failed init never leaves something that looks like a workspace but is not. With git on your PATH it can also run `git init`. Whatever first writes into `.slaw-local/` (the folder's mark, receipts, watch history, proposals, page state, console history, the completion snapshot, editor scratch files, the hub lock) also gives it a `.gitignore` containing `*` when it has none, so a repository not made by `init` never offers those files to a commit; an existing `.gitignore` there is never replaced, a symbolic link at `.slaw-local/` is refused, and if the file cannot be written the write is refused (receipts turn off).
 
 ## Finding a workspace
 

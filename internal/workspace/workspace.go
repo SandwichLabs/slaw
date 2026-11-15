@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/SandwichLabs/slaw/internal/artifacts"
+	"github.com/SandwichLabs/slaw/internal/slawlocal"
 
 	"github.com/SandwichLabs/slaw/internal/engine"
 	"github.com/SandwichLabs/slaw/internal/filestore"
@@ -621,6 +622,9 @@ func (w *workspace) SaveState(s State) error {
 		return fmt.Errorf("failed to encode state: %w", err)
 	}
 	data = append(data, '\n')
+	if _, err := slawlocal.Ensure(w.root); err != nil {
+		return fmt.Errorf("failed to save state: %w", err)
+	}
 	if _, err := filestore.WriteAtomic(w.root, filestore.Write{Rel: LocalDir + "/" + LocalStateFile, Data: data, Overwrite: true}, nil); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
@@ -724,6 +728,10 @@ func (w *workspace) readNonce() string {
 // not writable, in which case nothing can be trusted to match later).
 func (w *workspace) writeNonce() string {
 	n := filestore.RandomSuffix(32)
+	if _, err := slawlocal.Ensure(w.root); err != nil {
+		w.logger.Warn("could not record this folder's mark", "error", err)
+		return ""
+	}
 	if _, err := filestore.WriteAtomic(w.root, filestore.Write{Rel: nonceRel, Data: []byte(n + "\n"), Overwrite: true}, nil); err != nil {
 		w.logger.Warn("could not record this folder's mark", "error", err)
 		return ""
@@ -751,6 +759,10 @@ func (w *workspace) TrustLocal() error {
 		return perr
 	}
 	if l.Nonce != "" {
+		if _, werr := slawlocal.Ensure(w.root); werr != nil {
+			w.mu.Unlock()
+			return fmt.Errorf("failed to confirm your settings: %w", werr)
+		}
 		if _, werr := filestore.WriteAtomic(w.root, filestore.Write{Rel: nonceRel, Data: []byte(l.Nonce + "\n"), Overwrite: true}, nil); werr != nil {
 			w.mu.Unlock()
 			return fmt.Errorf("failed to confirm your settings: %w", werr)
