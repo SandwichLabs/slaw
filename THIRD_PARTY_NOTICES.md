@@ -9,11 +9,11 @@ Contents: [Go modules](#go-modules) Â· [Frontend packages](#frontend-packages) Â
 ## Go modules
 
 Every module linked into the `slaw` CLI or Slaw on linux and macOS (amd64 and arm64), found with go-licenses v2.
-141 module/licence-file pairs: Apache-2.0 44, BSD-2-Clause 5, BSD-3-Clause 29, ISC 1, MIT 62.
+142 module/licence-file pairs: Apache-2.0 44, BSD-2-Clause 5, BSD-3-Clause 29, ISC 1, MIT 63.
 
 #### Apache-2.0
 
-- charm.land/fantasy v0.46.0
+- charm.land/fantasy v0.48.0
 
 ```text
 Apache License
@@ -200,20 +200,20 @@ Apache License
 - cloud.google.com/go/auth v0.24.2
 - cloud.google.com/go/auth/oauth2adapt v0.3.0
 - cloud.google.com/go/compute/metadata v0.10.0
-- github.com/aws/aws-sdk-go-v2 v1.47.7
+- github.com/aws/aws-sdk-go-v2 v1.48.0
 - github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25
-- github.com/aws/aws-sdk-go-v2/config v1.33.15
-- github.com/aws/aws-sdk-go-v2/credentials v1.20.15
-- github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.7
-- github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.10
-- github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.10
-- github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.10
-- github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.24
-- github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.10
-- github.com/aws/aws-sdk-go-v2/service/signin v1.12.3
-- github.com/aws/aws-sdk-go-v2/service/sso v1.39.3
-- github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.3
-- github.com/aws/aws-sdk-go-v2/service/sts v1.51.8
+- github.com/aws/aws-sdk-go-v2/config v1.33.18
+- github.com/aws/aws-sdk-go-v2/credentials v1.21.0
+- github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.9
+- github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.12
+- github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.12
+- github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.12
+- github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.25
+- github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12
+- github.com/aws/aws-sdk-go-v2/service/signin v1.13.1
+- github.com/aws/aws-sdk-go-v2/service/sso v1.39.5
+- github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.5
+- github.com/aws/aws-sdk-go-v2/service/sts v1.52.0
 - github.com/go-logr/stdr v1.2.2
 - github.com/google/flatbuffers v25.12.19+incompatible
 - github.com/google/s2a-go v0.1.11
@@ -691,7 +691,7 @@ Distributed under MIT License.
 
 #### Apache-2.0
 
-- github.com/aws/smithy-go v1.28.8
+- github.com/aws/smithy-go v1.28.9
 - github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 - github.com/spf13/afero v1.15.0
 - github.com/spf13/cobra v1.10.2
@@ -2592,12 +2592,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 - filippo.io/hpke v0.4.0
 - golang.org/x/crypto v0.58.0
 - golang.org/x/exp v0.0.0-20260112195511-716be5621a96
-- golang.org/x/mod v0.42.0
+- golang.org/x/mod v0.43.0
 - golang.org/x/net v0.62.0
 - golang.org/x/oauth2 v0.37.0
 - golang.org/x/sync v0.24.0
-- golang.org/x/sys v0.49.0
-- golang.org/x/term v0.47.0
+- golang.org/x/sys v0.50.0
+- golang.org/x/term v0.48.0
 - golang.org/x/text v0.43.0
 - golang.org/x/time v0.16.0
 
@@ -2667,8 +2667,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #### BSD-3-Clause
 
-- github.com/aws/aws-sdk-go-v2 v1.47.7
-- github.com/aws/smithy-go v1.28.8
+- github.com/aws/aws-sdk-go-v2 v1.48.0
+- github.com/aws/smithy-go v1.28.9
 
 ```text
 Copyright (c) 2009 The Go Authors. All rights reserved.
@@ -2702,7 +2702,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #### BSD-3-Clause
 
-- github.com/aws/smithy-go v1.28.8
+- github.com/aws/smithy-go v1.28.9
 - github.com/bahlo/generic-list-go v0.2.0
 
 ```text
@@ -4176,6 +4176,34 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 The MIT License (MIT)
 
 Copyright (c) 2016 Yasuhiro Matsumoto
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+#### MIT
+
+- github.com/molecule-man/go-brrr v1.3.1
+
+```text
+MIT License
+
+Copyright (c) 2026 Andrii Berezhynskyi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9108,7 +9136,7 @@ For more information, please refer to <http://unlicense.org>
 Apache-2.0 section 4(d) asks that the NOTICE file of an Apache-licensed work be reproduced. These are the NOTICE files
 shipped by the Go modules and npm packages above.
 
-#### charm.land/fantasy v0.46.0
+#### charm.land/fantasy v0.48.0
 
 ```text
 Copyright 2025-2026 Charmbracelet, Inc.
@@ -9136,7 +9164,7 @@ This product includes software developed at
 The Apache Software Foundation (http://www.apache.org/).
 ```
 
-#### github.com/aws/aws-sdk-go-v2 v1.47.7
+#### github.com/aws/aws-sdk-go-v2 v1.48.0
 
 ```text
 AWS SDK for Go
@@ -9144,7 +9172,7 @@ Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Copyright 2014-2015 Stripe, Inc.
 ```
 
-#### github.com/aws/smithy-go v1.28.8
+#### github.com/aws/smithy-go v1.28.9
 
 ```text
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
